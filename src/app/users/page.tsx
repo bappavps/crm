@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { UserPlus, Shield, Loader2, Mail, User as UserIcon } from "lucide-react"
+import { UserPlus, Shield, Loader2, Mail, User as UserIcon, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -16,12 +16,28 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
-import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { collection, doc, deleteDoc } from "firebase/firestore"
+import { setDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function UserManagementPage() {
@@ -29,6 +45,8 @@ export default function UserManagementPage() {
   const { user: currentUser } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [editingUser, setEditingUser] = useState<any>(null)
+  const [userToDelete, setUserToDelete] = useState<any>(null)
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -45,7 +63,7 @@ export default function UserManagementPage() {
 
   const { data: users, isLoading } = useCollection(usersQuery)
 
-  const handleAddUser = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveUser = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !currentUser) return
 
@@ -55,43 +73,52 @@ export default function UserManagementPage() {
     const lastName = formData.get("lastName") as string
     const roleId = formData.get("roleId") as string
     
-    const newUserId = crypto.randomUUID()
+    const userId = editingUser?.id || crypto.randomUUID()
     const userData = {
-      id: newUserId,
+      id: userId,
       username: `${firstName.toLowerCase()}.${lastName.toLowerCase()}`,
       email,
       firstName,
       lastName,
       roleId,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      isActive: editingUser ? editingUser.isActive : true,
+      updatedAt: new Date().toISOString(),
+      ...(editingUser ? {} : { createdAt: new Date().toISOString() })
     }
 
-    setDocumentNonBlocking(doc(firestore, 'users', newUserId), userData, { merge: true })
+    setDocumentNonBlocking(doc(firestore, 'users', userId), userData, { merge: true })
 
-    const roleColMap: Record<string, string> = {
-      'Admin': 'adminUsers',
-      'Manager': 'managerUsers',
-      'Operator': 'operatorUsers'
+    // If role changed, cleanup old role and add new role
+    if (editingUser && editingUser.roleId !== roleId) {
+      const oldRoleCol = roleColMap[editingUser.roleId]
+      if (oldRoleCol) {
+        deleteDocumentNonBlocking(doc(firestore, oldRoleCol, userId))
+      }
     }
-    
+
     const roleCollection = roleColMap[roleId]
     if (roleCollection) {
-      setDocumentNonBlocking(doc(firestore, roleCollection, newUserId), {
-        id: newUserId,
+      setDocumentNonBlocking(doc(firestore, roleCollection, userId), {
+        id: userId,
         email,
         roleId,
-        isActive: true,
+        isActive: userData.isActive,
         createdAt: new Date().toISOString()
       }, { merge: true })
     }
 
     setIsDialogOpen(false)
+    setEditingUser(null)
     toast({
-      title: "User Created",
-      description: `${firstName} ${lastName} has been added as ${roleId}.`
+      title: editingUser ? "User Updated" : "User Created",
+      description: `${firstName} ${lastName} has been saved as ${roleId}.`
     })
+  }
+
+  const roleColMap: Record<string, string> = {
+    'Admin': 'adminUsers',
+    'Manager': 'managerUsers',
+    'Operator': 'operatorUsers'
   }
 
   const toggleUserStatus = (userId: string, currentStatus: boolean) => {
@@ -104,6 +131,30 @@ export default function UserManagementPage() {
     })
   }
 
+  const handleDeleteUser = () => {
+    if (!firestore || !userToDelete) return
+
+    // 1. Delete from main collection
+    deleteDocumentNonBlocking(doc(firestore, 'users', userToDelete.id))
+
+    // 2. Delete from role-specific collection
+    const roleCol = roleColMap[userToDelete.roleId]
+    if (roleCol) {
+      deleteDocumentNonBlocking(doc(firestore, roleCol, userToDelete.id))
+    }
+
+    setUserToDelete(null)
+    toast({
+      title: "User Deleted",
+      description: "The employee account has been removed from the system."
+    })
+  }
+
+  const openEditDialog = (user: any) => {
+    setEditingUser(user)
+    setIsDialogOpen(true)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -111,36 +162,38 @@ export default function UserManagementPage() {
           <h2 className="text-3xl font-bold tracking-tight text-primary">User Management</h2>
           <p className="text-muted-foreground">Manage employee access, roles, and permissions.</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
+        <Button onClick={() => { setEditingUser(null); setIsDialogOpen(true); }} className="bg-primary hover:bg-primary/90">
           <UserPlus className="mr-2 h-4 w-4" /> Add User
         </Button>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) setEditingUser(null); }}>
         <DialogContent className="sm:max-w-[425px]">
-          <form onSubmit={handleAddUser}>
+          <form onSubmit={handleSaveUser}>
             <DialogHeader>
-              <DialogTitle>Add New System User</DialogTitle>
-              <DialogDescription>Create a profile and assign a specialized ERP role.</DialogDescription>
+              <DialogTitle>{editingUser ? 'Edit System User' : 'Add New System User'}</DialogTitle>
+              <DialogDescription>
+                {editingUser ? `Updating profile for ${editingUser.firstName} ${editingUser.lastName}.` : 'Create a profile and assign a specialized ERP role.'}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" name="firstName" placeholder="John" required />
+                  <Input id="firstName" name="firstName" defaultValue={editingUser?.firstName} placeholder="John" required />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" name="lastName" placeholder="Doe" required />
+                  <Input id="lastName" name="lastName" defaultValue={editingUser?.lastName} placeholder="Doe" required />
                 </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="email">Email Address</Label>
-                <Input id="email" name="email" type="email" placeholder="john.doe@shreelabel.com" required />
+                <Input id="email" name="email" type="email" defaultValue={editingUser?.email} placeholder="john.doe@shreelabel.com" required />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="roleId">System Role</Label>
-                <Select name="roleId" defaultValue="Operator">
+                <Select name="roleId" defaultValue={editingUser?.roleId || "Operator"}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a role" />
                   </SelectTrigger>
@@ -153,11 +206,28 @@ export default function UserManagementPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit">Create Account</Button>
+              <Button type="submit">{editingUser ? 'Save Changes' : 'Create Account'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the account for <strong>{userToDelete?.firstName} {userToDelete?.lastName}</strong> and remove their access to the ERP system.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteUser} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete Account
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Card>
         <CardHeader>
@@ -214,13 +284,24 @@ export default function UserManagementPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => toggleUserStatus(u.id, u.isActive)}
-                    >
-                      {u.isActive ? 'Deactivate' : 'Activate'}
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 p-0">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => openEditDialog(u)}>
+                          <Pencil className="mr-2 h-4 w-4" /> Edit Profile
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleUserStatus(u.id, u.isActive)}>
+                          <Shield className="mr-2 h-4 w-4" /> {u.isActive ? 'Deactivate' : 'Activate'}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive">
+                          <Trash2 className="mr-2 h-4 w-4" /> Delete Account
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               ))}

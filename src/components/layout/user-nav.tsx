@@ -1,13 +1,34 @@
+
 'use client';
 
-import { useUser } from "@/firebase";
+import { useUser, useAuth } from "@/firebase";
+import { signOut } from "firebase/auth";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { LogOut, User, Settings, Shield } from "lucide-react";
 
 /**
- * A client-side component that displays the current user's identity.
- * Replaces the static placeholder in the header with dynamic Firebase Auth data.
+ * A client-side component that displays the current user's identity and provides navigation options.
+ * Includes a dropdown menu for profile management and logout.
  */
 export function UserNav() {
   const { user, isUserLoading } = useUser();
+  const auth = useAuth();
+
+  const handleLogout = async () => {
+    if (auth) {
+      await signOut(auth);
+      window.location.reload(); // Refresh to trigger auth initializer logic if needed
+    }
+  };
 
   if (isUserLoading) {
     return (
@@ -35,18 +56,52 @@ export function UserNav() {
   };
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="flex flex-col items-end">
-        <span className="text-sm font-bold text-foreground">
-          {user?.displayName || "System User"}
-        </span>
-        <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">
-          {user?.email || "Active Session"}
-        </span>
-      </div>
-      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shadow-sm transition-all hover:bg-primary/20">
-        <span className="text-xs font-bold text-primary">{getInitials()}</span>
-      </div>
-    </div>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" className="relative h-10 w-auto px-2 flex items-center gap-3 hover:bg-primary/5">
+          <div className="flex flex-col items-end">
+            <span className="text-sm font-bold text-foreground">
+              {user?.displayName || "System User"}
+            </span>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">
+              {user?.email || "Active Session"}
+            </span>
+          </div>
+          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shadow-sm transition-all">
+            <span className="text-xs font-bold text-primary">{getInitials()}</span>
+          </div>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-56" align="end" forceMount>
+        <DropdownMenuLabel className="font-normal">
+          <div className="flex flex-col space-y-1">
+            <p className="text-sm font-medium leading-none">{user?.displayName || "System User"}</p>
+            <p className="text-xs leading-none text-muted-foreground">
+              {user?.email || "No email available"}
+            </p>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem>
+            <User className="mr-2 h-4 w-4" />
+            <span>Profile</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem>
+            <Settings className="mr-2 h-4 w-4" />
+            <span>Settings</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem>
+            <Shield className="mr-2 h-4 w-4" />
+            <span>Security</span>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+          <LogOut className="mr-2 h-4 w-4" />
+          <span>Log out</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
