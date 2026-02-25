@@ -10,6 +10,7 @@ import { AuthInitializer } from "@/components/auth-initializer";
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -23,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} antialiased bg-background overflow-hidden`} suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <body className="antialiased bg-background overflow-hidden font-sans" suppressHydrationWarning>
         <FirebaseClientProvider>
           <AuthInitializer />
           <SidebarProvider defaultOpen={true}>
