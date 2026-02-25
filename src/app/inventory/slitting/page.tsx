@@ -36,6 +36,13 @@ export default function SlittingPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
+  // Roll Settings
+  const settingsDocRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'settings', 'roll-numbering');
+  }, [firestore]);
+  const { data: settings } = useDoc(settingsDocRef);
+
   // Firestore Queries - Fetch specifically from jumbo_stock
   const jumboQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
@@ -72,12 +79,25 @@ export default function SlittingPage() {
       updatedAt: new Date().toISOString()
     })
 
-    // 2. Create Slitted Rolls in inventoryItems
+    // 2. Create Slitted Rolls in inventoryItems using Global Settings
+    const sep = settings?.separator || "-"
+    const prefixType = settings?.childRollPrefixType || "Alphabet"
+
     for (let i = 0; i < numRolls; i++) {
+      let childId = ""
+      if (prefixType === "Alphabet") {
+        childId = String.fromCharCode(65 + i) // A, B, C...
+      } else {
+        childId = (i + 1).toString() // 1, 2, 3...
+      }
+
+      const generatedBarcode = `${selectedJumbo.rollNo}${sep}${childId}`
+
       const slitData = {
-        barcode: `SLT-${selectedJumbo.rollNo.slice(-5)}-${i+1}`,
+        barcode: generatedBarcode,
         name: `Slitted: ${selectedJumbo.paperType}`,
         parentJumboId: jumboId,
+        parentRollNo: selectedJumbo.rollNo,
         itemType: "Slitted Roll",
         dimensions: `${slitWidth}mm x ${selectedJumbo.lengthMeters}m`,
         currentQuantity: 1,
@@ -93,7 +113,7 @@ export default function SlittingPage() {
     setIsDialogOpen(false)
     toast({
       title: "Stock Converted",
-      description: `Jumbo ${selectedJumbo.rollNo} converted into ${numRolls} slitted rolls.`
+      description: `Jumbo ${selectedJumbo.rollNo} converted into ${numRolls} rolls using ${prefixType} hierarchy.`
     })
   }
 
@@ -140,7 +160,7 @@ export default function SlittingPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="numRolls">Number of Rolls</Label>
-                  <Input id="numRolls" name="numRolls" type="number" defaultValue="1" required />
+                  <Input id="numRolls" name="numRolls" type="number" defaultValue={1} required />
                 </div>
               </div>
             </div>
@@ -162,6 +182,7 @@ export default function SlittingPage() {
                 <li>1 Jumbo Roll (Source)</li>
                 <li>&rarr; Marked as Consumed</li>
                 <li>&rarr; N Slitted Rolls (Inventory)</li>
+                <li>&rarr; Hierarchical Numbering: {settings?.separator || "-"}</li>
               </ul>
             </div>
           </CardContent>

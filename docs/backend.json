@@ -69,6 +69,18 @@
         "gsm": { "type": "number" },
         "ratePerSqMeter": { "type": "number" }
       }
+    },
+    "RollSettings": {
+      "title": "RollSettings",
+      "type": "object",
+      "properties": {
+        "parentRollPrefix": { "type": "string" },
+        "rollStartNumber": { "type": "number" },
+        "childRollPrefixType": { "type": "string", "enum": ["Alphabet"] },
+        "subChildPrefixType": { "type": "string", "enum": ["Number"] },
+        "separator": { "type": "string" },
+        "barcodePrefix": { "type": "string" }
+      }
     }
   },
   "auth": {
@@ -103,6 +115,10 @@
       {
         "path": "/materials/{materialId}",
         "definition": { "entityName": "Material", "schema": { "$ref": "#/backend/entities/Material" }, "description": "Master material data." }
+      },
+      {
+        "path": "/settings/{settingId}",
+        "definition": { "entityName": "RollSettings", "schema": { "$ref": "#/backend/entities/RollSettings" }, "description": "Global application settings." }
       }
     ]
   }

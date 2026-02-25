@@ -55,6 +55,13 @@ export default function GRNPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
+  // Roll Settings
+  const settingsDocRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'settings', 'roll-numbering');
+  }, [firestore]);
+  const { data: settings } = useDoc(settingsDocRef);
+
   // Firestore Queries
   const jumboQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
@@ -165,8 +172,12 @@ export default function GRNPage() {
     if (!firestore || !user) return
 
     const submissionData = new FormData(e.currentTarget)
+    
+    // Generate Roll No using Settings
     const count = (jumbos?.length || 0) + 1
-    const generatedRollNo = `JMB-${count.toString().padStart(5, '0')}`
+    const prefix = settings?.parentRollPrefix || "JMB-"
+    const startNum = Number(settings?.rollStartNumber) || 0
+    const generatedRollNo = `${prefix}${startNum + count}`
 
     const jumboData = {
       rollNo: generatedRollNo,
@@ -198,7 +209,7 @@ export default function GRNPage() {
     setFormData({ widthMm: 1020, weightKg: 0, gsm: 0, lengthMeters: 0, sqm: 0 })
     toast({
       title: "GRN Recorded",
-      description: `Jumbo Roll ${jumboData.rollNo} added to inventory.`
+      description: `Jumbo Roll ${jumboData.rollNo} added to inventory using global numbering.`
     })
   }
 

@@ -21,7 +21,8 @@ import {
   Wrench,
   Scissors,
   Box,
-  ClipboardCheck
+  ClipboardCheck,
+  Hash
 } from "lucide-react"
 import {
   Sidebar,
@@ -93,6 +94,7 @@ const navGroups = [
 
 const adminNavigation = [
   { name: 'Master Data', icon: Settings, href: '/master-data' },
+  { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings' },
   { name: 'User Management', icon: Users, href: '/users' },
 ]
 
