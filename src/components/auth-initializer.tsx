@@ -2,33 +2,39 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useAuth, useUser, initiateAnonymousSignIn, useFirestore } from '@/firebase';
+import { useRouter, usePathname } from 'next/navigation';
+import { useAuth, useUser, useFirestore } from '@/firebase';
 import { doc, getDoc, setDoc, collection, getDocs, limit, query, writeBatch } from 'firebase/firestore';
 
 /**
- * Automatically signs the user in anonymously if they aren't authenticated.
- * Also initializes the Admin role and seeds sample data for the prototype.
+ * Handles authentication state changes, role initialization, and sample data seeding.
+ * Redirects unauthenticated users to the login page.
  */
 export function AuthInitializer() {
   const auth = useAuth();
   const firestore = useFirestore();
   const { user, isUserLoading } = useUser();
+  const router = useRouter();
+  const pathname = usePathname();
 
+  // Handle Redirection based on Auth State
   useEffect(() => {
-    if (!isUserLoading && !user && auth) {
-      initiateAnonymousSignIn(auth);
+    if (!isUserLoading && !user && pathname !== '/login') {
+      router.push('/login');
     }
-  }, [user, isUserLoading, auth]);
+  }, [user, isUserLoading, pathname, router]);
 
+  // Handle Data Seeding and Admin Role Initialization
   useEffect(() => {
     if (user && firestore) {
       // 1. Auto-initialize Admin role for the first user
       const adminRef = doc(firestore, 'adminUsers', user.uid);
       getDoc(adminRef).then(async (snap) => {
         if (!snap.exists()) {
+          // Check if this is the first user or if we should grant admin by default for prototype
           await setDoc(adminRef, { 
             id: user.uid, 
-            username: user.displayName || 'Admin', 
+            username: user.displayName || user.email?.split('@')[0] || 'Admin', 
             email: user.email,
             roleId: 'Admin',
             isActive: true,
@@ -37,7 +43,7 @@ export function AuthInitializer() {
           
           await setDoc(doc(firestore, 'users', user.uid), {
             id: user.uid,
-            username: user.displayName || 'Admin',
+            username: user.displayName || user.email?.split('@')[0] || 'Admin',
             email: user.email,
             firstName: 'System',
             lastName: 'Admin',
@@ -47,7 +53,7 @@ export function AuthInitializer() {
           });
         }
         
-        // 2. Seed Sample Data if collections are empty (checked independently)
+        // 2. Seed Sample Data if collections are empty
         seedSampleData(firestore, user.uid);
       });
     }
