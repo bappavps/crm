@@ -74,9 +74,24 @@
         "roll_direction": { "type": "string" },
         "remarks": { "type": "string" },
         "status": { "type": "string" },
+        "edit_lock_time": { "type": "string", "format": "date-time" },
+        "is_locked": { "type": "boolean" },
         "created_date": { "type": "string", "format": "date-time" },
         "created_by": { "type": "string" },
         "created_by_name": { "type": "string" }
+      }
+    },
+    "JobAuditLog": {
+      "title": "JobAuditLog",
+      "type": "object",
+      "properties": {
+        "job_id": { "type": "string" },
+        "edited_by": { "type": "string" },
+        "edited_by_name": { "type": "string" },
+        "edited_date": { "type": "string", "format": "date-time" },
+        "field": { "type": "string" },
+        "old_value": { "type": "any" },
+        "new_value": { "type": "any" }
       }
     },
     "Job": {
@@ -136,6 +151,14 @@
           "entityName": "JobPlan",
           "schema": { "$ref": "#/backend/entities/JobPlan" },
           "description": "Master Production Planning jobs released by Design."
+        }
+      },
+      {
+        "path": "/job_audit_log/{id}",
+        "definition": {
+          "entityName": "JobAuditLog",
+          "schema": { "$ref": "#/backend/entities/JobAuditLog" },
+          "description": "Audit trail for job plan modifications."
         }
       },
       {

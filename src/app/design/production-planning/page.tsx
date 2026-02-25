@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -18,10 +18,10 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2, Briefcase } from "lucide-react"
+import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2, Briefcase, Lock, Pencil, ShieldAlert } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, deleteDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function JobPlanningPage() {
@@ -30,6 +30,7 @@ export default function JobPlanningPage() {
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCoreManageOpen, setIsCoreManageOpen] = useState(false)
+  const [editingJob, setEditingJob] = useState<any>(null)
   const [newCoreName, setNewCoreName] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -41,16 +42,18 @@ export default function JobPlanningPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
+  const isAdmin = !!adminData;
+
   // Firestore Queries
   const planningQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'job_planning');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const coreSizesQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'core_sizes');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const masterJobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -61,7 +64,7 @@ export default function JobPlanningPage() {
   const { data: coreSizes } = useCollection(coreSizesQuery)
   const { data: masterJobs } = useCollection(masterJobsQuery)
 
-  const handleCreateJob = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveJob = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
 
@@ -69,7 +72,10 @@ export default function JobPlanningPage() {
     const masterJobId = formData.get("master_job_id") as string
     const selectedMaster = masterJobs?.find(j => j.job_id === masterJobId)
     
-    const jobData = {
+    const now = new Date();
+    const lockTime = new Date(now.getTime() + 30 * 60000).toISOString();
+
+    const jobData: any = {
       master_job_id: masterJobId,
       serial_no: formData.get("serial_no") as string,
       order_date: formData.get("order_date") as string,
@@ -87,30 +93,54 @@ export default function JobPlanningPage() {
       qty_per_roll: Number(formData.get("qty_per_roll")),
       roll_direction: formData.get("roll_direction") as string,
       remarks: formData.get("remarks") as string,
-      status: "WAITING FOR SLITTING",
-      created_date: new Date().toISOString(),
-      created_by: user.uid,
-      created_by_name: user.displayName || user.email?.split('@')[0] || "Designer"
+      status: editingJob ? editingJob.status : "WAITING FOR SLITTING",
+      updated_at: now.toISOString(),
     }
 
-    addDocumentNonBlocking(collection(firestore, 'job_planning'), jobData).then((docRef) => {
-      if (docRef) {
-        // Create Notification for Production
-        addDocumentNonBlocking(collection(firestore, 'notifications'), {
-          type: 'SLITTING',
-          message: `New Job ${jobData.plate_no} waiting for slitting`,
-          jobId: docRef.id,
-          createdAt: new Date().toISOString(),
-          read: false
-        })
-      }
-    })
+    if (editingJob) {
+      // Logic for Audit Log
+      const auditLogRef = collection(firestore, 'job_audit_log');
+      const changedFields: string[] = [];
+      
+      Object.keys(jobData).forEach(key => {
+        if (jobData[key] !== editingJob[key] && key !== 'updated_at') {
+          addDocumentNonBlocking(auditLogRef, {
+            job_id: editingJob.id,
+            edited_by: user.uid,
+            edited_by_name: user.displayName || user.email,
+            edited_date: now.toISOString(),
+            field: key,
+            old_value: editingJob[key] || "N/A",
+            new_value: jobData[key]
+          });
+        }
+      });
+
+      updateDocumentNonBlocking(doc(firestore, 'job_planning', editingJob.id), jobData);
+      toast({ title: "Job Plan Updated", description: "All changes have been audited and saved." });
+    } else {
+      jobData.created_date = now.toISOString();
+      jobData.created_by = user.uid;
+      jobData.created_by_name = user.displayName || user.email?.split('@')[0] || "Designer";
+      jobData.edit_lock_time = lockTime;
+      jobData.is_locked = false;
+
+      addDocumentNonBlocking(collection(firestore, 'job_planning'), jobData).then((docRef) => {
+        if (docRef) {
+          addDocumentNonBlocking(collection(firestore, 'notifications'), {
+            type: 'SLITTING',
+            message: `New Job ${jobData.plate_no} waiting for slitting`,
+            jobId: docRef.id,
+            createdAt: now.toISOString(),
+            read: false
+          })
+        }
+      })
+      toast({ title: "Job Planned", description: "New production plan released. 30min edit window active." });
+    }
 
     setIsDialogOpen(false)
-    toast({
-      title: "Job Planned",
-      description: `${jobData.job_name} has been added and notified to production.`
-    })
+    setEditingJob(null)
   }
 
   const handleAddCoreSize = () => {
@@ -133,6 +163,13 @@ export default function JobPlanningPage() {
     toast({ title: "Filters Reset", description: "Showing all job plans." })
   }
 
+  const isJobLocked = (job: any) => {
+    if (isAdmin) return false;
+    const now = new Date();
+    const lockTime = new Date(job.edit_lock_time);
+    return now > lockTime;
+  }
+
   const filteredJobs = jobs?.filter(job => {
     const q = searchQuery.toLowerCase();
     const matchesSearch = 
@@ -151,28 +188,30 @@ export default function JobPlanningPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Job Planning Board</h2>
-          <p className="text-muted-foreground">Technical master source linked to unique sales Job IDs.</p>
+          <p className="text-muted-foreground">Technical master source with 30-minute Designer edit lock.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => toast({ title: "Export", description: "Downloading master plan..." })}><Download className="mr-2 h-4 w-4" /> Export Board</Button>
-          <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
+          <Button onClick={() => { setEditingJob(null); setIsDialogOpen(true); }} className="bg-primary hover:bg-primary/90">
             <Plus className="mr-2 h-4 w-4" /> New Plan Entry
           </Button>
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if(!open) setEditingJob(null); }}>
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-          <form onSubmit={handleCreateJob}>
+          <form onSubmit={handleSaveJob}>
             <DialogHeader>
-              <DialogTitle>Create Master Job Plan</DialogTitle>
-              <DialogDescription>Input technical parameters linked to a master Job ID.</DialogDescription>
+              <DialogTitle>{editingJob ? 'Edit Master Job Plan' : 'Create Master Job Plan'}</DialogTitle>
+              <DialogDescription>
+                {editingJob ? "All modifications will be tracked in the audit log." : "Input technical parameters linked to a master Job ID."}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="master_job_id" className="font-bold text-primary">Select Unique Job ID</Label>
-                  <Select name="master_job_id" required>
+                  <Select name="master_job_id" required defaultValue={editingJob?.master_job_id}>
                     <SelectTrigger><SelectValue placeholder="Choose Sales Job" /></SelectTrigger>
                     <SelectContent>
                       {masterJobs?.map(j => (
@@ -183,22 +222,22 @@ export default function JobPlanningPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="order_date">Order Date</Label>
-                  <Input id="order_date" name="order_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
+                  <Input id="order_date" name="order_date" type="date" required defaultValue={editingJob?.order_date || new Date().toISOString().split('T')[0]} />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="serial_no">Serial No</Label>
-                  <Input id="serial_no" name="serial_no" placeholder="e.g. 001" required />
+                  <Input id="serial_no" name="serial_no" placeholder="e.g. 001" required defaultValue={editingJob?.serial_no} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="plate_no">Plate No</Label>
-                  <Input id="plate_no" name="plate_no" placeholder="PL-4501" required />
+                  <Input id="plate_no" name="plate_no" placeholder="PL-4501" required defaultValue={editingJob?.plate_no} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="planning_status">Planning Status</Label>
-                  <Select name="planning_status" defaultValue="Pending">
+                  <Select name="planning_status" defaultValue={editingJob?.planning_status || "Pending"}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Pending">Pending</SelectItem>
@@ -212,41 +251,41 @@ export default function JobPlanningPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="job_name">Internal Job Name</Label>
-                  <Input id="job_name" name="job_name" placeholder="Leave empty to use Sales product name" />
+                  <Input id="job_name" name="job_name" placeholder="Leave empty to use Sales product name" defaultValue={editingJob?.job_name} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="material">Substrate</Label>
-                  <Input id="material" name="material" placeholder="Semi-Gloss / PP" required />
+                  <Input id="material" name="material" placeholder="Semi-Gloss / PP" required defaultValue={editingJob?.material} />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="label_size">Label Size (mm)</Label>
-                  <Input id="label_size" name="label_size" placeholder="50x100" required />
+                  <Input id="label_size" name="label_size" placeholder="50x100" required defaultValue={editingJob?.label_size} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="repeat_length">Repeat Length (mm)</Label>
-                  <Input id="repeat_length" name="repeat_length" type="number" step="0.01" placeholder="508" required />
+                  <Input id="repeat_length" name="repeat_length" type="number" step="0.01" placeholder="508" required defaultValue={editingJob?.repeat_length} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="die_type">Die Type</Label>
-                  <Input id="die_type" name="die_type" placeholder="Rotary / Flatbed" />
+                  <Input id="die_type" name="die_type" placeholder="Rotary / Flatbed" defaultValue={editingJob?.die_type} />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4 bg-primary/5 p-4 rounded-lg border border-dashed border-primary/30">
                 <div className="grid gap-2">
                   <Label htmlFor="paper_width" className="text-primary font-bold">Paper Width (mm)</Label>
-                  <Input id="paper_width" name="paper_width" type="number" required />
+                  <Input id="paper_width" name="paper_width" type="number" required defaultValue={editingJob?.paper_width} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="allocate_meters" className="text-primary font-bold">Allocate Meters (m)</Label>
-                  <Input id="allocate_meters" name="allocate_meters" type="number" required />
+                  <Input id="allocate_meters" name="allocate_meters" type="number" required defaultValue={editingJob?.allocate_meters} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="label_qty" className="text-primary font-bold">Label Quantity</Label>
-                  <Input id="label_qty" name="label_qty" type="number" required />
+                  <Input id="label_qty" name="label_qty" type="number" required defaultValue={editingJob?.label_qty} />
                 </div>
               </div>
 
@@ -258,7 +297,7 @@ export default function JobPlanningPage() {
                       <Settings2 className="h-3 w-3" />
                     </Button>
                   </div>
-                  <Select name="core_size" defaultValue="3 Inch">
+                  <Select name="core_size" defaultValue={editingJob?.core_size || "3 Inch"}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {coreSizes?.map(core => (
@@ -270,11 +309,11 @@ export default function JobPlanningPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="qty_per_roll">Qty Per Roll</Label>
-                  <Input id="qty_per_roll" name="qty_per_roll" type="number" required />
+                  <Input id="qty_per_roll" name="qty_per_roll" type="number" required defaultValue={editingJob?.qty_per_roll} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="roll_direction">Roll Direction</Label>
-                  <Select name="roll_direction" defaultValue="Head Out">
+                  <Select name="roll_direction" defaultValue={editingJob?.roll_direction || "Head Out"}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Head Out">Head Out</SelectItem>
@@ -288,11 +327,13 @@ export default function JobPlanningPage() {
 
               <div className="grid gap-2">
                 <Label htmlFor="remarks">Remarks / Special Instructions</Label>
-                <Textarea id="remarks" name="remarks" placeholder="Color codes, varnish specifications, etc." />
+                <Textarea id="remarks" name="remarks" placeholder="Color codes, varnish specifications, etc." defaultValue={editingJob?.remarks} />
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12 text-lg">Release Master Plan</Button>
+              <Button type="submit" className="w-full h-12 text-lg">
+                {editingJob ? 'Save Audit & Update' : 'Release Master Plan'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -361,9 +402,10 @@ export default function JobPlanningPage() {
         </CardHeader>
         <CardContent className="p-0 border-t">
           <div className="overflow-x-auto">
-            <Table className="min-w-[2800px]">
+            <Table className="min-w-[3000px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <TableHead className="w-[100px] text-[10px] font-black border-r text-center">ACTION</TableHead>
                   <TableHead className="w-[150px] text-[10px] font-black border-r">UNIQUE JOB ID</TableHead>
                   <TableHead className="w-[100px] text-[10px] font-bold border-r">SERIAL NO</TableHead>
                   <TableHead className="w-[120px] text-[10px] font-bold border-r">ORDER DATE</TableHead>
@@ -387,34 +429,56 @@ export default function JobPlanningPage() {
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                ) : filteredJobs.map((j) => (
-                  <TableRow key={j.id} className="hover:bg-muted/30">
-                    <TableCell className="text-xs font-black text-primary border-r">{j.master_job_id}</TableCell>
-                    <TableCell className="text-xs border-r">{j.serial_no}</TableCell>
-                    <TableCell className="text-xs border-r">{j.order_date}</TableCell>
-                    <TableCell className="border-r"><Badge variant="secondary" className="text-[9px] px-1 h-5">{j.planning_status}</Badge></TableCell>
-                    <TableCell className="text-xs font-bold border-r">{j.plate_no}</TableCell>
-                    <TableCell className="text-xs border-r">{j.job_name}</TableCell>
-                    <TableCell className="text-xs border-r">{j.label_size}</TableCell>
-                    <TableCell className="text-xs font-mono border-r">{j.repeat_length}mm</TableCell>
-                    <TableCell className="text-xs border-r">{j.material}</TableCell>
-                    <TableCell className="text-xs font-bold border-r">{j.paper_width}mm</TableCell>
-                    <TableCell className="text-xs border-r">{j.die_type || '-'}</TableCell>
-                    <TableCell className="text-xs font-bold text-accent border-r">{j.allocate_meters}m</TableCell>
-                    <TableCell className="text-xs border-r">{j.label_qty?.toLocaleString()}</TableCell>
-                    <TableCell className="text-xs border-r">{j.core_size}</TableCell>
-                    <TableCell className="text-xs border-r">{j.qty_per_roll}</TableCell>
-                    <TableCell className="text-xs border-r">{j.roll_direction}</TableCell>
-                    <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px] border-r">{j.remarks || '-'}</TableCell>
-                    <TableCell className="border-r">
-                      <Badge className={j.status === 'WAITING FOR SLITTING' ? 'bg-amber-500' : j.status === 'SLITTING DONE' ? 'bg-emerald-500' : 'bg-primary'} style={{ fontSize: '9px' }}>
-                        {j.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{j.created_by_name}</TableCell>
-                  </TableRow>
-                ))}
+                  <TableRow><TableCell colSpan={20} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                ) : filteredJobs.map((j) => {
+                  const locked = isJobLocked(j);
+                  return (
+                    <TableRow key={j.id} className="hover:bg-muted/30">
+                      <TableCell className="border-r text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {locked ? (
+                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground bg-muted p-1 rounded border shadow-inner cursor-not-allowed group relative" title="Editing time expired. Contact Admin.">
+                              <Lock className="h-3 w-3" />
+                              <span className="hidden group-hover:block absolute bottom-full mb-2 bg-black text-white p-1 rounded whitespace-nowrap">Admin Only Override</span>
+                            </div>
+                          ) : (
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => { setEditingJob(j); setIsDialogOpen(true); }}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if(confirm("Delete this plan?")) deleteDocumentNonBlocking(doc(firestore, 'job_planning', j.id)); }}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs font-black text-primary border-r">{j.master_job_id}</TableCell>
+                      <TableCell className="text-xs border-r">{j.serial_no}</TableCell>
+                      <TableCell className="text-xs border-r">{j.order_date}</TableCell>
+                      <TableCell className="border-r"><Badge variant="secondary" className="text-[9px] px-1 h-5">{j.planning_status}</Badge></TableCell>
+                      <TableCell className="text-xs font-bold border-r">{j.plate_no}</TableCell>
+                      <TableCell className="text-xs border-r">{j.job_name}</TableCell>
+                      <TableCell className="text-xs border-r">{j.label_size}</TableCell>
+                      <TableCell className="text-xs font-mono border-r">{j.repeat_length}mm</TableCell>
+                      <TableCell className="text-xs border-r">{j.material}</TableCell>
+                      <TableCell className="text-xs font-bold border-r">{j.paper_width}mm</TableCell>
+                      <TableCell className="text-xs border-r">{j.die_type || '-'}</TableCell>
+                      <TableCell className="text-xs font-bold text-accent border-r">{j.allocate_meters}m</TableCell>
+                      <TableCell className="text-xs border-r">{j.label_qty?.toLocaleString()}</TableCell>
+                      <TableCell className="text-xs border-r">{j.core_size}</TableCell>
+                      <TableCell className="text-xs border-r">{j.qty_per_roll}</TableCell>
+                      <TableCell className="text-xs border-r">{j.roll_direction}</TableCell>
+                      <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px] border-r">{j.remarks || '-'}</TableCell>
+                      <TableCell className="border-r">
+                        <Badge className={j.status === 'WAITING FOR SLITTING' ? 'bg-amber-500' : j.status === 'SLITTING DONE' ? 'bg-emerald-500' : 'bg-primary'} style={{ fontSize: '9px' }}>
+                          {j.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{j.created_by_name}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
