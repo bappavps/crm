@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState } from "react"
@@ -18,8 +19,8 @@ import {
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection } from "firebase/firestore"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -32,21 +33,28 @@ export default function SalesOrderPage() {
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
-  // Fetching Data from Firestore
-  const ordersQuery = useMemoFirebase(() => {
+  // Authorization check
+  const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    return doc(firestore, 'adminUsers', user.uid);
+  }, [firestore, user]);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+
+  // Fetching Data from Firestore - Guarded by adminData
+  const ordersQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'salesOrders');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const customersQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'customers');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const estimatesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'estimates');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const { data: orders, isLoading: ordersLoading } = useCollection(ordersQuery)
   const { data: customers } = useCollection(customersQuery)
@@ -74,13 +82,13 @@ export default function SalesOrderPage() {
       customerId,
       customerName: selectedCustomer?.name || "New Customer",
       estimateId: estimateId || "Direct Entry",
-      productCode: selectedEstimate?.productCode || "Custom Label",
+      productCode: selectedEstimate?.productCode || formData.get("productCode") || "Custom Label",
       poNumber: poNumber || "N/A",
       orderDate: new Date().toISOString(),
       deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: "Confirmed",
-      totalAmount: selectedEstimate?.totalSellingPrice || 0,
-      qty: selectedEstimate?.orderQuantity || 0,
+      totalAmount: selectedEstimate?.totalSellingPrice || Number(formData.get("totalAmount")) || 0,
+      qty: selectedEstimate?.orderQuantity || Number(formData.get("qty")) || 0,
       createdById: user.uid,
       createdAt: new Date().toISOString()
     }
@@ -103,6 +111,15 @@ export default function SalesOrderPage() {
     order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
     order.customerName?.toLowerCase().includes(searchQuery.toLowerCase())
   )
+
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
+        <p>Syncing order books...</p>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -147,6 +164,10 @@ export default function SalesOrderPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="productCode">Manual Product Code (if no estimate)</Label>
+                <Input id="productCode" name="productCode" placeholder="e.g. LAB-XYZ" />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="poNumber">PO Number</Label>

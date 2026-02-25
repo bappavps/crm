@@ -18,7 +18,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
@@ -29,16 +29,23 @@ export default function QCPage() {
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
-  // Firestore Queries
-  const qcQuery = useMemoFirebase(() => {
+  // Authorization check
+  const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    return doc(firestore, 'adminUsers', user.uid);
+  }, [firestore, user]);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+
+  // Firestore Queries - Guarded by adminData
+  const qcQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'qualityChecks');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const jobCardsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'jobCards');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const { data: qualityChecks, isLoading: qcLoading } = useCollection(qcQuery)
   const { data: jobCards } = useCollection(jobCardsQuery)
@@ -105,6 +112,15 @@ export default function QCPage() {
   const passReports = qualityChecks?.filter(q => q.status === 'Passed') || []
   const ncrReports = qualityChecks?.filter(q => q.status === 'Failed' || q.status === 'Rework Required') || []
 
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
+        <p>Syncing quality records...</p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -129,7 +145,7 @@ export default function QCPage() {
                 <Label htmlFor="jobCardId">Job Card Reference</Label>
                 <Select name="jobCardId" required>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select Job Card" />
+                    <SelectValue placeholder="Select Running Job" />
                   </SelectTrigger>
                   <SelectContent>
                     {jobCards?.filter(j => j.status === 'Running').map((jc) => (
@@ -137,7 +153,7 @@ export default function QCPage() {
                         {jc.jobCardNumber} - {jc.label}
                       </SelectItem>
                     ))}
-                    {(!jobCards || jobCards.length === 0) && (
+                    {(!jobCards || jobCards.filter(j => j.status === 'Running').length === 0) && (
                       <div className="p-2 text-xs text-muted-foreground text-center">No active job cards found</div>
                     )}
                   </SelectContent>

@@ -11,9 +11,9 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, Printer, Calculator as CalcIcon } from "lucide-react"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection } from "firebase/firestore"
+import { Save, Printer, Calculator as CalcIcon, Loader2 } from "lucide-react"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 export default function EstimatePage() {
@@ -21,26 +21,33 @@ export default function EstimatePage() {
   const { user } = useUser()
   const firestore = useFirestore()
 
-  // Master Data Queries
-  const customersQuery = useMemoFirebase(() => {
+  // Authorization check
+  const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    return doc(firestore, 'adminUsers', user.uid);
+  }, [firestore, user]);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+
+  // Master Data Queries - Guarded by adminData
+  const customersQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'customers');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const materialsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'materials');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const machinesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'machines');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const cylindersQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'cylinders');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const { data: customers } = useCollection(customersQuery)
   const { data: materials } = useCollection(materialsQuery)
@@ -101,6 +108,7 @@ export default function EstimatePage() {
       ...metadata,
       ...results,
       estimateNumber: `EST-${Date.now().toString().slice(-6)}`,
+      customerName: customers?.find(c => c.id === metadata.customerId)?.name || "Unknown",
       status: "Approved",
       createdById: user.uid,
       createdAt: new Date().toISOString(),
@@ -130,6 +138,7 @@ export default function EstimatePage() {
       customerId: metadata.customerId,
       customerName: customers?.find(c => c.id === metadata.customerId)?.name || "Direct Customer",
       estimateId: "converted",
+      productCode: metadata.productCode,
       poNumber: "AUTO-CONV",
       orderDate: new Date().toISOString(),
       deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -148,8 +157,13 @@ export default function EstimatePage() {
     })
   }
 
-  const handlePrint = () => {
-    window.print()
+  if (authLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
+        <p>Initializing calculator...</p>
+      </div>
+    )
   }
 
   return (
@@ -160,7 +174,7 @@ export default function EstimatePage() {
           <p className="text-muted-foreground">Narrow Web Flexo Layout & Costing Calculator</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handlePrint}><Printer className="mr-2 h-4 w-4" /> Print PDF</Button>
+          <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print PDF</Button>
           <Button onClick={handleSave} className="bg-primary hover:bg-primary/90"><Save className="mr-2 h-4 w-4" /> Save Estimate</Button>
         </div>
       </div>
