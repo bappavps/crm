@@ -1,8 +1,8 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,10 +17,9 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FilePlus, Search, Loader2, Calendar, User, Hash, Info, Briefcase } from "lucide-react"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, query, where, getDocs } from "firebase/firestore"
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { FilePlus, Search, Loader2, Calendar, User, Hash, Briefcase } from "lucide-react"
+import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { collection, doc, runTransaction, query, where, getDocs } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 
 export default function CreateJobPage() {
@@ -42,18 +41,12 @@ export default function CreateJobPage() {
     return collection(firestore, 'customers');
   }, [firestore])
 
-  const settingsDocRef = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return doc(firestore, 'job_settings', 'unique-id-config');
-  }, [firestore]);
-
   const { data: jobs, isLoading: jobsLoading } = useCollection(jobsQuery)
   const { data: customers } = useCollection(customersQuery)
-  const { data: settings } = useDoc(settingsDocRef)
 
   const handleCreateJob = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!firestore || !user || !settings) return
+    if (!firestore || !user) return
 
     setIsGenerating(true)
     const formData = new FormData(e.currentTarget)
@@ -61,47 +54,85 @@ export default function CreateJobPage() {
     const product = formData.get("product") as string
     const selectedCustomer = customers?.find(c => c.id === customerId)
 
-    // Sequence Management Logic
-    const currentSeq = Number(settings.currentSequence || 0) + 1
-    const year = new Date().getFullYear().toString()
-    const displayYear = settings.yearFormat === 'YYYY' ? year : year.slice(-2)
-    const paddedNum = currentSeq.toString().padStart(settings.numberLength || 4, "0")
-    const sep = settings.separator || "-"
-    const jobId = `${settings.jobPrefix || "JOB"}${sep}${displayYear}${sep}${paddedNum}`
+    try {
+      await runTransaction(firestore, async (transaction) => {
+        // 1. Read Counter and Config
+        const counterRef = doc(firestore, 'counters', 'job_id');
+        const settingsRef = doc(firestore, 'job_settings', 'unique-id-config');
+        
+        const counterSnap = await transaction.get(counterRef);
+        const settingsSnap = await transaction.get(settingsRef);
 
-    // Uniqueness Double Check (Server Side Search)
-    const q = query(collection(firestore, 'jobs'), where("job_id", "==", jobId))
-    const snap = await getDocs(q)
-    
-    if (!snap.empty) {
-      toast({ variant: "destructive", title: "ID Collision", description: "This Job ID already exists. Retrying sequence..." })
-      setIsGenerating(false)
-      return
+        const settings = settingsSnap.exists() ? settingsSnap.data() : {
+          jobPrefix: "JOB",
+          yearFormat: "YYYY",
+          numberLength: 4,
+          separator: "-"
+        };
+
+        const now = new Date();
+        const year = now.getFullYear().toString();
+        const displayYear = settings.yearFormat === 'YYYY' ? year : year.slice(-2);
+        
+        let currentNumber = 1;
+        
+        if (counterSnap.exists()) {
+          const counterData = counterSnap.data();
+          // Reset counter yearly if year changes
+          if (counterData.year === year) {
+            currentNumber = counterData.current_number + 1;
+          }
+        }
+
+        const paddedNum = currentNumber.toString().padStart(settings.numberLength || 4, "0");
+        const sep = settings.separator || "-";
+        const jobId = `${settings.jobPrefix || "JOB"}${sep}${displayYear}${sep}${paddedNum}`;
+
+        // 2. Check Uniqueness (Even though transaction helps, double check index)
+        const duplicateQuery = query(collection(firestore, 'jobs'), where("job_id", "==", jobId));
+        const duplicateSnap = await getDocs(duplicateQuery);
+        if (!duplicateSnap.empty) {
+          throw new Error("Duplicate Job ID not allowed. Transaction aborted.");
+        }
+
+        // 3. Prepare Job Data
+        const jobRef = doc(collection(firestore, 'jobs'));
+        const jobData = {
+          job_id: jobId,
+          customer: selectedCustomer?.name || "Unknown",
+          customerId: customerId,
+          product,
+          status: "READY FOR PRODUCTION",
+          created_date: now.toISOString(),
+          created_by: user.uid,
+          created_by_name: user.displayName || user.email?.split('@')[0] || "Sales Executive"
+        };
+
+        // 4. Update Counter and Set Job
+        transaction.set(counterRef, {
+          prefix: settings.jobPrefix,
+          year: year,
+          current_number: currentNumber
+        }, { merge: true });
+
+        transaction.set(jobRef, jobData);
+      });
+
+      setIsDialogOpen(false);
+      toast({
+        title: "Job Initialized",
+        description: "New Job has been registered with a unique transactional ID."
+      });
+    } catch (error: any) {
+      console.error("Transaction failed: ", error);
+      toast({
+        variant: "destructive",
+        title: "Job Creation Failed",
+        description: error.message || "Unique sequence error. Please try again."
+      });
+    } finally {
+      setIsGenerating(false);
     }
-
-    const jobData = {
-      job_id: jobId,
-      customer: selectedCustomer?.name || "Unknown",
-      customerId: customerId,
-      product,
-      status: "READY FOR PRODUCTION",
-      created_date: new Date().toISOString(),
-      created_by: user.uid,
-      created_by_name: user.displayName || user.email?.split('@')[0] || "Sales Executive"
-    }
-
-    // 1. Create the Job
-    addDocumentNonBlocking(collection(firestore, 'jobs'), jobData)
-
-    // 2. Update sequence in settings
-    updateDocumentNonBlocking(settingsDocRef!, { currentSequence: currentSeq })
-
-    setIsDialogOpen(false)
-    setIsGenerating(false)
-    toast({
-      title: "Job Initialized",
-      description: `New Job ${jobId} has been registered and released to Design.`
-    })
   }
 
   const filteredJobs = jobs?.filter(job => 
@@ -142,6 +173,9 @@ export default function CreateJobPage() {
               <div className="grid gap-2">
                 <Label htmlFor="product">Product Description</Label>
                 <Input id="product" name="product" placeholder="e.g. 50ml Pharma Label" required />
+              </div>
+              <div className="bg-muted/50 p-3 rounded-md border border-dashed text-[10px] text-muted-foreground italic">
+                The Job ID field is read-only and automatically generated using atomic sequencing to prevent duplicates.
               </div>
             </div>
             <DialogFooter>

@@ -11,7 +11,7 @@ import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
 import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
-import { Binary, Save, Loader2, ShieldAlert } from "lucide-react"
+import { Binary, Save, Loader2, ShieldAlert, Hash } from "lucide-react"
 
 export default function JobSettingsPage() {
   const { toast } = useToast()
@@ -31,6 +31,13 @@ export default function JobSettingsPage() {
     return doc(firestore, 'job_settings', 'unique-id-config');
   }, [firestore]);
   const { data: settings, isLoading: settingsLoading } = useDoc(settingsDocRef);
+
+  // Counter Query
+  const counterDocRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'counters', 'job_id');
+  }, [firestore]);
+  const { data: counter } = useDoc(counterDocRef);
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -77,14 +84,15 @@ export default function JobSettingsPage() {
 
   const currentYear = new Date().getFullYear().toString()
   const displayYear = settings?.yearFormat === 'YYYY' ? currentYear : currentYear.slice(-2)
-  const previewNum = "1".padStart(settings?.numberLength || 4, "0")
+  const nextNum = (counter?.current_number || 0) + 1
+  const previewNum = nextNum.toString().padStart(settings?.numberLength || 4, "0")
   const previewId = `${settings?.jobPrefix || "JOB"}${settings?.separator || "-"}${displayYear}${settings?.separator || "-"}${previewNum}`
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-primary">Job Numbering Settings</h2>
-        <p className="text-muted-foreground">Configure the logic for enterprise-wide unique Job IDs.</p>
+        <p className="text-muted-foreground">Configure global logic for enterprise-wide transactional Job IDs.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -136,21 +144,43 @@ export default function JobSettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-primary/5 border-primary/20 flex flex-col justify-center">
-          <CardHeader className="text-center">
-            <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">ID Preview Pattern</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6 flex flex-col items-center">
-            <div className="p-8 bg-background rounded-2xl border-2 border-dashed border-primary/30 shadow-inner">
-              <code className="text-4xl font-black text-primary tracking-tighter">
-                {previewId}
-              </code>
-            </div>
-            <div className="text-xs text-center text-muted-foreground italic max-w-sm px-4">
-              * This pattern will be automatically generated when a new job is created in the Sales module. The sequence is global and unique.
-            </div>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card className="bg-primary/5 border-primary/20">
+            <CardHeader className="text-center">
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Transactional Next ID Preview</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6 flex flex-col items-center">
+              <div className="p-8 bg-background rounded-2xl border-2 border-dashed border-primary/30 shadow-inner">
+                <code className="text-4xl font-black text-primary tracking-tighter">
+                  {previewId}
+                </code>
+              </div>
+              <div className="text-xs text-center text-muted-foreground italic max-w-sm px-4">
+                * This ID uses atomic sequencing. It will automatically increment and reset yearly if configured.
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Hash className="h-4 w-4 text-primary" /> Counter Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground font-medium">Last Serial Used:</p>
+                  <p className="text-lg font-bold">{counter?.current_number || 0}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground font-medium">Tracking Year:</p>
+                  <p className="text-lg font-bold">{counter?.year || currentYear}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

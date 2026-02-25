@@ -115,8 +115,16 @@
         "jobPrefix": { "type": "string" },
         "yearFormat": { "type": "string" },
         "numberLength": { "type": "number" },
-        "separator": { "type": "string" },
-        "currentSequence": { "type": "number" }
+        "separator": { "type": "string" }
+      }
+    },
+    "Counter": {
+      "title": "Counter",
+      "type": "object",
+      "properties": {
+        "prefix": { "type": "string" },
+        "year": { "type": "string" },
+        "current_number": { "type": "number" }
       }
     },
     "Notification": {
@@ -175,6 +183,14 @@
           "entityName": "JobSettings",
           "schema": { "$ref": "#/backend/entities/JobSettings" },
           "description": "Configuration for unique job numbers."
+        }
+      },
+      {
+        "path": "/counters/{id}",
+        "definition": {
+          "entityName": "Counter",
+          "schema": { "$ref": "#/backend/entities/Counter" },
+          "description": "Atomic counters for unique ID generation."
         }
       },
       {
