@@ -117,7 +117,25 @@ export default function MasterDataPage() {
                     <TableHead>GST No.</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead className="text-right">Action</TableHead>
-                  </TableHeader>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="font-medium">PharmaTech India</TableCell>
+                    <TableCell>27AAACP0000A1Z1</TableCell>
+                    <TableCell>Rajesh Sharma</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm">Edit</Button>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">EcoDrinks Ltd</TableCell>
+                    <TableCell>27BBBCQ1111B2Z2</TableCell>
+                    <TableCell>Meera Iyer</TableCell>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="sm">Edit</Button>
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </CardContent>
