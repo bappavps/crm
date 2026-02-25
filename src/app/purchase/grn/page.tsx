@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Loader2, ClipboardCheck, Printer } from "lucide-react"
+import { Plus, Loader2, ClipboardCheck, Printer, Search, ArrowUpDown, FilterX, ArrowUp, ArrowDown } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -23,12 +23,22 @@ import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
+type SortField = 'rollNo' | 'receivedDate' | 'weightKg' | 'sqm' | 'paperCompany' | 'paperType';
+type SortOrder = 'asc' | 'desc';
+
 export default function GRNPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   
+  // Filtering & Sorting State
+  const [searchQuery, setSearchQuery] = useState("")
+  const [companyFilter, setCompanyFilter] = useState("all")
+  const [typeFilter, setTypeFilter] = useState("all")
+  const [sortField, setSortField] = useState<SortField>('receivedDate')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+
   // State for calculations
   const [formData, setFormData] = useState({
     widthMm: 1020,
@@ -68,9 +78,7 @@ export default function GRNPage() {
   // Auto-calculation logic
   useEffect(() => {
     if (formData.weightKg > 0 && formData.gsm > 0 && formData.widthMm > 0) {
-      // Area (sqm) = Weight (kg) / (GSM / 1000)
       const calculatedSqm = formData.weightKg / (formData.gsm / 1000)
-      // Length (m) = Area (sqm) / (Width (mm) / 1000)
       const calculatedLength = calculatedSqm / (formData.widthMm / 1000)
       
       setFormData(prev => ({
@@ -80,6 +88,69 @@ export default function GRNPage() {
       }))
     }
   }, [formData.weightKg, formData.gsm, formData.widthMm])
+
+  // Filter & Sort Logic
+  const filteredAndSortedJumbos = useMemo(() => {
+    if (!jumbos) return [];
+
+    let result = jumbos.filter(j => j.status === 'In Stock');
+
+    // Filter by search
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(j => 
+        j.rollNo?.toLowerCase().includes(q) || 
+        j.companyRollNo?.toLowerCase().includes(q) ||
+        j.productName?.toLowerCase().includes(q)
+      );
+    }
+
+    // Filter by Company
+    if (companyFilter !== "all") {
+      result = result.filter(j => j.paperCompany === companyFilter);
+    }
+
+    // Filter by Type
+    if (typeFilter !== "all") {
+      result = result.filter(j => j.paperType === typeFilter);
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      let valA = a[sortField];
+      let valB = b[sortField];
+
+      // Handle nulls
+      if (valA === undefined || valA === null) return 1;
+      if (valB === undefined || valB === null) return -1;
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [jumbos, searchQuery, companyFilter, typeFilter, sortField, sortOrder]);
+
+  // Derived filter options
+  const uniqueCompanies = useMemo(() => {
+    const companies = jumbos?.filter(j => j.status === 'In Stock').map(j => j.paperCompany) || [];
+    return Array.from(new Set(companies)).filter(Boolean);
+  }, [jumbos]);
+
+  const uniqueTypes = useMemo(() => {
+    const types = jumbos?.filter(j => j.status === 'In Stock').map(j => j.paperType) || [];
+    return Array.from(new Set(types)).filter(Boolean);
+  }, [jumbos]);
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -94,8 +165,6 @@ export default function GRNPage() {
     if (!firestore || !user) return
 
     const submissionData = new FormData(e.currentTarget)
-    
-    // Generate Roll No / Barcode
     const count = (jumbos?.length || 0) + 1
     const generatedRollNo = `JMB-${count.toString().padStart(5, '0')}`
 
@@ -133,11 +202,12 @@ export default function GRNPage() {
     })
   }
 
-  const handlePrintBarcode = (jumbo: any) => {
-    toast({
-      title: "Barcode Printer",
-      description: `Printing barcode label for ${jumbo.rollNo}...`
-    })
+  const resetFilters = () => {
+    setSearchQuery("")
+    setCompanyFilter("all")
+    setTypeFilter("all")
+    setSortField('receivedDate')
+    setSortOrder('desc')
   }
 
   return (
@@ -145,10 +215,62 @@ export default function GRNPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">GRN (Jumbo Entry)</h2>
-          <p className="text-muted-foreground">Comprehensive raw material tracking and auto-calculated metrics.</p>
+          <p className="text-muted-foreground">Comprehensive raw material tracking and stock filters.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)}><Plus className="mr-2 h-4 w-4" /> New Jumbo Entry</Button>
       </div>
+
+      {/* Filter Bar */}
+      <Card className="border-primary/10 bg-muted/20">
+        <CardContent className="pt-6 pb-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase">Search Registry</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="Roll No, Product..." 
+                  className="pl-8 bg-background" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase">Paper Company</Label>
+              <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="All Companies" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Companies</SelectItem>
+                  {uniqueCompanies.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs font-bold uppercase">Paper Type</Label>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {uniqueTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={resetFilters}>
+                <FilterX className="mr-2 h-4 w-4" /> Clear
+              </Button>
+              <Button variant="secondary" className="flex-1" onClick={() => toast({ title: "Export", description: "CSV download starting..." })}>
+                <Printer className="mr-2 h-4 w-4" /> Export
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
@@ -248,28 +370,45 @@ export default function GRNPage() {
       </Dialog>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <ClipboardCheck className="h-5 w-5 text-primary" /> Jumbo Roll Registry (Stock)
-          </CardTitle>
+        <CardHeader className="pb-2">
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <ClipboardCheck className="h-5 w-5 text-primary" /> Jumbo Roll Registry (Stock)
+            </CardTitle>
+            <Badge variant="outline" className="font-bold">
+              {filteredAndSortedJumbos.length} Items Found
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table className="min-w-[2400px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="w-[120px] font-bold border-r">ROLL NO</TableHead>
-                  <TableHead className="w-[180px] font-bold border-r">PAPER COMPANY</TableHead>
-                  <TableHead className="w-[180px] font-bold border-r">PAPER TYPE</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('rollNo')}>
+                    <div className="flex items-center gap-1">ROLL NO {sortField === 'rollNo' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="w-[180px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('paperCompany')}>
+                    <div className="flex items-center gap-1">PAPER COMPANY {sortField === 'paperCompany' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="w-[180px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('paperType')}>
+                    <div className="flex items-center gap-1">PAPER TYPE {sortField === 'paperType' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
                   <TableHead className="w-[100px] font-bold border-r">WIDTH (MM)</TableHead>
                   <TableHead className="w-[120px] font-bold border-r">LENGTH (MTR)</TableHead>
-                  <TableHead className="w-[100px] font-bold border-r">SQM</TableHead>
+                  <TableHead className="w-[100px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('sqm')}>
+                    <div className="flex items-center gap-1">SQM {sortField === 'sqm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
                   <TableHead className="w-[80px] font-bold border-r">GSM</TableHead>
-                  <TableHead className="w-[120px] font-bold border-r">WEIGHT (KG)</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('weightKg')}>
+                    <div className="flex items-center gap-1">WEIGHT (KG) {sortField === 'weightKg' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
                   <TableHead className="w-[120px] font-bold border-r">Purchase Rate</TableHead>
                   <TableHead className="w-[100px] font-bold border-r">WASTAGE</TableHead>
                   <TableHead className="w-[140px] font-bold border-r">DATE OF USE</TableHead>
-                  <TableHead className="w-[160px] font-bold border-r">DATE OF RECEIVED</TableHead>
+                  <TableHead className="w-[160px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('receivedDate')}>
+                    <div className="flex items-center gap-1">DATE OF RECEIVED {sortField === 'receivedDate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
                   <TableHead className="w-[120px] font-bold border-r">Job no</TableHead>
                   <TableHead className="w-[100px] font-bold border-r">SIZE</TableHead>
                   <TableHead className="w-[200px] font-bold border-r">PRODUCT NAME</TableHead>
@@ -284,7 +423,7 @@ export default function GRNPage() {
                   <TableRow>
                     <TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
                   </TableRow>
-                ) : jumbos?.filter(j => j.status === 'In Stock').map((j) => (
+                ) : filteredAndSortedJumbos.map((j) => (
                   <TableRow key={j.id} className="hover:bg-muted/30 transition-colors">
                     <TableCell className="font-bold text-primary border-r">{j.rollNo}</TableCell>
                     <TableCell className="border-r">{j.paperCompany}</TableCell>
@@ -307,10 +446,10 @@ export default function GRNPage() {
                     <TableCell className="font-mono text-xs">{j.companyRollNo}</TableCell>
                   </TableRow>
                 ))}
-                {(!jumbos || jumbos.filter(j => j.status === 'In Stock').length === 0) && !isLoading && (
+                {filteredAndSortedJumbos.length === 0 && !isLoading && (
                   <TableRow>
                     <TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">
-                      No Jumbo Rolls currently in stock. Record a GRN to begin.
+                      No stock matching the selected filters.
                     </TableCell>
                   </TableRow>
                 )}
