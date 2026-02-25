@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase";
 import { AuthInitializer } from "@/components/auth-initializer";
+import { UserNav } from "@/components/layout/user-nav";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -36,12 +37,7 @@ export default function RootLayout({
                   <div className="flex-1">
                     <h1 className="text-xl font-bold text-primary">Shree Label ERP</h1>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm font-medium text-muted-foreground">Admin User</span>
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20">
-                      <span className="text-xs font-bold text-primary">AD</span>
-                    </div>
-                  </div>
+                  <UserNav />
                 </header>
                 <main className="p-6">
                   {children}
