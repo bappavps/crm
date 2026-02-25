@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "User": {
@@ -1128,6 +1129,67 @@
         "materialId",
         "requiredQuantity",
         "unitOfMeasure"
+      ]
+    },
+    "WorkOrder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WorkOrder",
+      "type": "object",
+      "description": "Represents a production work order assigned to a machine.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the WorkOrder entity."
+        },
+        "workOrderNumber": {
+          "type": "string",
+          "description": "Unique identifier for the Work Order (e.g., WO-00001)."
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the parent Job Card."
+        },
+        "jobDescription": {
+          "type": "string",
+          "description": "Description of the job being scheduled."
+        },
+        "client": {
+          "type": "string",
+          "description": "The client company name."
+        },
+        "type": {
+          "type": "string",
+          "description": "Type of work order (e.g., New, Reprint)."
+        },
+        "machine": {
+          "type": "string",
+          "description": "The name of the machine assigned to this work order."
+        },
+        "priority": {
+          "type": "string",
+          "description": "Scheduling priority level."
+        },
+        "status": {
+          "type": "string",
+          "description": "Current scheduling status."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "The user ID who created this work order."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the work order was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "workOrderNumber",
+        "jobCardId",
+        "status",
+        "createdById",
+        "createdAt"
       ]
     },
     "ProductionRun": {
@@ -2583,6 +2645,22 @@
             {
               "name": "requirementId",
               "description": "The unique identifier for the material requirement."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/workOrders/{workOrderId}",
+        "definition": {
+          "entityName": "WorkOrder",
+          "schema": {
+            "$ref": "#/backend/entities/WorkOrder"
+          },
+          "description": "Production schedules and machine tasks.",
+          "params": [
+            {
+              "name": "workOrderId",
+              "description": "The unique identifier for the work order."
             }
           ]
         }

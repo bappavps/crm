@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -140,6 +141,13 @@ service cloud.firestore {
     match /jobCards/{jobCardId}/materialRequirements/{requirementId} {
       allow read: if isInternalStaff();
       allow write: if isAdmin() || isManager();
+    }
+
+    match /workOrders/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /productionRuns/{productionRunId} {
