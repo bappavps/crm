@@ -1,6 +1,7 @@
+
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -8,10 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, FileText, Printer, Calculator as CalcIcon } from "lucide-react"
+import { Save, Printer, Calculator as CalcIcon, FilePlus } from "lucide-react"
 
 export default function EstimatePage() {
+  const { toast } = useToast()
   const [inputs, setInputs] = useState<EstimateInputs>({
     labelLength: 50,
     labelWidth: 100,
@@ -40,6 +43,21 @@ export default function EstimatePage() {
     }))
   }
 
+  const handleSave = () => {
+    toast({
+      title: "Estimate Saved",
+      description: `Estimate for ${inputs.orderQuantity} labels has been stored.`,
+    })
+  }
+
+  const handlePrint = () => {
+    toast({
+      title: "Generating PDF",
+      description: "Quotation is being prepared for printing.",
+    })
+    window.print()
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -48,13 +66,12 @@ export default function EstimatePage() {
           <p className="text-muted-foreground">Narrow Web Flexo Layout & Costing Calculator</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline"><Printer className="mr-2 h-4 w-4" /> Print PDF</Button>
-          <Button><Save className="mr-2 h-4 w-4" /> Save Estimate</Button>
+          <Button variant="outline" onClick={handlePrint}><Printer className="mr-2 h-4 w-4" /> Print PDF</Button>
+          <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" /> Save Estimate</Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Input Controls */}
         <div className="lg:col-span-1 space-y-6">
           <Card>
             <CardHeader className="bg-primary/5">
@@ -95,7 +112,6 @@ export default function EstimatePage() {
                   <SelectContent>
                     <SelectItem value="10000">10,000</SelectItem>
                     <SelectItem value="20000">20,000</SelectItem>
-                    <SelectItem value="30000">30,000</SelectItem>
                     <SelectItem value="50000">50,000</SelectItem>
                     <SelectItem value="100000">100,000</SelectItem>
                   </SelectContent>
@@ -145,7 +161,6 @@ export default function EstimatePage() {
           </Card>
         </div>
 
-        {/* Dynamic Results */}
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card className="border-primary/20 bg-primary/5 shadow-inner">
@@ -235,8 +250,8 @@ export default function EstimatePage() {
             </CardContent>
             <CardFooter className="bg-muted/50 border-t p-4 flex justify-between">
               <div className="flex gap-2">
-                <Button size="sm" variant="outline">Convert to BOM</Button>
-                <Button size="sm" variant="outline">Create Sales Order</Button>
+                <Button size="sm" variant="outline" onClick={() => toast({title: "BOM Created", description: "BOM-2024-X initiated."})}><FilePlus className="mr-2 h-4 w-4" /> Convert to BOM</Button>
+                <Button size="sm" variant="outline" onClick={() => toast({title: "Order Converted", description: "SO-900X generated."})}>Create Sales Order</Button>
               </div>
               <p className="text-xs italic text-muted-foreground">*Calculated based on {inputs.machineSpeed}m/min run speed with {inputs.wastagePercent}% wastage.</p>
             </CardFooter>

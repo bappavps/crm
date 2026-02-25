@@ -1,8 +1,10 @@
+
 import type {Metadata} from 'next';
 import { Inter } from "next/font/google";
 import './globals.css';
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { Toaster } from "@/components/ui/toaster";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -43,6 +45,7 @@ export default function RootLayout({
             </SidebarInset>
           </div>
         </SidebarProvider>
+        <Toaster />
       </body>
     </html>
   );
