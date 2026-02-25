@@ -49,7 +49,7 @@ service cloud.firestore {
 
     match /adminUsers/{userId} {
       allow read: if isInternalStaff() || isOwner(userId);
-      allow write: if isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId))); // Allow first-time setup
+      allow write: if isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId))); // Allow first-time setup or admin management
     }
     match /managerUsers/{userId} {
       allow read: if isInternalStaff() || isOwner(userId);
@@ -63,7 +63,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get, list: if isInternalStaff() || isOwner(userId);
       allow create: if isOwner(userId) || isAdmin();
-      allow update: if (resource != null && isOwner(userId)) || isAdmin();
+      allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
     }
 

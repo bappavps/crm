@@ -36,7 +36,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, deleteDoc } from "firebase/firestore"
+import { collection, doc } from "firebase/firestore"
 import { setDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -48,12 +48,12 @@ export default function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<any>(null)
   const [userToDelete, setUserToDelete] = useState<any>(null)
 
-  // Authorization check
+  // Authorization check - ensures current user is recognized as an Admin
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !currentUser) return null;
     return doc(firestore, 'adminUsers', currentUser.uid);
   }, [firestore, currentUser]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
 
   // Firestore Query
   const usersQuery = useMemoFirebase(() => {
@@ -86,9 +86,16 @@ export default function UserManagementPage() {
       ...(editingUser ? {} : { createdAt: new Date().toISOString() })
     }
 
+    // 1. Update main users collection
     setDocumentNonBlocking(doc(firestore, 'users', userId), userData, { merge: true })
 
-    // If role changed, cleanup old role and add new role
+    // 2. Handle role-specific collection markers for security rules
+    const roleColMap: Record<string, string> = {
+      'Admin': 'adminUsers',
+      'Manager': 'managerUsers',
+      'Operator': 'operatorUsers'
+    }
+
     if (editingUser && editingUser.roleId !== roleId) {
       const oldRoleCol = roleColMap[editingUser.roleId]
       if (oldRoleCol) {
@@ -111,14 +118,8 @@ export default function UserManagementPage() {
     setEditingUser(null)
     toast({
       title: editingUser ? "User Updated" : "User Created",
-      description: `${firstName} ${lastName} has been saved as ${roleId}.`
+      description: `${firstName} ${lastName} has been saved successfully.`
     })
-  }
-
-  const roleColMap: Record<string, string> = {
-    'Admin': 'adminUsers',
-    'Manager': 'managerUsers',
-    'Operator': 'operatorUsers'
   }
 
   const toggleUserStatus = (userId: string, currentStatus: boolean) => {
@@ -133,6 +134,12 @@ export default function UserManagementPage() {
 
   const handleDeleteUser = () => {
     if (!firestore || !userToDelete) return
+
+    const roleColMap: Record<string, string> = {
+      'Admin': 'adminUsers',
+      'Manager': 'managerUsers',
+      'Operator': 'operatorUsers'
+    }
 
     // 1. Delete from main collection
     deleteDocumentNonBlocking(doc(firestore, 'users', userToDelete.id))
@@ -153,6 +160,27 @@ export default function UserManagementPage() {
   const openEditDialog = (user: any) => {
     setEditingUser(user)
     setIsDialogOpen(true)
+  }
+
+  if (adminCheckLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+        <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
+        <p>Verifying administrative privileges...</p>
+      </div>
+    );
+  }
+
+  if (!adminData && !adminCheckLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+        <Shield className="h-16 w-16 text-destructive/20" />
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold">Access Denied</h2>
+          <p className="text-muted-foreground max-w-md">You do not have the required permissions to manage users. Please contact the system owner.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -291,13 +319,13 @@ export default function UserManagementPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditDialog(u)}>
+                        <DropdownMenuItem onClick={() => openEditDialog(u)} className="cursor-pointer">
                           <Pencil className="mr-2 h-4 w-4" /> Edit Profile
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toggleUserStatus(u.id, u.isActive)}>
+                        <DropdownMenuItem onClick={() => toggleUserStatus(u.id, u.isActive)} className="cursor-pointer">
                           <Shield className="mr-2 h-4 w-4" /> {u.isActive ? 'Deactivate' : 'Activate'}
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive">
+                        <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive cursor-pointer">
                           <Trash2 className="mr-2 h-4 w-4" /> Delete Account
                         </DropdownMenuItem>
                       </DropdownMenuContent>

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { LogOut, User, Settings, Shield } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * A client-side component that displays the current user's identity and provides navigation options.
@@ -22,12 +23,27 @@ import { LogOut, User, Settings, Shield } from "lucide-react";
 export function UserNav() {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
+  const { toast } = useToast();
 
   const handleLogout = async () => {
     if (auth) {
       await signOut(auth);
-      window.location.reload(); // Refresh to trigger auth initializer logic if needed
+      toast({
+        title: "Signed Out",
+        description: "Your session has been cleared. The system will re-initialize your access.",
+      });
+      // Delay slightly to allow the toast to be seen before reload
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1000);
     }
+  };
+
+  const handleFeatureNotice = (feature: string) => {
+    toast({
+      title: feature,
+      description: `${feature} module is currently under development.`,
+    });
   };
 
   if (isUserLoading) {
@@ -52,7 +68,7 @@ export function UserNav() {
     if (user?.email) {
       return user.email.substring(0, 2).toUpperCase();
     }
-    return "??";
+    return user?.uid.substring(0, 2).toUpperCase() || "??";
   };
 
   return (
@@ -61,7 +77,7 @@ export function UserNav() {
         <Button variant="ghost" className="relative h-10 w-auto px-2 flex items-center gap-3 hover:bg-primary/5">
           <div className="flex flex-col items-end">
             <span className="text-sm font-bold text-foreground">
-              {user?.displayName || "System User"}
+              {user?.displayName || "System Admin"}
             </span>
             <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">
               {user?.email || "Active Session"}
@@ -77,27 +93,27 @@ export function UserNav() {
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">{user?.displayName || "System User"}</p>
             <p className="text-xs leading-none text-muted-foreground">
-              {user?.email || "No email available"}
+              {user?.email || "Authenticated via Anonymous"}
             </p>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleFeatureNotice("Profile Settings")} className="cursor-pointer">
             <User className="mr-2 h-4 w-4" />
             <span>Profile</span>
           </DropdownMenuItem>
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleFeatureNotice("System Settings")} className="cursor-pointer">
             <Settings className="mr-2 h-4 w-4" />
             <span>Settings</span>
           </DropdownMenuItem>
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleFeatureNotice("Security Controls")} className="cursor-pointer">
             <Shield className="mr-2 h-4 w-4" />
             <span>Security</span>
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
+        <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
           <LogOut className="mr-2 h-4 w-4" />
           <span>Log out</span>
         </DropdownMenuItem>
