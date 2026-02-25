@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -24,7 +23,7 @@ import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
-export default function ProductionPlanningPage() {
+export default function JobPlanningPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
@@ -41,7 +40,7 @@ export default function ProductionPlanningPage() {
   // Firestore Queries
   const planningQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'production_jobs');
+    return collection(firestore, 'job_planning');
   }, [firestore, user, adminData])
 
   const { data: jobs, isLoading } = useCollection(planningQuery)
@@ -75,12 +74,12 @@ export default function ProductionPlanningPage() {
       created_by_name: user.displayName || user.email?.split('@')[0] || "Designer"
     }
 
-    addDocumentNonBlocking(collection(firestore, 'production_jobs'), jobData)
+    addDocumentNonBlocking(collection(firestore, 'job_planning'), jobData)
 
     setIsDialogOpen(false)
     toast({
       title: "Job Planned",
-      description: `${jobData.job_name} has been added to the planning board.`
+      description: `${jobData.job_name} has been added to the master planning board.`
     })
   }
 
@@ -95,12 +94,12 @@ export default function ProductionPlanningPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Job Planning Board</h2>
-          <p className="text-muted-foreground">Technical release board for Narrow Web operations.</p>
+          <p className="text-muted-foreground">Technical master source for Narrow Web operations (Design Desk).</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => toast({ title: "Export", description: "Downloading technical sheet..." })}><Download className="mr-2 h-4 w-4" /> Export Board</Button>
+          <Button variant="outline" onClick={() => toast({ title: "Export", description: "Downloading master plan..." })}><Download className="mr-2 h-4 w-4" /> Export Board</Button>
           <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
-            <Plus className="mr-2 h-4 w-4" /> New Planning Sheet
+            <Plus className="mr-2 h-4 w-4" /> New Plan Entry
           </Button>
         </div>
       </div>
@@ -109,8 +108,8 @@ export default function ProductionPlanningPage() {
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleCreateJob}>
             <DialogHeader>
-              <DialogTitle>Create New Job Plan</DialogTitle>
-              <DialogDescription>Input all technical parameters for the conversion and printing stages.</DialogDescription>
+              <DialogTitle>Create Master Job Plan</DialogTitle>
+              <DialogDescription>Input technical parameters that will drive production and slitting modules.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-3 gap-4">
@@ -215,7 +214,7 @@ export default function ProductionPlanningPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12 text-lg">Release to Shop Floor</Button>
+              <Button type="submit" className="w-full h-12 text-lg">Release Master Plan</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -224,7 +223,7 @@ export default function ProductionPlanningPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <ListTodo className="h-5 w-5 text-primary" /> Active Job Board
+            <ListTodo className="h-5 w-5 text-primary" /> Technical Plan Registry
           </CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -296,7 +295,7 @@ export default function ProductionPlanningPage() {
                   </TableRow>
                 ))}
                 {filteredJobs.length === 0 && !isLoading && (
-                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No job plans found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No master plans found.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo } from "react"
@@ -59,7 +58,7 @@ export default function SlittingPage() {
 
   const planningQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'production_jobs');
+    return collection(firestore, 'job_planning');
   }, [firestore, user, adminData])
 
   const { data: jumbos, isLoading: jumbosLoading } = useCollection(jumboQuery)
@@ -83,14 +82,12 @@ export default function SlittingPage() {
     const reqLength = Number(selectedJobData.allocate_meters)
     const reqMaterial = selectedJobData.material
 
-    // Filter rolls: Status In Stock, Same Material, Width >= Req, Length >= Req
     const matching = activeJumbos.filter(j => 
       j.paperType === reqMaterial &&
       j.widthMm >= reqWidth &&
       j.lengthMeters >= reqLength
     )
 
-    // Best Match = Minimum Width Difference
     const sorted = [...matching].sort((a, b) => {
       const diffA = a.widthMm - reqWidth
       const diffB = b.widthMm - reqWidth
@@ -124,19 +121,16 @@ export default function SlittingPage() {
     const slitWidth = Number(formData.get("slitWidth"))
     const numRolls = Number(formData.get("numRolls"))
 
-    // 1. Mark Jumbo as "Consumed"
     updateDocumentNonBlocking(doc(firestore, 'jumbo_stock', selectedJumboId), {
       status: "Consumed",
       updatedAt: new Date().toISOString()
     })
 
-    // 2. Update Job status
-    updateDocumentNonBlocking(doc(firestore, 'production_jobs', selectedJobData.id), {
+    updateDocumentNonBlocking(doc(firestore, 'job_planning', selectedJobData.id), {
       status: "MATERIAL ASSIGNED",
       updatedAt: new Date().toISOString()
     })
 
-    // 3. Create Slitted Rolls with Job Assignment
     const sep = settings?.separator || "-"
     const prefixType = settings?.childRollPrefixType || "Alphabet"
 
@@ -185,7 +179,7 @@ export default function SlittingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Slitting (Conversion)</h2>
-          <p className="text-muted-foreground">Assign jumbo stock to planned design sheets.</p>
+          <p className="text-muted-foreground">Assign jumbo stock to released technical plans (Master Planning).</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
           <Scissors className="mr-2 h-4 w-4" /> Start Slitting Run
@@ -197,18 +191,18 @@ export default function SlittingPage() {
           <form onSubmit={handleSlittingConversion}>
             <DialogHeader>
               <DialogTitle>Execute Slitting & Assign Plan</DialogTitle>
-              <DialogDescription>Select a released planning sheet to see auto-paper suggestions.</DialogDescription>
+              <DialogDescription>Select a released master plan to see auto-paper suggestions based on technical requirements.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="jobId">Select Planning Sheet (Design)</Label>
+                <Label htmlFor="jobId">Select Master Plan (Design Desk)</Label>
                 <Select name="jobId" onValueChange={handleJobSelect} required>
-                  <SelectTrigger><SelectValue placeholder="Select Job Plate" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select Plan ID" /></SelectTrigger>
                   <SelectContent>
                     {readyJobs.map((j) => (
                       <SelectItem key={j.id} value={j.id}>{j.plate_no} - {j.job_name}</SelectItem>
                     ))}
-                    {readyJobs.length === 0 && <SelectItem value="none" disabled>No jobs released by Design</SelectItem>}
+                    {readyJobs.length === 0 && <SelectItem value="none" disabled>No plans released by Design</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
@@ -216,7 +210,7 @@ export default function SlittingPage() {
               {selectedJobData && (
                 <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 space-y-3">
                   <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase">
-                    <ListTodo className="h-3 w-3" /> Technical Requirements
+                    <ListTodo className="h-3 w-3" /> Technical Plan Parameters
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div className="space-y-1">
@@ -224,11 +218,11 @@ export default function SlittingPage() {
                       <p className="font-bold">{selectedJobData.material}</p>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground uppercase">Alloc. Width</Label>
+                      <Label className="text-[10px] text-muted-foreground uppercase">Req. Width</Label>
                       <p className="font-bold">{selectedJobData.paper_width} mm</p>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground uppercase">Alloc. Meter</Label>
+                      <Label className="text-[10px] text-muted-foreground uppercase">Req. Meter</Label>
                       <p className="font-bold text-accent">{selectedJobData.allocate_meters} m</p>
                     </div>
                   </div>
@@ -239,7 +233,7 @@ export default function SlittingPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <Label className="flex items-center gap-2 text-sm font-bold">
-                      <Sparkles className="h-4 w-4 text-primary" /> Auto Paper Suggestions
+                      <Sparkles className="h-4 w-4 text-primary" /> Intelligent Stock Matching
                     </Label>
                   </div>
                   
@@ -294,7 +288,7 @@ export default function SlittingPage() {
                   ) : (
                     <div className="p-10 text-center border-2 border-dashed rounded-lg space-y-2">
                       <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto opacity-50" />
-                      <p className="text-sm font-medium text-muted-foreground">No matching stock found for these specifications.</p>
+                      <p className="text-sm font-medium text-muted-foreground">No matching inventory found for the master plan specs.</p>
                     </div>
                   )}
                 </div>
@@ -303,7 +297,7 @@ export default function SlittingPage() {
               {selectedJumboId && (
                 <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
                   <div className="grid gap-2">
-                    <Label htmlFor="slitWidth">Slit Width (mm)</Label>
+                    <Label htmlFor="slitWidth">Output Slit Width (mm)</Label>
                     <Input 
                       id="slitWidth" 
                       name="slitWidth" 
@@ -313,7 +307,7 @@ export default function SlittingPage() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="numRolls">Roll Count</Label>
+                    <Label htmlFor="numRolls">Total Rolls to Slit</Label>
                     <Input id="numRolls" name="numRolls" type="number" defaultValue={1} required />
                   </div>
                 </div>
@@ -321,7 +315,7 @@ export default function SlittingPage() {
             </div>
             <DialogFooter>
               <Button type="submit" className="w-full h-12" disabled={!selectedJumboId}>
-                Convert & Assign Material
+                Confirm Conversion & Assign to Plan
               </Button>
             </DialogFooter>
           </form>
@@ -330,13 +324,13 @@ export default function SlittingPage() {
 
       <div className="grid grid-cols-1 gap-6">
         <Card>
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Assigned Slitted Roll Stock</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Master Assigned Slitted Stock</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Roll ID</TableHead>
-                  <TableHead>Assigned Plate</TableHead>
+                  <TableHead>Assigned Master Plate</TableHead>
                   <TableHead>Dimensions</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -358,7 +352,7 @@ export default function SlittingPage() {
                   </TableRow>
                 ))}
                 {slittedRolls.length === 0 && !itemsLoading && (
-                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">No slitted stock found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">No slitted stock assigned to master plans.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

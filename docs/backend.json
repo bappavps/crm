@@ -1,4 +1,3 @@
-
 {
   "entities": {
     "User": {
@@ -50,9 +49,9 @@
         "createdAt": { "type": "string", "format": "date-time" }
       }
     },
-    "ProductionJob": {
-      "title": "ProductionJob",
-      "description": "Production Planning entity based on Design department releases.",
+    "JobPlan": {
+      "title": "JobPlan",
+      "description": "Master technical production plan from Design.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -76,26 +75,6 @@
         "created_date": { "type": "string", "format": "date-time" },
         "created_by": { "type": "string" },
         "created_by_name": { "type": "string" }
-      }
-    },
-    "Job": {
-      "title": "Job",
-      "description": "Design job definition for material assignment.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "jobId": { "type": "string" },
-        "jobName": { "type": "string" },
-        "customerName": { "type": "string" },
-        "labelWidth": { "type": "number" },
-        "labelHeight": { "type": "number" },
-        "requiredPaperWidth": { "type": "number" },
-        "requiredPaperLength": { "type": "number" },
-        "materialType": { "type": "string" },
-        "status": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "createdById": { "type": "string" },
-        "createdByName": { "type": "string" }
       }
     },
     "Customer": {
@@ -147,19 +126,19 @@
         }
       },
       {
-        "path": "/production_jobs/{id}",
+        "path": "/job_planning/{id}",
         "definition": {
-          "entityName": "ProductionJob",
-          "schema": { "$ref": "#/backend/entities/ProductionJob" },
-          "description": "Production Planning jobs released by Design."
+          "entityName": "JobPlan",
+          "schema": { "$ref": "#/backend/entities/JobPlan" },
+          "description": "Master Production Planning jobs released by Design."
         }
       },
       {
         "path": "/jobs/{id}",
         "definition": {
-          "entityName": "Job",
-          "schema": { "$ref": "#/backend/entities/Job" },
-          "description": "Design job definitions."
+          "entityName": "User",
+          "schema": { "type": "object" },
+          "description": "General job info."
         }
       },
       {
