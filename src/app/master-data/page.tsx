@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState } from "react"
@@ -18,7 +19,7 @@ import {
 import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 export default function MasterDataPage() {
   const { toast } = useToast()
@@ -26,6 +27,7 @@ export default function MasterDataPage() {
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders">("materials")
+  const [editingItem, setEditingItem] = useState<any>(null)
 
   // Wait for the user to have their Admin role document ready before fetching protected collections
   const adminDocRef = useMemoFirebase(() => {
@@ -68,23 +70,44 @@ export default function MasterDataPage() {
     
     if (!firestore || !user) return
 
-    const colRef = collection(firestore, dialogType)
-    addDocumentNonBlocking(colRef, {
-      ...data,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      createdById: user.uid
-    })
+    if (editingItem) {
+      const itemRef = doc(firestore, dialogType, editingItem.id)
+      updateDocumentNonBlocking(itemRef, {
+        ...data,
+        updatedAt: new Date().toISOString(),
+        updatedById: user.uid
+      })
+      toast({
+        title: "Record Updated",
+        description: `Changes to ${data.name || 'item'} have been saved.`,
+      })
+    } else {
+      const colRef = collection(firestore, dialogType)
+      addDocumentNonBlocking(colRef, {
+        ...data,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        createdById: user.uid
+      })
+      toast({
+        title: "Master Data Updated",
+        description: `New ${dialogType.slice(0, -1)} has been added successfully.`,
+      })
+    }
 
     setIsDialogOpen(false)
-    toast({
-      title: "Master Data Updated",
-      description: `New ${dialogType.slice(0, -1)} has been added successfully.`,
-    })
+    setEditingItem(null)
   }
 
   const openAddDialog = (type: "materials" | "machines" | "customers" | "cylinders") => {
     setDialogType(type)
+    setEditingItem(null)
+    setIsDialogOpen(true)
+  }
+
+  const openEditDialog = (type: "materials" | "machines" | "customers" | "cylinders", item: any) => {
+    setDialogType(type)
+    setEditingItem(item)
     setIsDialogOpen(true)
   }
 
@@ -97,86 +120,89 @@ export default function MasterDataPage() {
         </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => {
+        setIsDialogOpen(open)
+        if (!open) setEditingItem(null)
+      }}>
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleSave}>
             <DialogHeader>
-              <DialogTitle>Add New {dialogType.charAt(0).toUpperCase() + dialogType.slice(1, -1)}</DialogTitle>
+              <DialogTitle>{editingItem ? 'Edit' : 'Add New'} {dialogType.charAt(0).toUpperCase() + dialogType.slice(1, -1)}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               {dialogType === "materials" && (
                 <>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" required />
+                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="gsm" className="text-right">GSM</Label>
-                    <Input id="gsm" name="gsm" type="number" className="col-span-3" required />
+                    <Input id="gsm" name="gsm" type="number" className="col-span-3" defaultValue={editingItem?.gsm} required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="ratePerSqMeter" className="text-right">Rate/sqm</Label>
-                    <Input id="ratePerSqMeter" name="ratePerSqMeter" type="number" step="0.01" className="col-span-3" required />
+                    <Input id="ratePerSqMeter" name="ratePerSqMeter" type="number" step="0.01" className="col-span-3" defaultValue={editingItem?.ratePerSqMeter} required />
                   </div>
-                  <input type="hidden" name="type" value="Substrate" />
-                  <input type="hidden" name="unitOfMeasure" value="sq meter" />
-                  <input type="hidden" name="description" value="Added via Master Data" />
+                  <input type="hidden" name="type" value={editingItem?.type || "Substrate"} />
+                  <input type="hidden" name="unitOfMeasure" value={editingItem?.unitOfMeasure || "sq meter"} />
+                  <input type="hidden" name="description" value={editingItem?.description || "Managed via Master Data"} />
                 </>
               )}
               {dialogType === "machines" && (
                 <>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" required />
+                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="maxPrintingWidthMm" className="text-right">Max Width</Label>
-                    <Input id="maxPrintingWidthMm" name="maxPrintingWidthMm" type="number" className="col-span-3" required />
+                    <Input id="maxPrintingWidthMm" name="maxPrintingWidthMm" type="number" className="col-span-3" defaultValue={editingItem?.maxPrintingWidthMm} required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="costPerHour" className="text-right">Cost/hr</Label>
-                    <Input id="costPerHour" name="costPerHour" type="number" className="col-span-3" required />
+                    <Input id="costPerHour" name="costPerHour" type="number" className="col-span-3" defaultValue={editingItem?.costPerHour} required />
                   </div>
-                  <input type="hidden" name="type" value="Printing Machine" />
-                  <input type="hidden" name="speedMetersPerMin" value="100" />
-                  <input type="hidden" name="description" value="Narrow Web Flexo" />
+                  <input type="hidden" name="type" value={editingItem?.type || "Printing Machine"} />
+                  <input type="hidden" name="speedMetersPerMin" value={editingItem?.speedMetersPerMin || "100"} />
+                  <input type="hidden" name="description" value={editingItem?.description || "Narrow Web Flexo"} />
                 </>
               )}
               {dialogType === "customers" && (
                 <>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Company</Label>
-                    <Input id="name" name="name" className="col-span-3" required />
+                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="gstNumber" className="text-right">GST No.</Label>
-                    <Input id="gstNumber" name="gstNumber" className="col-span-3" required />
+                    <Input id="gstNumber" name="gstNumber" className="col-span-3" defaultValue={editingItem?.gstNumber} required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="email" className="text-right">Email</Label>
-                    <Input id="email" name="email" type="email" className="col-span-3" required />
+                    <Input id="email" name="email" type="email" className="col-span-3" defaultValue={editingItem?.email} required />
                   </div>
-                  <input type="hidden" name="contactPerson" value="Manager" />
-                  <input type="hidden" name="phone" value="N/A" />
-                  <input type="hidden" name="address" value="N/A" />
+                  <input type="hidden" name="contactPerson" value={editingItem?.contactPerson || "Manager"} />
+                  <input type="hidden" name="phone" value={editingItem?.phone || "N/A"} />
+                  <input type="hidden" name="address" value={editingItem?.address || "N/A"} />
                 </>
               )}
               {dialogType === "cylinders" && (
                 <>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" placeholder="e.g. Cyl 508" required />
+                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} placeholder="e.g. Cyl 508" required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="repeatLengthMm" className="text-right">Repeat (mm)</Label>
-                    <Input id="repeatLengthMm" name="repeatLengthMm" type="number" className="col-span-3" required />
+                    <Input id="repeatLengthMm" name="repeatLengthMm" type="number" className="col-span-3" defaultValue={editingItem?.repeatLengthMm} required />
                   </div>
-                  <input type="hidden" name="description" value="Flexo Cylinder" />
+                  <input type="hidden" name="description" value={editingItem?.description || "Flexo Cylinder"} />
                 </>
               )}
             </div>
             <DialogFooter>
-              <Button type="submit">Save Changes</Button>
+              <Button type="submit">{editingItem ? 'Save Changes' : 'Create Record'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -213,7 +239,9 @@ export default function MasterDataPage() {
                       <TableCell className="font-medium">{m.name}</TableCell>
                       <TableCell>{m.gsm}</TableCell>
                       <TableCell>₹{m.ratePerSqMeter}</TableCell>
-                      <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("materials", m)}>Edit</Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {(!materials || materials.length === 0) && (
@@ -251,7 +279,9 @@ export default function MasterDataPage() {
                       <TableCell className="font-medium">{m.name}</TableCell>
                       <TableCell>{m.maxPrintingWidthMm}mm</TableCell>
                       <TableCell>₹{m.costPerHour}</TableCell>
-                      <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("machines", m)}>Edit</Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {(!machines || machines.length === 0) && (
@@ -287,7 +317,9 @@ export default function MasterDataPage() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell>{c.repeatLengthMm}mm</TableCell>
-                      <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("cylinders", c)}>Edit</Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {(!cylinders || cylinders.length === 0) && (
@@ -325,7 +357,9 @@ export default function MasterDataPage() {
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell>{c.gstNumber}</TableCell>
                       <TableCell>{c.email}</TableCell>
-                      <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("customers", c)}>Edit</Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                   {(!customers || customers.length === 0) && (

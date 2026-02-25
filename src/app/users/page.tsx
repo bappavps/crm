@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { setDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function UserManagementPage() {
@@ -55,8 +55,6 @@ export default function UserManagementPage() {
     const lastName = formData.get("lastName") as string
     const roleId = formData.get("roleId") as string
     
-    // In a real app, you'd use Firebase Auth to create the user.
-    // For this prototype, we'll create the database record.
     const newUserId = crypto.randomUUID()
     const userData = {
       id: newUserId,
@@ -70,10 +68,8 @@ export default function UserManagementPage() {
       updatedAt: new Date().toISOString()
     }
 
-    // 1. Create the user profile
     setDocumentNonBlocking(doc(firestore, 'users', newUserId), userData, { merge: true })
 
-    // 2. Create the role marker document for DBAC
     const roleColMap: Record<string, string> = {
       'Admin': 'adminUsers',
       'Manager': 'managerUsers',
@@ -95,6 +91,16 @@ export default function UserManagementPage() {
     toast({
       title: "User Created",
       description: `${firstName} ${lastName} has been added as ${roleId}.`
+    })
+  }
+
+  const toggleUserStatus = (userId: string, currentStatus: boolean) => {
+    if (!firestore) return
+    const userRef = doc(firestore, 'users', userId)
+    updateDocumentNonBlocking(userRef, { isActive: !currentStatus })
+    toast({
+      title: "User Status Updated",
+      description: `User account has been ${!currentStatus ? 'activated' : 'deactivated'}.`
     })
   }
 
@@ -208,8 +214,12 @@ export default function UserManagementPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => toast({ title: "Profile Management", description: "Loading user audit logs..." })}>
-                      Edit
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => toggleUserStatus(u.id, u.isActive)}
+                    >
+                      {u.isActive ? 'Deactivate' : 'Activate'}
                     </Button>
                   </TableCell>
                 </TableRow>
