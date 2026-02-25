@@ -1,7 +1,13 @@
 import type {Metadata} from 'next';
+import { Inter } from "next/font/google";
 import './globals.css';
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: 'Shree Label ERP',
@@ -14,15 +20,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="font-body antialiased bg-background overflow-hidden">
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${inter.className} antialiased bg-background overflow-hidden`} suppressHydrationWarning>
         <SidebarProvider defaultOpen={true}>
-          <div className="flex min-h-screen w-full">
+          <div className="flex min-h-screen w-full sidebar-wrapper">
             <AppSidebar />
             <SidebarInset className="flex flex-col flex-1 overflow-auto">
               <header className="h-16 border-b bg-card flex items-center px-6 sticky top-0 z-10">

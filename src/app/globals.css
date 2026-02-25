@@ -32,6 +32,8 @@
     --sidebar-accent-foreground: 31 77% 65%;
     --sidebar-border: 25 20% 20%;
     --sidebar-ring: 31 77% 53%;
+    --sidebar-width: 16rem;
+    --sidebar-width-icon: 3rem;
   }
 }
 
@@ -40,6 +42,12 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-body;
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
   }
+}
+
+.sidebar-wrapper {
+  --sidebar-width: 16rem;
+  --sidebar-width-icon: 3rem;
 }
