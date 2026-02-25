@@ -42,10 +42,17 @@ service cloud.firestore {
 
     match /jumbo_stock/{id} { allow read, write: if isInternalStaff(); }
     match /inventoryItems/{id} { allow read, write: if isInternalStaff(); }
+    
+    match /jobs/{id} {
+      allow read: if isInternalStaff();
+      allow create, update, delete: if isDesign();
+    }
+
     match /production_jobs/{id} { 
       allow read: if isInternalStaff(); 
       allow create, update, delete: if isDesign(); 
     }
+    
     match /settings/{id} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
     match /customers/{id} { allow read, write: if isInternalStaff(); }
     match /materials/{id} { allow read, write: if isInternalStaff(); }

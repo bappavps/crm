@@ -75,6 +75,26 @@
         "createdByName": { "type": "string" }
       }
     },
+    "Job": {
+      "title": "Job",
+      "description": "Design job definition for material assignment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "jobId": { "type": "string" },
+        "jobName": { "type": "string" },
+        "customerName": { "type": "string" },
+        "labelWidth": { "type": "number" },
+        "labelHeight": { "type": "number" },
+        "requiredPaperWidth": { "type": "number" },
+        "requiredPaperLength": { "type": "number" },
+        "materialType": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdById": { "type": "string" },
+        "createdByName": { "type": "string" }
+      }
+    },
     "Customer": {
       "title": "Customer",
       "type": "object",
@@ -116,6 +136,14 @@
           "entityName": "ProductionJob",
           "schema": { "$ref": "#/backend/entities/ProductionJob" },
           "description": "Production Planning jobs released by Design."
+        }
+      },
+      {
+        "path": "/jobs/{id}",
+        "definition": {
+          "entityName": "Job",
+          "schema": { "$ref": "#/backend/entities/Job" },
+          "description": "Design job definitions."
         }
       },
       {
