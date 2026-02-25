@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -6,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ShoppingBag, Plus, Loader2, Calendar as CalIcon } from "lucide-react"
+import { ShoppingBag, Plus, Loader2, Calendar as CalIcon, Info, Receipt, Truck } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -18,6 +17,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -28,6 +28,8 @@ export default function PurchasePage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [selectedPO, setSelectedPO] = useState<any>(null)
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -92,6 +94,11 @@ export default function PurchasePage() {
       title: "Purchase Order Created",
       description: `${poData.poNumber} has been issued to ${poData.supplierName}.`
     })
+  }
+
+  const openDetails = (po: any) => {
+    setSelectedPO(po)
+    setIsDetailsOpen(true)
   }
 
   return (
@@ -164,6 +171,63 @@ export default function PurchasePage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-primary" /> Purchase Order Overview
+            </DialogTitle>
+            <DialogDescription>Internal procurement record for {selectedPO?.poNumber}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="flex justify-between items-start bg-primary/5 p-4 rounded-lg">
+              <div className="space-y-1">
+                <p className="text-[10px] uppercase font-bold text-primary">Vendor Partner</p>
+                <h3 className="text-lg font-bold">{selectedPO?.supplierName}</h3>
+              </div>
+              <Badge className={selectedPO?.status === 'Received' ? 'bg-emerald-500' : 'bg-primary'}>
+                {selectedPO?.status}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="border rounded-md p-3 space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                  <CalIcon className="h-3 w-3" /> Ordered On
+                </div>
+                <p className="text-sm font-semibold">{selectedPO?.orderDate ? new Date(selectedPO.orderDate).toLocaleDateString() : 'N/A'}</p>
+              </div>
+              <div className="border rounded-md p-3 space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                  <Truck className="h-3 w-3" /> Delivery ETA
+                </div>
+                <p className="text-sm font-semibold">{selectedPO?.requiredDate ? new Date(selectedPO.requiredDate).toLocaleDateString() : 'N/A'}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                <Receipt className="h-3 w-3" /> Procurement Line Items
+              </div>
+              <div className="bg-muted/30 p-4 rounded-lg">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium">{selectedPO?.materialName}</span>
+                  <span className="text-sm font-bold">₹{selectedPO?.totalAmount?.toLocaleString()}</span>
+                </div>
+                <Separator className="my-2" />
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>Grand Total (Estimated)</span>
+                  <span className="font-bold text-foreground">₹{selectedPO?.totalAmount?.toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="w-full" onClick={() => setIsDetailsOpen(false)}>Close Order</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -202,7 +266,7 @@ export default function PurchasePage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm">Details</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openDetails(po)}>Details</Button>
                   </TableCell>
                 </TableRow>
               ))}

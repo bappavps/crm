@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -6,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ShoppingCart, Plus, Search, Loader2 } from "lucide-react"
+import { ShoppingCart, Plus, Search, Loader2, Info, Calendar, User, Hash, Wallet } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { 
   Dialog, 
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -28,6 +28,8 @@ export default function SalesOrderPage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
   // Fetching Data from Firestore
@@ -72,6 +74,7 @@ export default function SalesOrderPage() {
       customerId,
       customerName: selectedCustomer?.name || "New Customer",
       estimateId: estimateId || "Direct Entry",
+      productCode: selectedEstimate?.productCode || "Custom Label",
       poNumber: poNumber || "N/A",
       orderDate: new Date().toISOString(),
       deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
@@ -89,6 +92,11 @@ export default function SalesOrderPage() {
       title: "Sales Order Created",
       description: `New order ${orderData.orderNumber} has been generated.`,
     })
+  }
+
+  const openDetails = (order: any) => {
+    setSelectedOrder(order)
+    setIsDetailsOpen(true)
   }
 
   const filteredOrders = orders?.filter(order => 
@@ -152,6 +160,73 @@ export default function SalesOrderPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-primary" /> Sales Order Details
+            </DialogTitle>
+            <DialogDescription>Full summary for Order {selectedOrder?.orderNumber}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="flex justify-between items-center border-b pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary">
+                  <User className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Client</p>
+                  <p className="font-bold text-base">{selectedOrder?.customerName}</p>
+                </div>
+              </div>
+              <Badge className={selectedOrder?.status === 'Confirmed' ? 'bg-blue-500' : 'bg-primary'}>
+                {selectedOrder?.status}
+              </Badge>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                  <Calendar className="h-3 w-3" /> Order Date
+                </div>
+                <p className="text-sm font-semibold">{selectedOrder?.orderDate ? new Date(selectedOrder.orderDate).toLocaleDateString() : 'N/A'}</p>
+              </div>
+              <div className="space-y-1 text-right">
+                <div className="flex items-center justify-end gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                  <Calendar className="h-3 w-3" /> Delivery Due
+                </div>
+                <p className="text-sm font-semibold">{selectedOrder?.deliveryDate ? new Date(selectedOrder.deliveryDate).toLocaleDateString() : 'N/A'}</p>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                  <Hash className="h-3 w-3" /> PO Reference
+                </div>
+                <p className="text-sm font-mono font-bold text-primary">{selectedOrder?.poNumber || 'N/A'}</p>
+              </div>
+              <div className="space-y-1 text-right">
+                <div className="flex items-center justify-end gap-1.5 text-[10px] font-bold text-muted-foreground uppercase">
+                  <Wallet className="h-3 w-3" /> Order Quantity
+                </div>
+                <p className="text-sm font-black text-foreground">{selectedOrder?.qty?.toLocaleString()} <span className="text-[10px] font-normal text-muted-foreground">labels</span></p>
+              </div>
+            </div>
+
+            <div className="bg-primary/5 p-4 rounded-lg flex justify-between items-center">
+              <span className="text-xs font-bold text-primary uppercase">Total Order Value</span>
+              <span className="text-2xl font-black text-primary">₹{selectedOrder?.totalAmount?.toLocaleString()}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="w-full" onClick={() => setIsDetailsOpen(false)}>Close Summary</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
@@ -205,7 +280,7 @@ export default function SalesOrderPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm">Details</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openDetails(order)}>Details</Button>
                   </TableCell>
                 </TableRow>
               ))}

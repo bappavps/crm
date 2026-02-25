@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Plus, Filter, QrCode, Loader2, Package } from "lucide-react"
+import { Search, Plus, Filter, QrCode, Loader2, Package, Info, MapPin, Calendar, Boxes } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -17,6 +17,7 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
+import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -27,6 +28,8 @@ export default function InventoryPage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
 
   // Authorization check
@@ -71,6 +74,11 @@ export default function InventoryPage() {
       title: "Item Added",
       description: `${itemData.name} has been added to the inventory registry.`
     })
+  }
+
+  const openDetails = (item: any) => {
+    setSelectedItem(item)
+    setIsDetailsOpen(true)
   }
 
   const filteredInventory = inventory?.filter(item => 
@@ -143,6 +151,73 @@ export default function InventoryPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-primary" /> Item Details
+            </DialogTitle>
+            <DialogDescription>Full stock tracking data for {selectedItem?.barcode}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold">{selectedItem?.name}</h3>
+                <p className="text-xs text-muted-foreground font-mono">{selectedItem?.barcode}</p>
+              </div>
+              <Badge className={
+                selectedItem?.status === 'In Stock' ? 'bg-emerald-500' : 
+                selectedItem?.status === 'Low Stock' ? 'bg-amber-500' : 'bg-primary'
+              }>
+                {selectedItem?.status}
+              </Badge>
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  <Boxes className="h-3 w-3" /> Quantity & Type
+                </div>
+                <div className="space-y-1">
+                  <p className="text-2xl font-black">{selectedItem?.currentQuantity} <span className="text-sm font-normal text-muted-foreground">{selectedItem?.unitOfMeasure || 'units'}</span></p>
+                  <Badge variant="outline" className="text-[10px]">{selectedItem?.itemType}</Badge>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                  <MapPin className="h-3 w-3" /> Location
+                </div>
+                <div className="space-y-1">
+                  <p className="font-semibold text-sm">{selectedItem?.location || 'Warehouse A'}</p>
+                  <p className="text-[10px] text-muted-foreground italic">Ready for picking</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                <Calendar className="h-3 w-3" /> Tracking Info
+              </div>
+              <div className="grid grid-cols-2 gap-4 bg-muted/30 p-3 rounded-md text-[11px]">
+                <div>
+                  <span className="text-muted-foreground block">Created At</span>
+                  <span className="font-medium">{selectedItem?.createdAt ? new Date(selectedItem.createdAt).toLocaleString() : 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">Dimensions</span>
+                  <span className="font-medium">{selectedItem?.dimensions || 'N/A'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="w-full" onClick={() => setIsDetailsOpen(false)}>Close Record</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -204,7 +279,7 @@ export default function InventoryPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm">Details</Button>
+                    <Button variant="ghost" size="sm" onClick={() => openDetails(item)}>Details</Button>
                   </TableCell>
                 </TableRow>
               ))}
