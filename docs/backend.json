@@ -107,6 +107,19 @@
         "gstNumber": { "type": "string" }
       }
     },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Paper and material vendors.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "gstNumber": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" }
+      }
+    },
     "RollSettings": {
       "title": "RollSettings",
       "type": "object",
@@ -172,6 +185,10 @@
       {
         "path": "/settings/{id}",
         "definition": { "entityName": "RollSettings", "schema": { "$ref": "#/backend/entities/RollSettings" }, "description": "App settings." }
+      },
+      {
+        "path": "/suppliers/{id}",
+        "definition": { "entityName": "Supplier", "schema": { "$ref": "#/backend/entities/Supplier" }, "description": "Material vendors." }
       }
     ]
   }

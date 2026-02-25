@@ -16,17 +16,17 @@ import {
   DialogTitle, 
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler } from "lucide-react"
+import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler, Truck, Trash2, Pencil } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 export default function MasterDataPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders">("materials")
+  const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders" | "suppliers">("materials")
   const [editingItem, setEditingItem] = useState<any>(null)
 
   // Wait for the user to have their Admin role document ready before fetching protected collections
@@ -37,7 +37,7 @@ export default function MasterDataPage() {
   
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Firestore Queries - Only run if adminData is available to prevent early permission errors
+  // Firestore Queries
   const materialsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'materials');
@@ -58,10 +58,16 @@ export default function MasterDataPage() {
     return collection(firestore, 'cylinders');
   }, [firestore, user, adminData])
 
+  const suppliersQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return collection(firestore, 'suppliers');
+  }, [firestore, user, adminData])
+
   const { data: materials, isLoading: materialsLoading } = useCollection(materialsQuery)
   const { data: machines, isLoading: machinesLoading } = useCollection(machinesQuery)
   const { data: customers, isLoading: customersLoading } = useCollection(customersQuery)
   const { data: cylinders, isLoading: cylindersLoading } = useCollection(cylindersQuery)
+  const { data: suppliers, isLoading: suppliersLoading } = useCollection(suppliersQuery)
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -99,13 +105,24 @@ export default function MasterDataPage() {
     setEditingItem(null)
   }
 
-  const openAddDialog = (type: "materials" | "machines" | "customers" | "cylinders") => {
+  const handleDelete = (type: string, id: string, name: string) => {
+    if (!firestore) return
+    if (confirm(`Are you sure you want to delete "${name}"?`)) {
+      deleteDocumentNonBlocking(doc(firestore, type, id))
+      toast({
+        title: "Record Deleted",
+        description: `${name} has been removed from master data.`
+      })
+    }
+  }
+
+  const openAddDialog = (type: "materials" | "machines" | "customers" | "cylinders" | "suppliers") => {
     setDialogType(type)
     setEditingItem(null)
     setIsDialogOpen(true)
   }
 
-  const openEditDialog = (type: "materials" | "machines" | "customers" | "cylinders", item: any) => {
+  const openEditDialog = (type: "materials" | "machines" | "customers" | "cylinders" | "suppliers", item: any) => {
     setDialogType(type)
     setEditingItem(item)
     setIsDialogOpen(true)
@@ -116,7 +133,7 @@ export default function MasterDataPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Master Data Management</h2>
-          <p className="text-muted-foreground">Configure global constants, machines, and industry rates.</p>
+          <p className="text-muted-foreground">Configure global constants, materials, machines, and industry rates.</p>
         </div>
       </div>
 
@@ -130,11 +147,11 @@ export default function MasterDataPage() {
               <DialogTitle>{editingItem ? 'Edit' : 'Add New'} {dialogType.charAt(0).toUpperCase() + dialogType.slice(1, -1)}</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              {dialogType === "materials" && (
+              {(dialogType === "materials") && (
                 <>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} required />
+                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} placeholder="e.g. Chromo, PP White" required />
                   </div>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="gsm" className="text-right">GSM</Label>
@@ -144,9 +161,6 @@ export default function MasterDataPage() {
                     <Label htmlFor="ratePerSqMeter" className="text-right">Rate/sqm</Label>
                     <Input id="ratePerSqMeter" name="ratePerSqMeter" type="number" step="0.01" className="col-span-3" defaultValue={editingItem?.ratePerSqMeter} required />
                   </div>
-                  <input type="hidden" name="type" value={editingItem?.type || "Substrate"} />
-                  <input type="hidden" name="unitOfMeasure" value={editingItem?.unitOfMeasure || "sq meter"} />
-                  <input type="hidden" name="description" value={editingItem?.description || "Managed via Master Data"} />
                 </>
               )}
               {dialogType === "machines" && (
@@ -163,12 +177,9 @@ export default function MasterDataPage() {
                     <Label htmlFor="costPerHour" className="text-right">Cost/hr</Label>
                     <Input id="costPerHour" name="costPerHour" type="number" className="col-span-3" defaultValue={editingItem?.costPerHour} required />
                   </div>
-                  <input type="hidden" name="type" value={editingItem?.type || "Printing Machine"} />
-                  <input type="hidden" name="speedMetersPerMin" value={editingItem?.speedMetersPerMin || "100"} />
-                  <input type="hidden" name="description" value={editingItem?.description || "Narrow Web Flexo"} />
                 </>
               )}
-              {dialogType === "customers" && (
+              {(dialogType === "customers" || dialogType === "suppliers") && (
                 <>
                   <div className="grid grid-cols-4 items-center gap-4">
                     <Label htmlFor="name" className="text-right">Company</Label>
@@ -182,9 +193,6 @@ export default function MasterDataPage() {
                     <Label htmlFor="email" className="text-right">Email</Label>
                     <Input id="email" name="email" type="email" className="col-span-3" defaultValue={editingItem?.email} required />
                   </div>
-                  <input type="hidden" name="contactPerson" value={editingItem?.contactPerson || "Manager"} />
-                  <input type="hidden" name="phone" value={editingItem?.phone || "N/A"} />
-                  <input type="hidden" name="address" value={editingItem?.address || "N/A"} />
                 </>
               )}
               {dialogType === "cylinders" && (
@@ -197,7 +205,6 @@ export default function MasterDataPage() {
                     <Label htmlFor="repeatLengthMm" className="text-right">Repeat (mm)</Label>
                     <Input id="repeatLengthMm" name="repeatLengthMm" type="number" className="col-span-3" defaultValue={editingItem?.repeatLengthMm} required />
                   </div>
-                  <input type="hidden" name="description" value={editingItem?.description || "Flexo Cylinder"} />
                 </>
               )}
             </div>
@@ -209,18 +216,19 @@ export default function MasterDataPage() {
       </Dialog>
 
       <Tabs defaultValue="materials" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 lg:w-[850px]">
-          <TabsTrigger value="materials" className="flex items-center gap-2"><Database className="h-4 w-4" /> Materials</TabsTrigger>
-          <TabsTrigger value="machines" className="flex items-center gap-2"><Box className="h-4 w-4" /> Machines</TabsTrigger>
-          <TabsTrigger value="cylinders" className="flex items-center gap-2"><Ruler className="h-4 w-4" /> Cylinders</TabsTrigger>
-          <TabsTrigger value="clients" className="flex items-center gap-2"><Users className="h-4 w-4" /> Clients</TabsTrigger>
-          <TabsTrigger value="rates" className="flex items-center gap-2"><TrendingUp className="h-4 w-4" /> Rates</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-6 lg:w-[1000px]">
+          <TabsTrigger value="materials" className="flex items-center gap-2 text-xs lg:text-sm"><Database className="h-4 w-4" /> Materials</TabsTrigger>
+          <TabsTrigger value="suppliers" className="flex items-center gap-2 text-xs lg:text-sm"><Truck className="h-4 w-4" /> Suppliers</TabsTrigger>
+          <TabsTrigger value="machines" className="flex items-center gap-2 text-xs lg:text-sm"><Box className="h-4 w-4" /> Machines</TabsTrigger>
+          <TabsTrigger value="cylinders" className="flex items-center gap-2 text-xs lg:text-sm"><Ruler className="h-4 w-4" /> Cylinders</TabsTrigger>
+          <TabsTrigger value="clients" className="flex items-center gap-2 text-xs lg:text-sm"><Users className="h-4 w-4" /> Clients</TabsTrigger>
+          <TabsTrigger value="rates" className="flex items-center gap-2 text-xs lg:text-sm"><TrendingUp className="h-4 w-4" /> Rates</TabsTrigger>
         </TabsList>
         
         <TabsContent value="materials" className="pt-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-lg">Material Registry</CardTitle>
+              <CardTitle className="text-lg">Material Registry (Substrates)</CardTitle>
               <Button size="sm" onClick={() => openAddDialog("materials")}><Plus className="h-4 w-4 mr-2" /> Add Material</Button>
             </CardHeader>
             <CardContent>
@@ -229,7 +237,7 @@ export default function MasterDataPage() {
                   <TableRow>
                     <TableHead>Substrate Name</TableHead>
                     <TableHead>GSM</TableHead>
-                    <TableHead>Rate (₹/sqm)</TableHead>
+                    <TableHead>Price (₹/sqm)</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -239,8 +247,9 @@ export default function MasterDataPage() {
                       <TableCell className="font-medium">{m.name}</TableCell>
                       <TableCell>{m.gsm}</TableCell>
                       <TableCell>₹{m.ratePerSqMeter}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("materials", m)}>Edit</Button>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("materials", m)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("materials", m.id, m.name)}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -248,6 +257,47 @@ export default function MasterDataPage() {
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
                         {materialsLoading ? "Loading..." : "No materials found. Click Add to create one."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="suppliers" className="pt-6">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-lg">Supplier Master (Paper Companies)</CardTitle>
+              <Button size="sm" onClick={() => openAddDialog("suppliers")}><Plus className="h-4 w-4 mr-2" /> Add Company</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Company Name</TableHead>
+                    <TableHead>GST Number</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {suppliers?.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{s.gstNumber}</TableCell>
+                      <TableCell className="text-xs">{s.email}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("suppliers", s)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("suppliers", s.id, s.name)}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!suppliers || suppliers.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        {suppliersLoading ? "Loading..." : "No suppliers found. Click Add to create one."}
                       </TableCell>
                     </TableRow>
                   )}
@@ -279,8 +329,9 @@ export default function MasterDataPage() {
                       <TableCell className="font-medium">{m.name}</TableCell>
                       <TableCell>{m.maxPrintingWidthMm}mm</TableCell>
                       <TableCell>₹{m.costPerHour}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("machines", m)}>Edit</Button>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("machines", m)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("machines", m.id, m.name)}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -317,8 +368,9 @@ export default function MasterDataPage() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell>{c.repeatLengthMm}mm</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("cylinders", c)}>Edit</Button>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("cylinders", c)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("cylinders", c.id, c.name)}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -355,10 +407,11 @@ export default function MasterDataPage() {
                   {customers?.map((c) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell>{c.gstNumber}</TableCell>
-                      <TableCell>{c.email}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => openEditDialog("customers", c)}>Edit</Button>
+                      <TableCell className="font-mono text-xs">{c.gstNumber}</TableCell>
+                      <TableCell className="text-xs">{c.email}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("customers", c)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("customers", c.id, c.name)}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
