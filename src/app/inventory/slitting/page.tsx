@@ -36,15 +36,21 @@ export default function SlittingPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Firestore Queries
-  const inventoryQuery = useMemoFirebase(() => {
+  // Firestore Queries - Fetch specifically from jumbo_stock
+  const jumboQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return collection(firestore, 'jumbo_stock');
+  }, [firestore, user, adminData])
+
+  const slittedQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'inventoryItems');
   }, [firestore, user, adminData])
 
-  const { data: inventory, isLoading } = useCollection(inventoryQuery)
+  const { data: jumbos, isLoading: jumbosLoading } = useCollection(jumboQuery)
+  const { data: inventory, isLoading: itemsLoading } = useCollection(slittedQuery)
 
-  const jumbos = inventory?.filter(item => item.itemType === 'Jumbo Roll' && item.status === 'In Stock') || []
+  const activeJumbos = jumbos?.filter(j => j.status === 'In Stock') || []
   const slittedRolls = inventory?.filter(item => item.itemType === 'Slitted Roll') || []
 
   const handleSlittingConversion = (e: React.FormEvent<HTMLFormElement>) => {
@@ -53,33 +59,32 @@ export default function SlittingPage() {
 
     const formData = new FormData(e.currentTarget)
     const jumboId = formData.get("jumboId") as string
-    const selectedJumbo = jumbos.find(j => j.id === jumboId)
+    const selectedJumbo = activeJumbos.find(j => j.id === jumboId)
     
     if (!selectedJumbo) return
 
     const slitWidth = Number(formData.get("slitWidth"))
     const numRolls = Number(formData.get("numRolls"))
 
-    // 1. Mark Jumbo as "Consumed" (or reduced quantity in a real system)
-    updateDocumentNonBlocking(doc(firestore, 'inventoryItems', jumboId), {
+    // 1. Mark Jumbo as "Consumed" in jumbo_stock collection
+    updateDocumentNonBlocking(doc(firestore, 'jumbo_stock', jumboId), {
       status: "Consumed",
       updatedAt: new Date().toISOString()
     })
 
-    // 2. Create Slitted Rolls
+    // 2. Create Slitted Rolls in inventoryItems
     for (let i = 0; i < numRolls; i++) {
       const slitData = {
-        barcode: `SLT-${Date.now().toString().slice(-6)}-${i+1}`,
-        name: `Slitted: ${selectedJumbo.name}`,
+        barcode: `SLT-${selectedJumbo.rollNo.slice(-5)}-${i+1}`,
+        name: `Slitted: ${selectedJumbo.paperType}`,
         parentJumboId: jumboId,
         itemType: "Slitted Roll",
-        dimensions: `${slitWidth}mm x ${selectedJumbo.dimensions.split('x')[1].trim()}`,
+        dimensions: `${slitWidth}mm x ${selectedJumbo.lengthMeters}m`,
         currentQuantity: 1,
         unitOfMeasure: "roll",
         location: "Production Ready",
         status: "In Stock",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
         createdById: user.uid
       }
       addDocumentNonBlocking(collection(firestore, 'inventoryItems'), slitData)
@@ -87,8 +92,8 @@ export default function SlittingPage() {
 
     setIsDialogOpen(false)
     toast({
-      title: "Conversion Complete",
-      description: `Jumbo ${selectedJumbo.barcode} has been slitted into ${numRolls} rolls.`
+      title: "Stock Converted",
+      description: `Jumbo ${selectedJumbo.rollNo} converted into ${numRolls} slitted rolls.`
     })
   }
 
@@ -97,7 +102,7 @@ export default function SlittingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Slitting (Inventory Conversion)</h2>
-          <p className="text-muted-foreground">Convert master Jumbo Rolls into usable Slitted Rolls for production.</p>
+          <p className="text-muted-foreground">Transform raw jumbo rolls into production-ready slit rolls.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
           <Scissors className="mr-2 h-4 w-4" /> Start Slitting Run
@@ -109,19 +114,22 @@ export default function SlittingPage() {
           <form onSubmit={handleSlittingConversion}>
             <DialogHeader>
               <DialogTitle>Slitting Work Order</DialogTitle>
-              <DialogDescription>Select a Jumbo Roll to divide into smaller widths.</DialogDescription>
+              <DialogDescription>Select a Jumbo Roll from the GRN stock to divide.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="jumboId">Select Jumbo Roll</Label>
+                <Label htmlFor="jumboId">Select Jumbo Roll (In Stock)</Label>
                 <Select name="jumboId" required>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose source roll" />
                   </SelectTrigger>
                   <SelectContent>
-                    {jumbos.map((j) => (
-                      <SelectItem key={j.id} value={j.id}>{j.barcode} - {j.name} ({j.dimensions})</SelectItem>
+                    {activeJumbos.map((j) => (
+                      <SelectItem key={j.id} value={j.id}>
+                        {j.rollNo} - {j.paperType} ({j.widthMm}mm)
+                      </SelectItem>
                     ))}
+                    {activeJumbos.length === 0 && <SelectItem value="none" disabled>No jumbo stock available</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
@@ -137,69 +145,53 @@ export default function SlittingPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit">Convert Stock</Button>
+              <Button type="submit">Execute Conversion</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-1">
-          <CardHeader>
-            <CardTitle className="text-sm font-bold flex items-center gap-2">
-              <ArrowRightLeft className="h-4 w-4 text-primary" /> Conversion Logic
-            </CardTitle>
-          </CardHeader>
+        <Card className="md:col-span-1 border-primary/20">
+          <CardHeader><CardTitle className="text-sm font-bold flex items-center gap-2"><ArrowRightLeft className="h-4 w-4 text-primary" /> Logic</CardTitle></CardHeader>
           <CardContent className="text-xs space-y-4 text-muted-foreground leading-relaxed">
-            <p>In Narrow Web Flexo, slitting is an **inventory conversion** step. It transforms raw master rolls (Jumbos) into production-ready rolls (Slitted).</p>
+            <p>Slitting marks a Jumbo Roll as **Consumed** and generates multiple production-ready **Slitted Rolls** inheriting the jumbo's length.</p>
             <div className="p-3 bg-muted rounded-md border border-dashed">
-              <p className="font-bold text-foreground mb-1">Stock Impact:</p>
+              <p className="font-bold text-foreground mb-1">Process Impact:</p>
               <ul className="list-disc pl-4 space-y-1">
-                <li>Consumes 1 Jumbo Roll.</li>
-                <li>Generates N Slitted Rolls.</li>
-                <li>Updates "Production Ready" inventory.</li>
+                <li>1 Jumbo Roll (Source)</li>
+                <li>&rarr; Marked as Consumed</li>
+                <li>&rarr; N Slitted Rolls (Inventory)</li>
               </ul>
             </div>
           </CardContent>
         </Card>
 
         <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <RefreshCw className="h-5 w-5 text-primary" /> Slitted Roll Stock
-            </CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Active Slitted Roll Stock</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Slit ID</TableHead>
-                  <TableHead>Width x Length</TableHead>
+                  <TableHead>Dimensions</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Created</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center py-10">
-                      <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
-                    </TableCell>
-                  </TableRow>
+                {itemsLoading ? (
+                  <TableRow><TableCell colSpan={4} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : slittedRolls.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-xs font-bold">{s.barcode}</TableCell>
-                    <TableCell className="text-xs">{s.dimensions}</TableCell>
+                    <TableCell className="text-xs font-mono">{s.dimensions}</TableCell>
                     <TableCell><Badge variant="secondary">{s.status}</Badge></TableCell>
-                    <TableCell className="text-right text-xs text-muted-foreground">{new Date(s.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right"><Button variant="ghost" size="sm">Trace</Button></TableCell>
                   </TableRow>
                 ))}
-                {slittedRolls.length === 0 && !isLoading && (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
-                      No conversion history found.
-                    </TableCell>
-                  </TableRow>
+                {slittedRolls.length === 0 && !itemsLoading && (
+                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground italic">No conversion history found.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
