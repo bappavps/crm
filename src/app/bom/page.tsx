@@ -18,8 +18,8 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection } from "firebase/firestore"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -29,16 +29,23 @@ export default function BOMPage() {
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
-  // Fetching Data from Firestore
-  const bomsQuery = useMemoFirebase(() => {
+  // Authorization check - ensures rules are ready
+  const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    return doc(firestore, 'adminUsers', user.uid);
+  }, [firestore, user]);
+  const { data: adminData } = useDoc(adminDocRef);
+
+  // Fetching Data from Firestore - Only when authorized
+  const bomsQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'boms');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const estimatesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'estimates');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const { data: boms, isLoading: bomsLoading } = useCollection(bomsQuery)
   const { data: estimates } = useCollection(estimatesQuery)

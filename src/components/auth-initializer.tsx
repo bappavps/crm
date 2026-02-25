@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect } from 'react';
@@ -44,10 +45,10 @@ export function AuthInitializer() {
             isActive: true,
             createdAt: new Date().toISOString()
           });
-
-          // 2. Seed Sample Data if collections are empty
-          seedSampleData(firestore, user.uid);
         }
+        
+        // 2. Seed Sample Data if collections are empty (checked independently)
+        seedSampleData(firestore, user.uid);
       });
     }
   }, [user, firestore]);
@@ -57,8 +58,12 @@ export function AuthInitializer() {
 
 async function seedSampleData(db: any, userId: string) {
   const checkEmpty = async (colName: string) => {
-    const snap = await getDocs(query(collection(db, colName), limit(1)));
-    return snap.empty;
+    try {
+      const snap = await getDocs(query(collection(db, colName), limit(1)));
+      return snap.empty;
+    } catch (e) {
+      return true; // Assume empty if permission denied temporarily
+    }
   };
 
   const now = new Date().toISOString();
@@ -159,16 +164,38 @@ async function seedSampleData(db: any, userId: string) {
       estimateDate: now
     };
     batch.set(estRef, estimateData);
-    
-    // Create Sales Order
+    await batch.commit();
+  }
+
+  // --- SAMPLE BOM ---
+  if (await checkEmpty('boms')) {
+    const batch = writeBatch(db);
+    const bomRef = doc(collection(db, 'boms'));
+    batch.set(bomRef, {
+      id: bomRef.id,
+      bomNumber: 'BOM-1001',
+      estimateId: 'seed-est-1',
+      jobName: 'GP-LABEL-01',
+      description: 'Standard 8-color setup with UV varnish',
+      status: 'Approved',
+      bomDate: now,
+      createdById: userId,
+      createdAt: now
+    });
+    await batch.commit();
+  }
+
+  // --- SAMPLE SALES ORDERS ---
+  if (await checkEmpty('salesOrders')) {
+    const batch = writeBatch(db);
     const soId = 'seed-so-1';
     const soRef = doc(db, 'salesOrders', soId);
-    const orderData = {
+    batch.set(soRef, {
       id: soId,
       orderNumber: 'SO-22001',
       customerId: 'cust-1',
       customerName: 'Global Pharma Ltd',
-      estimateId: estId,
+      estimateId: 'seed-est-1',
       productCode: 'GP-LABEL-01',
       qty: 20000,
       totalAmount: 45000,
@@ -177,30 +204,19 @@ async function seedSampleData(db: any, userId: string) {
       deliveryDate: new Date(Date.now() + 604800000).toISOString(),
       createdAt: now,
       createdById: userId
-    };
-    batch.set(soRef, orderData);
-
-    // Create BOM
-    const bomRef = doc(collection(db, 'boms'));
-    batch.set(bomRef, {
-      id: bomRef.id,
-      bomNumber: 'BOM-1001',
-      estimateId: estId,
-      jobName: 'GP-LABEL-01',
-      description: 'Standard 8-color setup with UV varnish',
-      status: 'Approved',
-      bomDate: now,
-      createdById: userId,
-      createdAt: now
     });
+    await batch.commit();
+  }
 
-    // Create Job Card
+  // --- SAMPLE JOB CARDS ---
+  if (await checkEmpty('jobCards')) {
+    const batch = writeBatch(db);
     const jcId = 'seed-jc-1';
     const jcRef = doc(db, 'jobCards', jcId);
     batch.set(jcRef, {
       id: jcId,
       jobCardNumber: 'JC-45001',
-      salesOrderId: soId,
+      salesOrderId: 'seed-so-1',
       client: 'Global Pharma Ltd',
       label: 'GP-LABEL-01',
       productionQuantity: 20000,
@@ -211,13 +227,17 @@ async function seedSampleData(db: any, userId: string) {
       createdAt: now,
       createdById: userId
     });
+    await batch.commit();
+  }
 
-    // Create Work Order
+  // --- SAMPLE WORK ORDERS ---
+  if (await checkEmpty('workOrders')) {
+    const batch = writeBatch(db);
     const woRef = doc(collection(db, 'workOrders'));
     batch.set(woRef, {
       id: woRef.id,
       workOrderNumber: 'WO-8801',
-      jobCardId: jcId,
+      jobCardId: 'seed-jc-1',
       jobDescription: 'GP-LABEL-01 Printing',
       client: 'Global Pharma Ltd',
       type: 'New',
@@ -227,13 +247,17 @@ async function seedSampleData(db: any, userId: string) {
       createdById: userId,
       createdAt: now
     });
+    await batch.commit();
+  }
 
-    // Create Artwork
+  // --- SAMPLE ARTWORK ---
+  if (await checkEmpty('artworks')) {
+    const batch = writeBatch(db);
     const artRef = doc(collection(db, 'artworks'));
     batch.set(artRef, {
       id: artRef.id,
       name: 'GP Front Label v1',
-      estimateId: estId,
+      estimateId: 'seed-est-1',
       clientName: 'Global Pharma Ltd',
       version: '1.0',
       filePath: 'https://picsum.photos/seed/artwork1/600/400',
@@ -242,12 +266,16 @@ async function seedSampleData(db: any, userId: string) {
       uploadedById: userId,
       description: 'Final approved design'
     });
+    await batch.commit();
+  }
 
-    // Create Quality Check
+  // --- SAMPLE QUALITY CHECKS ---
+  if (await checkEmpty('qualityChecks')) {
+    const batch = writeBatch(db);
     const qcRef = doc(collection(db, 'qualityChecks'));
     batch.set(qcRef, {
       id: qcRef.id,
-      jobCardId: jcId,
+      jobCardId: 'seed-jc-1',
       jobCardNumber: 'JC-45001',
       clientName: 'Global Pharma Ltd',
       inspectorId: userId,
@@ -260,13 +288,17 @@ async function seedSampleData(db: any, userId: string) {
       notes: 'Registration and color values are within tolerance.',
       createdAt: now
     });
+    await batch.commit();
+  }
 
-    // Create Invoice
+  // --- SAMPLE INVOICES ---
+  if (await checkEmpty('invoices')) {
+    const batch = writeBatch(db);
     const invRef = doc(collection(db, 'invoices'));
     batch.set(invRef, {
       id: invRef.id,
       invoiceNumber: 'INV/24/1001',
-      salesOrderId: soId,
+      salesOrderId: 'seed-so-1',
       customerId: 'cust-1',
       customerName: 'Global Pharma Ltd',
       invoiceDate: now,
@@ -280,8 +312,12 @@ async function seedSampleData(db: any, userId: string) {
       createdById: userId,
       createdAt: now
     });
+    await batch.commit();
+  }
 
-    // Create Purchase Order
+  // --- SAMPLE PURCHASE ORDERS ---
+  if (await checkEmpty('purchaseOrders')) {
+    const batch = writeBatch(db);
     const poRef = doc(collection(db, 'purchaseOrders'));
     batch.set(poRef, {
       id: poRef.id,
@@ -296,7 +332,6 @@ async function seedSampleData(db: any, userId: string) {
       createdById: userId,
       createdAt: now
     });
-
     await batch.commit();
   }
 
