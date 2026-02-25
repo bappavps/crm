@@ -50,7 +50,7 @@ const navGroups = [
   {
     label: "Design & Planning",
     items: [
-      { name: 'Production Planning', icon: ListTodo, href: '/design/production-planning' },
+      { name: 'Job Planning', icon: ListTodo, href: '/design/production-planning' },
       { name: 'Artwork', icon: Palette, href: '/artwork' },
     ]
   },

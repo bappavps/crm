@@ -94,7 +94,7 @@ export default function ProductionPlanningPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Production Planning Board</h2>
+          <h2 className="text-3xl font-bold tracking-tight text-primary">Job Planning Board</h2>
           <p className="text-muted-foreground">Technical release board for Narrow Web operations.</p>
         </div>
         <div className="flex gap-2">
@@ -109,7 +109,7 @@ export default function ProductionPlanningPage() {
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleCreateJob}>
             <DialogHeader>
-              <DialogTitle>Create New Production Plan</DialogTitle>
+              <DialogTitle>Create New Job Plan</DialogTitle>
               <DialogDescription>Input all technical parameters for the conversion and printing stages.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
@@ -224,7 +224,7 @@ export default function ProductionPlanningPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <ListTodo className="h-5 w-5 text-primary" /> Active Planning Board
+            <ListTodo className="h-5 w-5 text-primary" /> Active Job Board
           </CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -296,7 +296,7 @@ export default function ProductionPlanningPage() {
                   </TableRow>
                 ))}
                 {filteredJobs.length === 0 && !isLoading && (
-                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No production plans found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No job plans found.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
