@@ -110,8 +110,8 @@ export default function JobSettingsPage() {
                     <Select name="yearFormat" defaultValue={settings?.yearFormat || "YYYY"}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="YYYY">Full Year (2025)</SelectItem>
-                        <SelectItem value="YY">Short Year (25)</SelectItem>
+                        <SelectItem value="YYYY">Full Year ({currentYear})</SelectItem>
+                        <SelectItem value="YY">Short Year ({currentYear.slice(-2)})</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
