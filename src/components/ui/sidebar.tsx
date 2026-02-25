@@ -129,6 +129,7 @@ const SidebarProvider = React.forwardRef<
               className
             )}
             style={style}
+            suppressHydrationWarning
             {...props}
           >
             {children}
