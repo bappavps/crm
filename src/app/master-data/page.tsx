@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -15,10 +14,9 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogFooter,
-  DialogTrigger 
 } from "@/components/ui/dialog"
 import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler } from "lucide-react"
-import { useCollection, useFirestore, useMemoFirebase, useUser } from "@/firebase"
+import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
@@ -29,31 +27,39 @@ export default function MasterDataPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders">("materials")
 
-  // Firestore Queries - Conditional on user being logged in
-  const materialsQuery = useMemoFirebase(() => {
+  // Wait for the user to have their Admin role document ready before fetching protected collections
+  const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
+    return doc(firestore, 'adminUsers', user.uid);
+  }, [firestore, user]);
+  
+  const { data: adminData } = useDoc(adminDocRef);
+
+  // Firestore Queries - Only run if adminData is available to prevent early permission errors
+  const materialsQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'materials');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const machinesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'machines');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const customersQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'customers');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
   const cylindersQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'cylinders');
-  }, [firestore, user])
+  }, [firestore, user, adminData])
 
-  const { data: materials } = useCollection(materialsQuery)
-  const { data: machines } = useCollection(machinesQuery)
-  const { data: customers } = useCollection(customersQuery)
-  const { data: cylinders } = useCollection(cylindersQuery)
+  const { data: materials, isLoading: materialsLoading } = useCollection(materialsQuery)
+  const { data: machines, isLoading: machinesLoading } = useCollection(machinesQuery)
+  const { data: customers, isLoading: customersLoading } = useCollection(customersQuery)
+  const { data: cylinders, isLoading: cylindersLoading } = useCollection(cylindersQuery)
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -212,7 +218,9 @@ export default function MasterDataPage() {
                   ))}
                   {(!materials || materials.length === 0) && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">No materials found. Click Add to create one.</TableCell>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        {materialsLoading ? "Loading..." : "No materials found. Click Add to create one."}
+                      </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
@@ -246,6 +254,13 @@ export default function MasterDataPage() {
                       <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
                     </TableRow>
                   ))}
+                  {(!machines || machines.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        {machinesLoading ? "Loading..." : "No machines found. Click Add to create one."}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -275,6 +290,13 @@ export default function MasterDataPage() {
                       <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
                     </TableRow>
                   ))}
+                  {(!cylinders || cylinders.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+                        {cylindersLoading ? "Loading..." : "No cylinders found. Click Add to create one."}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -306,6 +328,13 @@ export default function MasterDataPage() {
                       <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
                     </TableRow>
                   ))}
+                  {(!customers || customers.length === 0) && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                        {customersLoading ? "Loading..." : "No customers found. Click Add to create one."}
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -336,7 +365,7 @@ export default function MasterDataPage() {
                 <div className="grid grid-cols-2 gap-4 max-w-md">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-muted-foreground">Standard Jumbo Width (mm)</label>
-                    <Input defaultValue="1020" readOnly className="bg-muted" />
+                    <Input defaultValue="1020" readOnly />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-muted-foreground">Default Side Margin (mm)</label>

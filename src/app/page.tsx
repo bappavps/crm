@@ -1,7 +1,5 @@
-
 "use client"
 
-import { useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
   BarChart, 
@@ -22,8 +20,6 @@ import {
   ArrowUpRight,
   Clock
 } from "lucide-react"
-import { useUser, useFirestore } from "@/firebase"
-import { doc, getDoc, setDoc } from "firebase/firestore"
 
 const data = [
   { name: 'Mon', orders: 40, production: 24, sales: 2400 },
@@ -35,39 +31,6 @@ const data = [
 ];
 
 export default function Dashboard() {
-  const { user } = useUser();
-  const firestore = useFirestore();
-
-  useEffect(() => {
-    if (user && firestore) {
-      // Auto-initialize Admin role for the first user in the prototype
-      const adminRef = doc(firestore, 'adminUsers', user.uid);
-      getDoc(adminRef).then(snap => {
-        if (!snap.exists()) {
-          setDoc(adminRef, { 
-            id: user.uid, 
-            username: user.displayName || 'Admin', 
-            email: user.email,
-            roleId: 'Admin',
-            isActive: true,
-            createdAt: new Date().toISOString() 
-          });
-          // Also create the user profile
-          setDoc(doc(firestore, 'users', user.uid), {
-            id: user.uid,
-            username: user.displayName || 'Admin',
-            email: user.email,
-            firstName: 'System',
-            lastName: 'Admin',
-            roleId: 'Admin',
-            isActive: true,
-            createdAt: new Date().toISOString()
-          });
-        }
-      });
-    }
-  }, [user, firestore]);
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
