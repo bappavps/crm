@@ -53,23 +53,26 @@ export default function ProductionPlanningPage() {
     const formData = new FormData(e.currentTarget)
     
     const jobData = {
-      orderDate: formData.get("orderDate") as string,
-      plateNo: formData.get("plateNo") as string,
-      jobName: formData.get("jobName") as string,
-      labelSize: formData.get("labelSize") as string,
-      repeatLength: Number(formData.get("repeatLength")),
+      serial_no: formData.get("serial_no") as string,
+      order_date: formData.get("order_date") as string,
+      planning_status: formData.get("planning_status") as string,
+      plate_no: formData.get("plate_no") as string,
+      job_name: formData.get("job_name") as string,
+      label_size: formData.get("label_size") as string,
+      repeat_length: Number(formData.get("repeat_length")),
       material: formData.get("material") as string,
-      requiredPaperWidth: Number(formData.get("requiredPaperWidth")),
-      requiredRunningMeter: Number(formData.get("requiredRunningMeter")),
-      labelQuantity: Number(formData.get("labelQuantity")),
-      coreSize: formData.get("coreSize") as string,
-      qtyPerRoll: Number(formData.get("qtyPerRoll")),
-      rollDirection: formData.get("rollDirection") as string,
+      paper_width: Number(formData.get("paper_width")),
+      die_type: formData.get("die_type") as string,
+      allocate_meters: Number(formData.get("allocate_meters")),
+      label_qty: Number(formData.get("label_qty")),
+      core_size: formData.get("core_size") as string,
+      qty_per_roll: Number(formData.get("qty_per_roll")),
+      roll_direction: formData.get("roll_direction") as string,
       remarks: formData.get("remarks") as string,
       status: "READY FOR PRODUCTION",
-      createdAt: new Date().toISOString(),
-      createdById: user.uid,
-      createdByName: user.displayName || user.email?.split('@')[0] || "Designer"
+      created_date: new Date().toISOString(),
+      created_by: user.uid,
+      created_by_name: user.displayName || user.email?.split('@')[0] || "Designer"
     }
 
     addDocumentNonBlocking(collection(firestore, 'production_jobs'), jobData)
@@ -77,61 +80,69 @@ export default function ProductionPlanningPage() {
     setIsDialogOpen(false)
     toast({
       title: "Job Planned",
-      description: `${jobData.jobName} has been released to Production.`
+      description: `${jobData.job_name} has been added to the planning board.`
     })
   }
 
   const filteredJobs = jobs?.filter(job => 
-    job.jobName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    job.plateNo?.toLowerCase().includes(searchQuery.toLowerCase())
+    job.job_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    job.plate_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    job.serial_no?.toLowerCase().includes(searchQuery.toLowerCase())
   ) || []
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Production Planning</h2>
-          <p className="text-muted-foreground">Design Department: Define technical specifications for the shop floor.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-primary">Production Planning Board</h2>
+          <p className="text-muted-foreground">Technical release board for Narrow Web operations.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => toast({ title: "Export", description: "Downloading Planning Sheet..." })}><Download className="mr-2 h-4 w-4" /> Export Excel</Button>
+          <Button variant="outline" onClick={() => toast({ title: "Export", description: "Downloading technical sheet..." })}><Download className="mr-2 h-4 w-4" /> Export Board</Button>
           <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
-            <Plus className="mr-2 h-4 w-4" /> Create New Plan
+            <Plus className="mr-2 h-4 w-4" /> New Planning Sheet
           </Button>
         </div>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleCreateJob}>
             <DialogHeader>
-              <DialogTitle>Job Planning Sheet</DialogTitle>
-              <DialogDescription>Enter technical specifications for narrow web production.</DialogDescription>
+              <DialogTitle>Create New Production Plan</DialogTitle>
+              <DialogDescription>Input all technical parameters for the conversion and printing stages.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="orderDate">Order Date</Label>
-                  <Input id="orderDate" name="orderDate" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
+                  <Label htmlFor="serial_no">Serial No</Label>
+                  <Input id="serial_no" name="serial_no" placeholder="e.g. 001" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="plateNo">Plate No</Label>
-                  <Input id="plateNo" name="plateNo" placeholder="e.g. PL-4501" required />
+                  <Label htmlFor="order_date">Order Date</Label>
+                  <Input id="order_date" name="order_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="jobName">Job Name</Label>
-                  <Input id="jobName" name="jobName" placeholder="Product Title" required />
+                  <Label htmlFor="planning_status">Planning Status</Label>
+                  <Select name="planning_status" defaultValue="Pending">
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="In Progress">In Progress</SelectItem>
+                      <SelectItem value="Released">Released</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="labelSize">Label Size (mm)</Label>
-                  <Input id="labelSize" name="labelSize" placeholder="50x100" required />
+                  <Label htmlFor="plate_no">Plate No</Label>
+                  <Input id="plate_no" name="plate_no" placeholder="PL-4501" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="repeatLength">Repeat (mm)</Label>
-                  <Input id="repeatLength" name="repeatLength" type="number" placeholder="508" required />
+                  <Label htmlFor="job_name">Job Name</Label>
+                  <Input id="job_name" name="job_name" placeholder="Product Description" required />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="material">Substrate</Label>
@@ -139,25 +150,40 @@ export default function ProductionPlanningPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 bg-muted/20 p-4 rounded-lg border border-dashed">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="requiredPaperWidth" className="text-primary font-bold">Paper Width (mm)</Label>
-                  <Input id="requiredPaperWidth" name="requiredPaperWidth" type="number" placeholder="Slitting size" required />
+                  <Label htmlFor="label_size">Label Size (mm)</Label>
+                  <Input id="label_size" name="label_size" placeholder="50x100" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="requiredRunningMeter" className="text-primary font-bold">Running Meter (m)</Label>
-                  <Input id="requiredRunningMeter" name="requiredRunningMeter" type="number" required />
+                  <Label htmlFor="repeat_length">Repeat (mm)</Label>
+                  <Input id="repeat_length" name="repeat_length" type="number" step="0.01" placeholder="508" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="labelQuantity">Total Label Qty</Label>
-                  <Input id="labelQuantity" name="labelQuantity" type="number" required />
+                  <Label htmlFor="die_type">Die Type</Label>
+                  <Input id="die_type" name="die_type" placeholder="Rotary / Flatbed" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 bg-muted/20 p-4 rounded-lg border border-dashed border-primary/30">
+                <div className="grid gap-2">
+                  <Label htmlFor="paper_width" className="text-primary font-bold">Paper Width (mm)</Label>
+                  <Input id="paper_width" name="paper_width" type="number" required />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="allocate_meters" className="text-primary font-bold">Allocate Meters (m)</Label>
+                  <Input id="allocate_meters" name="allocate_meters" type="number" required />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="label_qty" className="text-primary font-bold">Label Qty</Label>
+                  <Input id="label_qty" name="label_qty" type="number" required />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="coreSize">Core Size</Label>
-                  <Select name="coreSize" defaultValue="3 Inch">
+                  <Label htmlFor="core_size">Core Size</Label>
+                  <Select name="core_size" defaultValue="3 Inch">
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1 Inch">1 Inch</SelectItem>
@@ -166,12 +192,12 @@ export default function ProductionPlanningPage() {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="qtyPerRoll">Qty Per Roll</Label>
-                  <Input id="qtyPerRoll" name="qtyPerRoll" type="number" required />
+                  <Label htmlFor="qty_per_roll">Qty Per Roll</Label>
+                  <Input id="qty_per_roll" name="qty_per_roll" type="number" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="rollDirection">Roll Direction</Label>
-                  <Select name="rollDirection" defaultValue="Head Out">
+                  <Label htmlFor="roll_direction">Roll Direction</Label>
+                  <Select name="roll_direction" defaultValue="Head Out">
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Head Out">Head Out</SelectItem>
@@ -184,12 +210,12 @@ export default function ProductionPlanningPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="remarks">Remarks / Special Instructions</Label>
-                <Textarea id="remarks" name="remarks" placeholder="Color sequence, varnish type, etc." />
+                <Label htmlFor="remarks">Special Instructions / Remarks</Label>
+                <Textarea id="remarks" name="remarks" placeholder="Color codes, varnish specifications, etc." />
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12 text-lg">Release Planning Sheet</Button>
+              <Button type="submit" className="w-full h-12 text-lg">Release to Shop Floor</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -198,12 +224,12 @@ export default function ProductionPlanningPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
-            <ListTodo className="h-5 w-5 text-primary" /> Active Planning Registry
+            <ListTodo className="h-5 w-5 text-primary" /> Active Planning Board
           </CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input 
-              placeholder="Search by Job or Plate..." 
+              placeholder="Search Plate or Job..." 
               className="pl-8" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -212,42 +238,51 @@ export default function ProductionPlanningPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[1800px]">
+            <Table className="min-w-[2400px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <TableHead className="w-[80px]">S.No</TableHead>
                   <TableHead className="w-[120px]">Order Date</TableHead>
+                  <TableHead className="w-[150px]">Planning Status</TableHead>
                   <TableHead className="w-[120px]">Plate No</TableHead>
                   <TableHead className="w-[200px]">Job Name</TableHead>
-                  <TableHead className="w-[100px]">Size</TableHead>
+                  <TableHead className="w-[100px]">Label Size</TableHead>
                   <TableHead className="w-[100px]">Repeat</TableHead>
                   <TableHead className="w-[150px]">Material</TableHead>
                   <TableHead className="w-[120px]">Paper Width</TableHead>
-                  <TableHead className="w-[120px]">Run Meter</TableHead>
+                  <TableHead className="w-[120px]">Die Type</TableHead>
+                  <TableHead className="w-[120px]">Alloc. Meter</TableHead>
                   <TableHead className="w-[120px]">Label Qty</TableHead>
                   <TableHead className="w-[100px]">Core</TableHead>
                   <TableHead className="w-[100px]">Qty/Roll</TableHead>
                   <TableHead className="w-[120px]">Direction</TableHead>
+                  <TableHead className="w-[200px]">Remarks</TableHead>
                   <TableHead className="w-[150px]">Status</TableHead>
+                  <TableHead className="w-[150px]">Created Date</TableHead>
                   <TableHead className="w-[150px]">Created By</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={14} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : filteredJobs.map((j) => (
                   <TableRow key={j.id} className="hover:bg-muted/30">
-                    <TableCell className="text-xs">{new Date(j.orderDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="font-bold text-primary">{j.plateNo}</TableCell>
-                    <TableCell className="font-medium">{j.jobName}</TableCell>
-                    <TableCell className="text-xs">{j.labelSize}</TableCell>
-                    <TableCell className="text-xs font-mono">{j.repeatLength}mm</TableCell>
+                    <TableCell className="font-bold">{j.serial_no}</TableCell>
+                    <TableCell className="text-xs">{j.order_date}</TableCell>
+                    <TableCell><Badge variant="secondary" className="text-[10px]">{j.planning_status}</Badge></TableCell>
+                    <TableCell className="font-bold text-primary">{j.plate_no}</TableCell>
+                    <TableCell className="font-medium text-sm">{j.job_name}</TableCell>
+                    <TableCell className="text-xs">{j.label_size}</TableCell>
+                    <TableCell className="text-xs font-mono">{j.repeat_length}mm</TableCell>
                     <TableCell className="text-xs">{j.material}</TableCell>
-                    <TableCell className="text-xs font-bold">{j.requiredPaperWidth}mm</TableCell>
-                    <TableCell className="text-xs font-bold text-accent">{j.requiredRunningMeter}m</TableCell>
-                    <TableCell className="text-xs">{j.labelQuantity?.toLocaleString()}</TableCell>
-                    <TableCell className="text-xs">{j.coreSize}</TableCell>
-                    <TableCell className="text-xs">{j.qtyPerRoll}</TableCell>
-                    <TableCell className="text-xs">{j.rollDirection}</TableCell>
+                    <TableCell className="text-xs font-bold">{j.paper_width}mm</TableCell>
+                    <TableCell className="text-xs">{j.die_type || '-'}</TableCell>
+                    <TableCell className="text-xs font-bold text-accent">{j.allocate_meters}m</TableCell>
+                    <TableCell className="text-xs">{j.label_qty?.toLocaleString()}</TableCell>
+                    <TableCell className="text-xs">{j.core_size}</TableCell>
+                    <TableCell className="text-xs">{j.qty_per_roll}</TableCell>
+                    <TableCell className="text-xs">{j.roll_direction}</TableCell>
+                    <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px]">{j.remarks || '-'}</TableCell>
                     <TableCell>
                       <Badge className={
                         j.status === 'READY FOR PRODUCTION' ? 'bg-emerald-500' : 
@@ -256,11 +291,12 @@ export default function ProductionPlanningPage() {
                         {j.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{j.createdByName}</TableCell>
+                    <TableCell className="text-[10px]">{new Date(j.created_date).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{j.created_by_name}</TableCell>
                   </TableRow>
                 ))}
                 {filteredJobs.length === 0 && !isLoading && (
-                  <TableRow><TableCell colSpan={14} className="text-center py-20 text-muted-foreground italic">No production plans found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No production plans found.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>

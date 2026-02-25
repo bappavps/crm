@@ -79,8 +79,8 @@ export default function SlittingPage() {
   const suggestedRolls = useMemo(() => {
     if (!selectedJobData || !activeJumbos.length) return []
 
-    const reqWidth = Number(selectedJobData.requiredPaperWidth)
-    const reqLength = Number(selectedJobData.requiredRunningMeter)
+    const reqWidth = Number(selectedJobData.paper_width)
+    const reqLength = Number(selectedJobData.allocate_meters)
     const reqMaterial = selectedJobData.material
 
     // Filter rolls: Status In Stock, Same Material, Width >= Req, Length >= Req
@@ -106,7 +106,7 @@ export default function SlittingPage() {
 
   const handleJobSelect = (jobId: string) => {
     setSelectedJobId(jobId)
-    setSelectedJumboId(null) // Reset jumbo selection when job changes
+    setSelectedJumboId(null)
   }
 
   const handleSlittingConversion = (e: React.FormEvent<HTMLFormElement>) => {
@@ -161,8 +161,8 @@ export default function SlittingPage() {
         unitOfMeasure: "roll",
         location: "Production Ready",
         status: "ASSIGNED",
-        assigned_job_id: selectedJobData.plateNo || selectedJobData.id,
-        assigned_job_name: selectedJobData.jobName,
+        assigned_job_id: selectedJobData.plate_no || selectedJobData.id,
+        assigned_job_name: selectedJobData.job_name,
         assigned_date: new Date().toISOString(),
         assigned_user: user.displayName || user.email?.split('@')[0] || "Operator",
         createdAt: new Date().toISOString(),
@@ -176,7 +176,7 @@ export default function SlittingPage() {
     setSelectedJumboId(null)
     toast({
       title: "Conversion Successful",
-      description: `Material assigned to Job ${selectedJobData.jobName}.`
+      description: `Material assigned to Job ${selectedJobData.job_name}.`
     })
   }
 
@@ -185,7 +185,7 @@ export default function SlittingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Slitting (Conversion)</h2>
-          <p className="text-muted-foreground">Production selects released plans from Design to assign material.</p>
+          <p className="text-muted-foreground">Assign jumbo stock to planned design sheets.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
           <Scissors className="mr-2 h-4 w-4" /> Start Slitting Run
@@ -197,16 +197,16 @@ export default function SlittingPage() {
           <form onSubmit={handleSlittingConversion}>
             <DialogHeader>
               <DialogTitle>Execute Slitting & Assign Plan</DialogTitle>
-              <DialogDescription>Production: Select a Planning Sheet and use Auto-Paper Suggestions.</DialogDescription>
+              <DialogDescription>Select a released planning sheet to see auto-paper suggestions.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="jobId">Select Planning Sheet (Design)</Label>
                 <Select name="jobId" onValueChange={handleJobSelect} required>
-                  <SelectTrigger><SelectValue placeholder="Select Job Released by Design" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select Job Plate" /></SelectTrigger>
                   <SelectContent>
                     {readyJobs.map((j) => (
-                      <SelectItem key={j.id} value={j.id}>{j.plateNo} - {j.jobName}</SelectItem>
+                      <SelectItem key={j.id} value={j.id}>{j.plate_no} - {j.job_name}</SelectItem>
                     ))}
                     {readyJobs.length === 0 && <SelectItem value="none" disabled>No jobs released by Design</SelectItem>}
                   </SelectContent>
@@ -216,7 +216,7 @@ export default function SlittingPage() {
               {selectedJobData && (
                 <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 space-y-3">
                   <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase">
-                    <ListTodo className="h-3 w-3" /> Requirements for {selectedJobData.jobName}
+                    <ListTodo className="h-3 w-3" /> Technical Requirements
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div className="space-y-1">
@@ -224,12 +224,12 @@ export default function SlittingPage() {
                       <p className="font-bold">{selectedJobData.material}</p>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground uppercase">Req. Width</Label>
-                      <p className="font-bold">{selectedJobData.requiredPaperWidth} mm</p>
+                      <Label className="text-[10px] text-muted-foreground uppercase">Alloc. Width</Label>
+                      <p className="font-bold">{selectedJobData.paper_width} mm</p>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground uppercase">Req. Meter</Label>
-                      <p className="font-bold text-accent">{selectedJobData.requiredRunningMeter} m</p>
+                      <Label className="text-[10px] text-muted-foreground uppercase">Alloc. Meter</Label>
+                      <p className="font-bold text-accent">{selectedJobData.allocate_meters} m</p>
                     </div>
                   </div>
                 </div>
@@ -241,9 +241,6 @@ export default function SlittingPage() {
                     <Label className="flex items-center gap-2 text-sm font-bold">
                       <Sparkles className="h-4 w-4 text-primary" /> Auto Paper Suggestions
                     </Label>
-                    {suggestedRolls.length > 0 && (
-                      <Badge variant="outline" className="text-[10px] uppercase">{suggestedRolls.length} Matches Found</Badge>
-                    )}
                   </div>
                   
                   {suggestedRolls.length > 0 ? (
@@ -298,7 +295,6 @@ export default function SlittingPage() {
                     <div className="p-10 text-center border-2 border-dashed rounded-lg space-y-2">
                       <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto opacity-50" />
                       <p className="text-sm font-medium text-muted-foreground">No matching stock found for these specifications.</p>
-                      <p className="text-xs text-muted-foreground/60 italic">Try searching for alternative materials in the GRN module.</p>
                     </div>
                   )}
                 </div>
@@ -312,7 +308,7 @@ export default function SlittingPage() {
                       id="slitWidth" 
                       name="slitWidth" 
                       type="number" 
-                      defaultValue={selectedJobData?.requiredPaperWidth || ""} 
+                      defaultValue={selectedJobData?.paper_width || ""} 
                       required 
                     />
                   </div>
@@ -332,30 +328,15 @@ export default function SlittingPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-1 border-primary/20 bg-primary/5">
-          <CardHeader><CardTitle className="text-sm font-bold flex items-center gap-2"><ArrowRightLeft className="h-4 w-4 text-primary" /> Slitting Workflow</CardTitle></CardHeader>
-          <CardContent className="text-xs space-y-4 text-muted-foreground leading-relaxed">
-            <div className="p-3 bg-background rounded-md border border-dashed shadow-sm">
-              <p className="font-bold text-foreground mb-1">Auto-Suggestion Logic:</p>
-              <ul className="list-disc pl-4 space-y-1">
-                <li>System matches **Substrate Type**.</li>
-                <li>Filters rolls with sufficient **Width** and **Length**.</li>
-                <li>Identifies **Best Match** (Minimum wastage).</li>
-                <li>Locking: Operators must choose valid stock.</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="md:col-span-2">
+      <div className="grid grid-cols-1 gap-6">
+        <Card>
           <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Assigned Slitted Roll Stock</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Roll ID</TableHead>
-                  <TableHead>Assigned Plan</TableHead>
+                  <TableHead>Assigned Plate</TableHead>
                   <TableHead>Dimensions</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
