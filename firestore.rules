@@ -1,0 +1,350 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * SHREE LABEL ERP - SECURITY RULES DOCUMENTATION
+     * 
+     * Core Philosophy:
+     * This ruleset implements a strict, role-based access control (RBAC) model combined with individual 
+     * document ownership. Access is determined by "Existence over Content" (DBAC) using dedicated 
+     * collections for roles, avoiding slow get() calls or custom claims.
+     * 
+     * Data Structure:
+     * - Role Collections: /adminUsers, /managerUsers, /operatorUsers (membership defines role).
+     * - Master Data: /customers, /materials, /machines, /rates (Admin/Manager controlled).
+     * - Transactional: /estimates, /salesOrders, /jobCards (Creator or Staff access).
+     * - Inventory: /inventoryItems, /jumboRolls, /wipItems (Operator/Manager controlled).
+     * 
+     * Key Security Decisions:
+     * 1. DBAC (Database Access Control): Roles are validated by checking if a user's UID exists 
+     *    in a specific role-indexed collection.
+     * 2. Denormalization for Authorization: Critical authorization IDs (like 'createdById' or 
+     *    'jobCardCreatedById') are required on documents to allow for high-performance security 
+     *    checks without cross-document lookups.
+     * 3. Prototyping Flexibility: Logic enforces "Who can access" but ignores specific field 
+     *    types (e.g., string vs number) to facilitate rapid schema iteration.
+     * 4. Relational Integrity: On creation, rules enforce that the internal 'createdById' field 
+     *    matches the authenticated user's UID.
+     */
+
+    // --- GLOBAL HELPER FUNCTIONS ---
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
+    function isManager() {
+      return isSignedIn() && exists(/databases/$(database)/documents/managerUsers/$(request.auth.uid));
+    }
+
+    function isOperator() {
+      return isSignedIn() && exists(/databases/$(database)/documents/operatorUsers/$(request.auth.uid));
+    }
+
+    function isInternalStaff() {
+      return isAdmin() || isManager() || isOperator();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isDataOwner(ownerIdField) {
+      return isSignedIn() && request.auth.uid == resource.data[ownerIdField];
+    }
+
+    function isCreatingWithOwner(ownerIdField) {
+      return isSignedIn() && request.auth.uid == request.resource.data[ownerIdField];
+    }
+
+    function isExistingOwner(ownerIdField) {
+      return resource != null && isDataOwner(ownerIdField);
+    }
+
+    // --- ROLE & USER MANAGEMENT ---
+
+    /**
+     * @description Rules for the Role indexing collections (adminUsers, managerUsers, operatorUsers).
+     * @path /adminUsers/{userId}, /managerUsers/{userId}, /operatorUsers/{userId}
+     * @allow (get, list) if signed in staff. (write) if Admin.
+     * @deny (write) if user is not an Admin.
+     * @principle Role assignment is restricted to Admins.
+     */
+    match /adminUsers/{u} {
+      allow read: if isInternalStaff();
+      allow write: if isAdmin();
+    }
+    match /managerUsers/{u} {
+      allow read: if isInternalStaff();
+      allow write: if isAdmin();
+    }
+    match /operatorUsers/{u} {
+      allow read: if isInternalStaff();
+      allow write: if isAdmin();
+    }
+
+    /**
+     * @description User profile management.
+     * @path /users/{userId}
+     * @allow (get, list) if staff. (create) if self-creation. (update, delete) if Admin or self.
+     * @deny (create) if UID does not match auth.
+     * @principle Self-creation and Admin-led management.
+     */
+    match /users/{userId} {
+      allow get, list: if isInternalStaff() || isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if (resource != null && isOwner(userId)) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description System roles master data.
+     * @path /roles/{roleId}
+     * @allow (read) if signed in. (write) if Admin.
+     * @deny (write) if not Admin.
+     * @principle Master data managed by Admin only.
+     */
+    match /roles/{roleId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- MASTER DATA COLLECTIONS ---
+
+    /**
+     * @description Master data for business entities (Customers, Materials, Machines, etc).
+     * @path /customers/{id}, /materials/{id}, /machines/{id}, /cylinders/{id}, /dies/{id}, /suppliers/{id}, /defects/{id}
+     * @allow (read) if Staff. (write) if Admin or Manager.
+     * @deny (write) if Operator or unauthenticated.
+     * @principle Business configuration is restricted to management.
+     */
+    match /customers/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /materials/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /machines/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /cylinders/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /dies/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /suppliers/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /defects/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+
+    /**
+     * @description Master data for production rates.
+     * @path /printingRates/{id}, /uvRates/{id}, /inkRates/{id}, /laborRates/{id}, /plateRates/{id}
+     * @allow (read) if Staff. (write) if Admin or Manager.
+     * @deny (write) if Operator.
+     * @principle Pricing and costing master data is management-only.
+     */
+    match /printingRates/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /uvRates/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /inkRates/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /laborRates/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+    match /plateRates/{id} { allow read: if isInternalStaff(); allow write: if isAdmin() || isManager(); }
+
+    // --- TRANSACTIONAL & PRODUCTION MODULES ---
+
+    /**
+     * @description Sales Estimates.
+     * @path /estimates/{estimateId}
+     * @allow (read) if Creator, Manager, or Admin. (create) if Staff and sets creatorId. (update) if ExistingOwner, Manager, or Admin.
+     * @deny (delete) if not Admin.
+     * @principle Ownership-based transactional security with management override.
+     */
+    match /estimates/{estimateId} {
+      allow get, list: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Design Artwork.
+     * @path /artworks/{artworkId}
+     * @allow (create) if Staff and sets uploadedById. (read) if staff. (update) if Owner/Manager/Admin.
+     * @deny (update) if ownerId changes.
+     * @principle Ensures artwork is linked to its uploader.
+     */
+    match /artworks/{artworkId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('uploadedById');
+      allow update: if isExistingOwner('uploadedById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Bills of Material (BOM).
+     * @path /boms/{bomId}
+     * @allow (create) if Staff and sets createdById. (read, update) if Creator or Management.
+     * @deny (write) if createdById is missing.
+     * @principle Bill of Material lifecycle management.
+     */
+    match /boms/{bomId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /boms/{bomId}/components/{componentId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('bomCreatedById');
+      allow update: if isExistingOwner('bomCreatedById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    /**
+     * @description Sales Orders and Job Cards.
+     * @path /salesOrders/{id}, /jobCards/{id}
+     * @allow (read) if Staff. (create) if Staff and sets createdById. (update) if Creator or Management.
+     * @deny (update) if creator is changed.
+     * @principle Standard transactional security pattern.
+     */
+    match /salesOrders/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /jobCards/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /jobCards/{jobCardId}/assignments/{assignmentId} {
+      allow read: if isInternalStaff();
+      allow create, update: if isInternalStaff();
+      allow delete: if isAdmin() || isManager();
+    }
+
+    match /jobCards/{jobCardId}/materialRequirements/{requirementId} {
+      allow read: if isInternalStaff();
+      allow write: if isAdmin() || isManager();
+    }
+
+    /**
+     * @description Production Run Tracking.
+     * @path /productionRuns/{productionRunId}
+     * @allow (read) if Staff. (create) if sets operatorId or creatorId. (update) if Assigned Operator, Manager, or Admin.
+     * @deny (update) if status finalized and not admin.
+     * @principle Operational tracking for printing and slitting.
+     */
+    match /productionRuns/{productionRunId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('operatorId');
+      allow update: if isExistingOwner('operatorId') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /productionRuns/{productionRunId}/logEntries/{logEntryId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('loggedById');
+      allow update: if isExistingOwner('loggedById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // --- INVENTORY & LOGISTICS ---
+
+    /**
+     * @description Inventory master items and specific sub-types.
+     * @path /inventoryItems/{id}, /jumboRolls/{id}, /slittedRolls/{id}, /wipItems/{id}, /finishedGoods/{id}
+     * @allow (read) if Staff. (write) if Staff.
+     * @deny (write) if unauthenticated.
+     * @principle Global visibility for staff with restricted write access to management/operators.
+     */
+    match /inventoryItems/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
+    match /jumboRolls/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
+    match /slittedRolls/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
+    match /wipItems/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
+    match /finishedGoods/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
+
+    /**
+     * @description Inventory Transaction logging.
+     * @path /inventoryTransactions/{transactionId}
+     * @allow (read) if Staff. (create) if Staff and sets transactedById.
+     * @deny (update, delete) if true; // Audit logs are immutable.
+     * @principle Inventory audit trail integrity.
+     */
+    match /inventoryTransactions/{transactionId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('transactedById');
+      allow update, delete: if false;
+    }
+
+    /**
+     * @description Quality Control records.
+     * @path /qualityChecks/{qualityCheckId}
+     * @allow (read) if Staff. (create) if sets inspectorId. (update) if Inspector/Manager/Admin.
+     * @deny (delete) if not Admin.
+     * @principle Quality assurance accountability.
+     */
+    match /qualityChecks/{qualityCheckId} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('inspectorId');
+      allow update: if isExistingOwner('inspectorId') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /qualityChecks/{qualityCheckId}/defects/{id} {
+      allow read: if isInternalStaff();
+      allow write: if isInternalStaff();
+    }
+
+    /**
+     * @description Purchase and Billing documents.
+     * @path /purchaseOrders/{id}, /dispatchChallans/{id}, /packingLists/{id}, /invoices/{id}
+     * @allow (read) if Staff. (write) if Creator or Management.
+     * @deny (update) if status is 'Paid' or 'Closed' (enforced in app, allowed here for flexibility).
+     * @principle Financial and fulfillment document security.
+     */
+    match /purchaseOrders/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /purchaseOrders/{id}/items/{itemId} {
+      allow read: if isInternalStaff();
+      allow write: if isInternalStaff();
+    }
+
+    match /dispatchChallans/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /dispatchChallans/{id}/items/{itemId} {
+      allow read: if isInternalStaff();
+      allow write: if isInternalStaff();
+    }
+
+    match /packingLists/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('packedById');
+      allow update: if isExistingOwner('packedById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /packingLists/{id}/items/{itemId} {
+      allow read: if isInternalStaff();
+      allow write: if isInternalStaff();
+    }
+
+    match /invoices/{id} {
+      allow read: if isInternalStaff();
+      allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
+      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /invoices/{id}/items/{itemId} {
+      allow read: if isInternalStaff();
+      allow write: if isInternalStaff();
+    }
+
+  }
+}

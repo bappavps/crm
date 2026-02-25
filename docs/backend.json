@@ -1,0 +1,2905 @@
+{
+  "entities": {
+    "User": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "User",
+      "type": "object",
+      "description": "Represents a user within the Shree Label ERP system, managing access and authentication details (excluding sensitive credentials).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the User entity."
+        },
+        "username": {
+          "type": "string",
+          "description": "Unique username for logging into the system."
+        },
+        "email": {
+          "type": "string",
+          "description": "User's email address, used for communication and potentially recovery.",
+          "format": "email"
+        },
+        "firstName": {
+          "type": "string",
+          "description": "The first name of the user."
+        },
+        "lastName": {
+          "type": "string",
+          "description": "The last name of the user."
+        },
+        "roleId": {
+          "type": "string",
+          "description": "Reference to the Role entity, defining the user's permissions and access level. (Relationship: Role 1:N User)"
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Indicates whether the user account is currently active."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the user account was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the user account was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "username",
+        "email",
+        "firstName",
+        "lastName",
+        "roleId",
+        "isActive",
+        "createdAt"
+      ]
+    },
+    "Role": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Role",
+      "type": "object",
+      "description": "Defines user roles and their associated permissions within the system.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Role entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the role (e.g., 'Admin', 'Manager', 'Operator')."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the role's responsibilities and privileges."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ]
+    },
+    "Customer": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Customer",
+      "type": "object",
+      "description": "Stores information about a customer, including contact details and billing information.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Customer entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The official name of the customer company."
+        },
+        "contactPerson": {
+          "type": "string",
+          "description": "The primary contact person at the customer company."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the customer's contact person.",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "The primary phone number of the customer."
+        },
+        "address": {
+          "type": "string",
+          "description": "The billing and primary physical address of the customer."
+        },
+        "gstNumber": {
+          "type": "string",
+          "description": "The Goods and Services Tax (GST) registration number of the customer."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "contactPerson",
+        "email",
+        "phone",
+        "address",
+        "gstNumber"
+      ]
+    },
+    "Material": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Material",
+      "type": "object",
+      "description": "Manages master data for various materials used in production, such as jumbo rolls and inks.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Material entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the material (e.g., 'Coated Paper 80 GSM', 'UV Ink Red')."
+        },
+        "type": {
+          "type": "string",
+          "description": "The category or type of the material (e.g., 'Jumbo Roll', 'Ink', 'Adhesive')."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the material's properties or usage."
+        },
+        "gsm": {
+          "type": "number",
+          "description": "Grammage of the material in grams per square meter (GSM), applicable for paper/film materials."
+        },
+        "ratePerSqMeter": {
+          "type": "number",
+          "description": "The standard rate of the material per square meter, used for costing."
+        },
+        "unitOfMeasure": {
+          "type": "string",
+          "description": "The standard unit of measure for this material (e.g., 'sq meter', 'kg', 'liter')."
+        },
+        "widthMm": {
+          "type": "number",
+          "description": "The standard width of the material in millimeters, primarily for roll materials like Jumbo Rolls."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "description",
+        "ratePerSqMeter",
+        "unitOfMeasure"
+      ]
+    },
+    "Machine": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Machine",
+      "type": "object",
+      "description": "Stores master data for various production machines, including their capabilities and operating costs.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Machine entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name or model of the machine (e.g., 'Flexo Printing Machine A')."
+        },
+        "type": {
+          "type": "string",
+          "description": "The category or type of machine (e.g., 'Printing Machine', 'Slitting Machine', 'Rewinding Machine')."
+        },
+        "maxPrintingWidthMm": {
+          "type": "number",
+          "description": "The maximum printing width in millimeters supported by this machine, applicable to printing machines."
+        },
+        "maxSlittingWidthMm": {
+          "type": "number",
+          "description": "The maximum slitting width in millimeters supported by this machine, applicable to slitting machines."
+        },
+        "speedMetersPerMin": {
+          "type": "number",
+          "description": "The operational speed of the machine in meters per minute."
+        },
+        "costPerHour": {
+          "type": "number",
+          "description": "The standard operational cost of the machine per hour, used for costing."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the machine's features or specifications."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "type",
+        "speedMetersPerMin",
+        "costPerHour",
+        "description"
+      ]
+    },
+    "Cylinder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Cylinder",
+      "type": "object",
+      "description": "Stores master data for flexo printing cylinders, including their specific repeat lengths.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Cylinder entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name or identifier of the cylinder (e.g., 'Cylinder 508mm')."
+        },
+        "repeatLengthMm": {
+          "type": "number",
+          "description": "The physical repeat length of the printing cylinder in millimeters."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the cylinder."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "repeatLengthMm",
+        "description"
+      ]
+    },
+    "Die": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Die",
+      "type": "object",
+      "description": "Manages master data for cutting dies used in label production, including their cost and status.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Die entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name or identifier of the die (e.g., 'Round 50mm Die')."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the die, including its shape or specific use."
+        },
+        "cost": {
+          "type": "number",
+          "description": "The one-time purchase or manufacturing cost of the die."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the die (e.g., 'Available', 'In Use', 'Maintenance', 'Retired')."
+        },
+        "shape": {
+          "type": "string",
+          "description": "The geometric shape of the die cut (e.g., 'Round', 'Square', 'Oval', 'Custom')."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "cost",
+        "status",
+        "shape"
+      ]
+    },
+    "PrintingRate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PrintingRate",
+      "type": "object",
+      "description": "Defines the standard rate for printing operations per running meter.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the PrintingRate entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "A descriptive name for the printing rate (e.g., 'Standard Flexo Rate')."
+        },
+        "ratePerRunningMeter": {
+          "type": "number",
+          "description": "The cost of printing per running meter of material."
+        },
+        "effectiveDate": {
+          "type": "string",
+          "description": "The date from which this rate becomes effective.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief explanation of the printing rate."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ratePerRunningMeter",
+        "effectiveDate",
+        "description"
+      ]
+    },
+    "UvRate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "UvRate",
+      "type": "object",
+      "description": "Defines the standard rate for UV coating or printing operations per running meter.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the UvRate entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "A descriptive name for the UV rate (e.g., 'Standard UV Varnish Rate')."
+        },
+        "ratePerRunningMeter": {
+          "type": "number",
+          "description": "The cost of UV application per running meter of material."
+        },
+        "effectiveDate": {
+          "type": "string",
+          "description": "The date from which this rate becomes effective.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief explanation of the UV rate."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ratePerRunningMeter",
+        "effectiveDate",
+        "description"
+      ]
+    },
+    "InkRate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InkRate",
+      "type": "object",
+      "description": "Defines the standard rate for ink consumption per running meter per color.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the InkRate entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "A descriptive name for the ink rate (e.g., 'Standard Process Ink Rate')."
+        },
+        "ratePerRunningMeterPerColor": {
+          "type": "number",
+          "description": "The cost of ink per running meter, per printing color."
+        },
+        "effectiveDate": {
+          "type": "string",
+          "description": "The date from which this rate becomes effective.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief explanation of the ink rate."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ratePerRunningMeterPerColor",
+        "effectiveDate",
+        "description"
+      ]
+    },
+    "LaborRate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "LaborRate",
+      "type": "object",
+      "description": "Defines the standard labor cost per hour for production activities.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the LaborRate entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "A descriptive name for the labor rate (e.g., 'Standard Operator Rate')."
+        },
+        "ratePerHour": {
+          "type": "number",
+          "description": "The cost of labor per hour."
+        },
+        "effectiveDate": {
+          "type": "string",
+          "description": "The date from which this rate becomes effective.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief explanation of the labor rate."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ratePerHour",
+        "effectiveDate",
+        "description"
+      ]
+    },
+    "PlateRate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PlateRate",
+      "type": "object",
+      "description": "Defines the standard cost for printing plates per color.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the PlateRate entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "A descriptive name for the plate rate (e.g., 'Standard Flexo Plate Cost')."
+        },
+        "ratePerColor": {
+          "type": "number",
+          "description": "The cost of one printing plate per color."
+        },
+        "effectiveDate": {
+          "type": "string",
+          "description": "The date from which this rate becomes effective.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A brief explanation of the plate rate."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "ratePerColor",
+        "effectiveDate",
+        "description"
+      ]
+    },
+    "Estimate": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Estimate",
+      "type": "object",
+      "description": "Represents a detailed cost and layout estimation for a label printing job, including all calculated parameters and costs.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Estimate entity."
+        },
+        "estimateNumber": {
+          "type": "string",
+          "description": "A unique, human-readable identifier for the estimate."
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Reference to the Customer for whom the estimate is created. (Relationship: Customer 1:N Estimate)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to the primary Material chosen for this estimate. (Relationship: Material 1:N Estimate)"
+        },
+        "machineId": {
+          "type": "string",
+          "description": "Reference to the primary Machine selected for this estimate. (Relationship: Machine 1:N Estimate)"
+        },
+        "cylinderId": {
+          "type": "string",
+          "description": "Reference to the Cylinder used for this estimate's repeat length calculation. (Relationship: Cylinder 1:N Estimate)"
+        },
+        "printingRateId": {
+          "type": "string",
+          "description": "Reference to the PrintingRate used for this estimate. (Relationship: PrintingRate 1:N Estimate)"
+        },
+        "uvRateId": {
+          "type": "string",
+          "description": "Reference to the UvRate used for this estimate. (Relationship: UvRate 1:N Estimate)"
+        },
+        "inkRateId": {
+          "type": "string",
+          "description": "Reference to the InkRate used for this estimate. (Relationship: InkRate 1:N Estimate)"
+        },
+        "laborRateId": {
+          "type": "string",
+          "description": "Reference to the LaborRate used for this estimate. (Relationship: LaborRate 1:N Estimate)"
+        },
+        "plateRateId": {
+          "type": "string",
+          "description": "Reference to the PlateRate used for this estimate. (Relationship: PlateRate 1:N Estimate)"
+        },
+        "dieId": {
+          "type": "string",
+          "description": "Reference to the Die required for this estimate, if applicable. (Relationship: Die 1:N Estimate)"
+        },
+        "estimateDate": {
+          "type": "string",
+          "description": "The date when the estimate was created.",
+          "format": "date-time"
+        },
+        "productCode": {
+          "type": "string",
+          "description": "An internal code or identifier for the estimated label product."
+        },
+        "labelWidthMm": {
+          "type": "number",
+          "description": "The width of a single label in millimeters."
+        },
+        "labelLengthMm": {
+          "type": "number",
+          "description": "The length of a single label in millimeters."
+        },
+        "gapMm": {
+          "type": "number",
+          "description": "The gap between labels (both across and around) in millimeters."
+        },
+        "sideMarginMm": {
+          "type": "number",
+          "description": "The margin on each side of the printing web in millimeters."
+        },
+        "numberOfUvColors": {
+          "type": "number",
+          "description": "The number of UV colors specified for the label."
+        },
+        "numberOfWaterBasedColors": {
+          "type": "number",
+          "description": "The number of water-based colors specified for the label."
+        },
+        "orderQuantity": {
+          "type": "number",
+          "description": "The total number of labels ordered or estimated."
+        },
+        "wastagePercentage": {
+          "type": "number",
+          "description": "The estimated percentage of material wastage during production (e.g., 5 for 5%)."
+        },
+        "availablePrintingWidthMm": {
+          "type": "number",
+          "description": "The calculated available printing width after accounting for side margins."
+        },
+        "labelAcross": {
+          "type": "number",
+          "description": "The number of labels that can be printed across the web."
+        },
+        "labelAround": {
+          "type": "number",
+          "description": "The number of labels that fit around the cylinder repeat length."
+        },
+        "labelsPerRepeat": {
+          "type": "number",
+          "description": "The total number of labels printed in one cylinder repeat."
+        },
+        "repeatsRequired": {
+          "type": "number",
+          "description": "The total number of cylinder repeats required to produce the order quantity."
+        },
+        "runningMeter": {
+          "type": "number",
+          "description": "The total running length of material (in meters) required for printing."
+        },
+        "materialConsumptionSqMeter": {
+          "type": "number",
+          "description": "The net material consumed in square meters, excluding wastage."
+        },
+        "totalMaterialRequiredSqMeter": {
+          "type": "number",
+          "description": "The total material required in square meters, including wastage."
+        },
+        "slittingWidthMm": {
+          "type": "number",
+          "description": "The calculated width in millimeters for slitting jumbo rolls for this job."
+        },
+        "numberOfSlitRollsFromJumbo": {
+          "type": "number",
+          "description": "The estimated number of slit rolls obtainable from a standard jumbo roll width."
+        },
+        "balanceJumboWidthMm": {
+          "type": "number",
+          "description": "The remaining jumbo roll width in millimeters after optimal slitting for this job."
+        },
+        "materialCost": {
+          "type": "number",
+          "description": "The calculated cost of raw materials for the estimate."
+        },
+        "inkCost": {
+          "type": "number",
+          "description": "The calculated cost of inks for the estimate."
+        },
+        "plateCost": {
+          "type": "number",
+          "description": "The calculated cost of printing plates for the estimate."
+        },
+        "machineCost": {
+          "type": "number",
+          "description": "The calculated machine cost for the estimate based on running time."
+        },
+        "laborCost": {
+          "type": "number",
+          "description": "The calculated labor cost for the estimate based on running time."
+        },
+        "totalProductionCost": {
+          "type": "number",
+          "description": "The sum of all calculated production costs (material, ink, plate, machine, labor)."
+        },
+        "costPerLabel": {
+          "type": "number",
+          "description": "The calculated production cost per single label."
+        },
+        "sellingPrice": {
+          "type": "number",
+          "description": "The proposed selling price for the estimated job."
+        },
+        "profit": {
+          "type": "number",
+          "description": "The calculated profit for the estimated job."
+        },
+        "profitPercentage": {
+          "type": "number",
+          "description": "The calculated profit margin as a percentage."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the estimate (e.g., 'Draft', 'Submitted', 'Approved', 'Rejected', 'Converted to SO')."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this estimate. (Relationship: User 1:N Estimate)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the estimate was created.",
+          "format": "date-time"
+        },
+        "updatedById": {
+          "type": "string",
+          "description": "Reference to the User who last updated this estimate. (Relationship: User 1:N Estimate)"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the estimate was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "estimateNumber",
+        "customerId",
+        "materialId",
+        "machineId",
+        "cylinderId",
+        "printingRateId",
+        "uvRateId",
+        "inkRateId",
+        "laborRateId",
+        "plateRateId",
+        "estimateDate",
+        "productCode",
+        "labelWidthMm",
+        "labelLengthMm",
+        "gapMm",
+        "sideMarginMm",
+        "numberOfUvColors",
+        "numberOfWaterBasedColors",
+        "orderQuantity",
+        "wastagePercentage",
+        "availablePrintingWidthMm",
+        "labelAcross",
+        "labelAround",
+        "labelsPerRepeat",
+        "repeatsRequired",
+        "runningMeter",
+        "materialConsumptionSqMeter",
+        "totalMaterialRequiredSqMeter",
+        "slittingWidthMm",
+        "numberOfSlitRollsFromJumbo",
+        "balanceJumboWidthMm",
+        "materialCost",
+        "inkCost",
+        "plateCost",
+        "machineCost",
+        "laborCost",
+        "totalProductionCost",
+        "costPerLabel",
+        "sellingPrice",
+        "profit",
+        "profitPercentage",
+        "status",
+        "createdById",
+        "createdAt"
+      ]
+    },
+    "Artwork": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Artwork",
+      "type": "object",
+      "description": "Manages design artwork files and versions associated with estimates or sales orders.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Artwork entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the artwork file."
+        },
+        "estimateId": {
+          "type": "string",
+          "description": "Reference to the Estimate this artwork is associated with. (Relationship: Estimate 1:N Artwork)"
+        },
+        "version": {
+          "type": "string",
+          "description": "The version identifier of the artwork (e.g., '1.0', '2.1')."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "The URI or path to the stored artwork file.",
+          "format": "uri"
+        },
+        "uploadDate": {
+          "type": "string",
+          "description": "Timestamp when the artwork file was uploaded.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description or notes about the artwork."
+        },
+        "uploadedById": {
+          "type": "string",
+          "description": "Reference to the User who uploaded the artwork. (Relationship: User 1:N Artwork)"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "estimateId",
+        "version",
+        "filePath",
+        "uploadDate",
+        "uploadedById"
+      ]
+    },
+    "BillOfMaterial": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "BillOfMaterial",
+      "type": "object",
+      "description": "Defines the Bill of Material (BOM) for a product, detailing all required components and resources.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the BillOfMaterial entity."
+        },
+        "bomNumber": {
+          "type": "string",
+          "description": "A unique, human-readable identifier for the BOM."
+        },
+        "estimateId": {
+          "type": "string",
+          "description": "Reference to the Estimate from which this BOM was generated. (Relationship: Estimate 1:N BillOfMaterial)"
+        },
+        "salesOrderId": {
+          "type": "string",
+          "description": "Optional reference to a SalesOrder if the BOM is created for a confirmed order. (Relationship: SalesOrder 1:N BillOfMaterial)"
+        },
+        "bomDate": {
+          "type": "string",
+          "description": "The date when the BOM was created.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the BOM or the product it represents."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the BOM (e.g., 'Draft', 'Approved', 'Released')."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this BOM. (Relationship: User 1:N BillOfMaterial)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the BOM was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "bomNumber",
+        "estimateId",
+        "bomDate",
+        "description",
+        "status",
+        "createdById",
+        "createdAt"
+      ]
+    },
+    "BomComponent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "BomComponent",
+      "type": "object",
+      "description": "Details a single component or resource required within a Bill of Material (e.g., material, machine usage, die, plate, ink).",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the BomComponent entity."
+        },
+        "bomId": {
+          "type": "string",
+          "description": "Reference to the BillOfMaterial this component belongs to. (Relationship: BillOfMaterial 1:N BomComponent)"
+        },
+        "componentType": {
+          "type": "string",
+          "description": "The type of component (e.g., 'Material', 'MachineUsage', 'DieUsage', 'PlateUsage', 'Ink')."
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Optional reference to a Material for material or ink components. (Relationship: Material 1:N BomComponent)"
+        },
+        "machineId": {
+          "type": "string",
+          "description": "Optional reference to a Machine for machine usage components. (Relationship: Machine 1:N BomComponent)"
+        },
+        "dieId": {
+          "type": "string",
+          "description": "Optional reference to a Die for die usage components. (Relationship: Die 1:N BomComponent)"
+        },
+        "plateRateId": {
+          "type": "string",
+          "description": "Optional reference to a PlateRate for plate usage components. (Relationship: PlateRate 1:N BomComponent)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The required quantity of the component (e.g., square meters of material, liters of ink, hours of machine use, pieces of plates)."
+        },
+        "unitOfMeasure": {
+          "type": "string",
+          "description": "The unit of measure for the component quantity (e.g., 'sq meter', 'liter', 'hours', 'pieces')."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes or details about the component."
+        }
+      },
+      "required": [
+        "id",
+        "bomId",
+        "componentType",
+        "quantity",
+        "unitOfMeasure"
+      ]
+    },
+    "SalesOrder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SalesOrder",
+      "type": "object",
+      "description": "Represents a confirmed customer order, typically converted from an estimate.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the SalesOrder entity."
+        },
+        "orderNumber": {
+          "type": "string",
+          "description": "A unique, human-readable identifier for the sales order."
+        },
+        "estimateId": {
+          "type": "string",
+          "description": "Reference to the Estimate from which this sales order was generated. (Relationship: Estimate 1:N SalesOrder)"
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Reference to the Customer who placed the order. (Relationship: Customer 1:N SalesOrder)"
+        },
+        "orderDate": {
+          "type": "string",
+          "description": "The date when the sales order was placed or confirmed.",
+          "format": "date-time"
+        },
+        "deliveryDate": {
+          "type": "string",
+          "description": "The requested or promised delivery date for the order.",
+          "format": "date-time"
+        },
+        "poNumber": {
+          "type": "string",
+          "description": "The customer's purchase order number."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the sales order (e.g., 'Pending', 'Confirmed', 'In Production', 'Completed', 'Cancelled')."
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "The total monetary amount of the sales order."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this sales order. (Relationship: User 1:N SalesOrder)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the sales order was created.",
+          "format": "date-time"
+        },
+        "updatedById": {
+          "type": "string",
+          "description": "Reference to the User who last updated this sales order. (Relationship: User 1:N SalesOrder)"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the sales order was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "orderNumber",
+        "estimateId",
+        "customerId",
+        "orderDate",
+        "deliveryDate",
+        "poNumber",
+        "status",
+        "totalAmount",
+        "createdById",
+        "createdAt"
+      ]
+    },
+    "JobCard": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JobCard",
+      "type": "object",
+      "description": "Details a specific production job, derived from an estimate or sales order, outlining tasks, materials, and resources.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the JobCard entity."
+        },
+        "jobCardNumber": {
+          "type": "string",
+          "description": "A unique, human-readable identifier for the job card (e.g., 'JOB-00001')."
+        },
+        "salesOrderId": {
+          "type": "string",
+          "description": "Reference to the SalesOrder associated with this job card. (Relationship: SalesOrder 1:N JobCard)"
+        },
+        "estimateId": {
+          "type": "string",
+          "description": "Reference to the Estimate providing the product specifications for this job card. (Relationship: Estimate 1:N JobCard)"
+        },
+        "productionQuantity": {
+          "type": "number",
+          "description": "The actual quantity of labels or items to be produced for this job."
+        },
+        "startDate": {
+          "type": "string",
+          "description": "The planned start date for the job card.",
+          "format": "date-time"
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "The planned due date for the job card completion.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the job card (e.g., 'New', 'Scheduled', 'In Progress', 'On Hold', 'Completed', 'Canceled')."
+        },
+        "notes": {
+          "type": "string",
+          "description": "General notes or instructions for the job card."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this job card. (Relationship: User 1:N JobCard)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the job card was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "jobCardNumber",
+        "salesOrderId",
+        "estimateId",
+        "productionQuantity",
+        "startDate",
+        "dueDate",
+        "status",
+        "createdById",
+        "createdAt"
+      ]
+    },
+    "JobCardAssignment": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JobCardAssignment",
+      "type": "object",
+      "description": "Assigns machines or operators to a specific job card, tracking their scheduled and actual usage.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the JobCardAssignment entity."
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard to which the entity is assigned. (Relationship: JobCard 1:N JobCardAssignment)"
+        },
+        "assignedEntityType": {
+          "type": "string",
+          "description": "The type of entity being assigned ('Machine' or 'Operator')."
+        },
+        "entityId": {
+          "type": "string",
+          "description": "Reference to the Machine or User (operator) being assigned. (Relationship: Machine 1:N JobCardAssignment, User 1:N JobCardAssignment)"
+        },
+        "assignedStartTime": {
+          "type": "string",
+          "description": "The planned start time for the assignment.",
+          "format": "date-time"
+        },
+        "assignedEndTime": {
+          "type": "string",
+          "description": "The planned end time for the assignment.",
+          "format": "date-time"
+        },
+        "actualStartTime": {
+          "type": "string",
+          "description": "The actual start time of the assignment.",
+          "format": "date-time"
+        },
+        "actualEndTime": {
+          "type": "string",
+          "description": "The actual end time of the assignment.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the assignment (e.g., 'Assigned', 'Started', 'Completed')."
+        }
+      },
+      "required": [
+        "id",
+        "jobCardId",
+        "assignedEntityType",
+        "entityId",
+        "assignedStartTime",
+        "assignedEndTime",
+        "status"
+      ]
+    },
+    "JobCardMaterialRequirement": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JobCardMaterialRequirement",
+      "type": "object",
+      "description": "Lists the materials required and issued for a specific job card.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the JobCardMaterialRequirement entity."
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard for which the material is required. (Relationship: JobCard 1:N JobCardMaterialRequirement)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to the Material required. (Relationship: Material 1:N JobCardMaterialRequirement)"
+        },
+        "requiredQuantity": {
+          "type": "number",
+          "description": "The quantity of material required for the job."
+        },
+        "unitOfMeasure": {
+          "type": "string",
+          "description": "The unit of measure for the required material (e.g., 'sq meter', 'liter')."
+        },
+        "issuedQuantity": {
+          "type": "number",
+          "description": "The quantity of material actually issued from inventory for the job."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the material requirement."
+        }
+      },
+      "required": [
+        "id",
+        "jobCardId",
+        "materialId",
+        "requiredQuantity",
+        "unitOfMeasure"
+      ]
+    },
+    "ProductionRun": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ProductionRun",
+      "type": "object",
+      "description": "Tracks a specific run on a machine during the production process for a job card.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ProductionRun entity."
+        },
+        "productionRunNumber": {
+          "type": "string",
+          "description": "A unique, human-readable identifier for the production run (e.g., 'PR-00001')."
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard this production run belongs to. (Relationship: JobCard 1:N ProductionRun)"
+        },
+        "machineId": {
+          "type": "string",
+          "description": "Reference to the Machine used for this production run. (Relationship: Machine 1:N ProductionRun)"
+        },
+        "operatorId": {
+          "type": "string",
+          "description": "Reference to the User (operator) overseeing this production run. (Relationship: User 1:N ProductionRun)"
+        },
+        "runType": {
+          "type": "string",
+          "description": "The type of production activity (e.g., 'Slitting', 'Printing', 'Rewinding', 'Finishing')."
+        },
+        "startTime": {
+          "type": "string",
+          "description": "The actual start time of the production run.",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "description": "The actual end time of the production run.",
+          "format": "date-time"
+        },
+        "startMeterReading": {
+          "type": "number",
+          "description": "The machine's meter reading at the start of the run."
+        },
+        "endMeterReading": {
+          "type": "number",
+          "description": "The machine's meter reading at the end of the run."
+        },
+        "meterProduced": {
+          "type": "number",
+          "description": "The quantity of good material produced in meters during this run."
+        },
+        "wasteMeter": {
+          "type": "number",
+          "description": "The quantity of waste generated in meters during this run."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the production run (e.g., 'Started', 'Paused', 'Completed', 'Aborted')."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes or observations about the production run."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the production run record was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "productionRunNumber",
+        "jobCardId",
+        "machineId",
+        "operatorId",
+        "runType",
+        "startTime",
+        "meterProduced",
+        "wasteMeter",
+        "status",
+        "createdAt"
+      ]
+    },
+    "ProductionLogEntry": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "ProductionLogEntry",
+      "type": "object",
+      "description": "Logs events and activities that occur during a production run.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the ProductionLogEntry entity."
+        },
+        "productionRunId": {
+          "type": "string",
+          "description": "Reference to the ProductionRun this log entry belongs to. (Relationship: ProductionRun 1:N ProductionLogEntry)"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "The exact time when the event occurred.",
+          "format": "date-time"
+        },
+        "eventType": {
+          "type": "string",
+          "description": "The type of event logged (e.g., 'Start', 'Pause', 'Resume', 'Material Change', 'Defect Logged')."
+        },
+        "details": {
+          "type": "string",
+          "description": "Detailed description of the event."
+        },
+        "loggedById": {
+          "type": "string",
+          "description": "Reference to the User who logged this event. (Relationship: User 1:N ProductionLogEntry)"
+        }
+      },
+      "required": [
+        "id",
+        "productionRunId",
+        "timestamp",
+        "eventType",
+        "details",
+        "loggedById"
+      ]
+    },
+    "InventoryItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InventoryItem",
+      "type": "object",
+      "description": "A base entity for all physical stock items, providing common attributes and barcode tracking.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the InventoryItem entity."
+        },
+        "barcode": {
+          "type": "string",
+          "description": "A unique barcode for the inventory item (e.g., JMB-00001, SLT-00001, FG-00001)."
+        },
+        "itemType": {
+          "type": "string",
+          "description": "The specific type of inventory item (e.g., 'Jumbo Roll', 'Slitted Roll', 'WIP', 'Finished Good', 'Other Material')."
+        },
+        "currentQuantity": {
+          "type": "number",
+          "description": "The current quantity of the item in stock (e.g., number of rolls, pieces, kg)."
+        },
+        "unitOfMeasure": {
+          "type": "string",
+          "description": "The unit of measure for the current quantity."
+        },
+        "location": {
+          "type": "string",
+          "description": "The physical location of the inventory item (e.g., 'Warehouse A', 'Printing Floor')."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the inventory item (e.g., 'Available', 'Reserved', 'In Use', 'Quarantined')."
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the inventory item record was created.",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp when the inventory item record was last updated.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "barcode",
+        "itemType",
+        "currentQuantity",
+        "unitOfMeasure",
+        "location",
+        "status",
+        "createdAt"
+      ]
+    },
+    "JumboRollInventory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "JumboRollInventory",
+      "type": "object",
+      "description": "Specific details for jumbo rolls in inventory, referencing the generic InventoryItem.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the JumboRollInventory entity."
+        },
+        "inventoryItemId": {
+          "type": "string",
+          "description": "Reference to the base InventoryItem for common attributes and barcode. (Relationship: InventoryItem 1:N JumboRollInventory)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to the Material master data for this jumbo roll's type. (Relationship: Material 1:N JumboRollInventory)"
+        },
+        "jumboWidthMm": {
+          "type": "number",
+          "description": "The actual width of the jumbo roll in millimeters."
+        },
+        "lengthMeters": {
+          "type": "number",
+          "description": "The initial length of the jumbo roll in meters."
+        },
+        "weightKg": {
+          "type": "number",
+          "description": "The weight of the jumbo roll in kilograms."
+        },
+        "batchNumber": {
+          "type": "string",
+          "description": "The manufacturer's batch number for the jumbo roll."
+        },
+        "purchaseOrderId": {
+          "type": "string",
+          "description": "Reference to the PurchaseOrder through which this jumbo roll was acquired. (Relationship: PurchaseOrder 1:N JumboRollInventory)"
+        }
+      },
+      "required": [
+        "id",
+        "inventoryItemId",
+        "materialId",
+        "jumboWidthMm",
+        "lengthMeters",
+        "weightKg",
+        "batchNumber"
+      ]
+    },
+    "SlittedRollInventory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "SlittedRollInventory",
+      "type": "object",
+      "description": "Specific details for slitted rolls in inventory, referencing the generic InventoryItem.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the SlittedRollInventory entity."
+        },
+        "inventoryItemId": {
+          "type": "string",
+          "description": "Reference to the base InventoryItem for common attributes and barcode. (Relationship: InventoryItem 1:N SlittedRollInventory)"
+        },
+        "jumboRollInventoryId": {
+          "type": "string",
+          "description": "Reference to the original JumboRollInventory from which this roll was slitted. (Relationship: JumboRollInventory 1:N SlittedRollInventory)"
+        },
+        "slitWidthMm": {
+          "type": "number",
+          "description": "The width of the slitted roll in millimeters."
+        },
+        "lengthMeters": {
+          "type": "number",
+          "description": "The length of the slitted roll in meters."
+        },
+        "weightKg": {
+          "type": "number",
+          "description": "The weight of the slitted roll in kilograms."
+        },
+        "productionRunId": {
+          "type": "string",
+          "description": "Reference to the ProductionRun (slitting run) that created this roll. (Relationship: ProductionRun 1:N SlittedRollInventory)"
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard for which this roll was slitted. (Relationship: JobCard 1:N SlittedRollInventory)"
+        }
+      },
+      "required": [
+        "id",
+        "inventoryItemId",
+        "jumboRollInventoryId",
+        "slitWidthMm",
+        "lengthMeters",
+        "weightKg",
+        "productionRunId",
+        "jobCardId"
+      ]
+    },
+    "FinishedGoodInventory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "FinishedGoodInventory",
+      "type": "object",
+      "description": "Specific details for finished goods in inventory, referencing the generic InventoryItem.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the FinishedGoodInventory entity."
+        },
+        "inventoryItemId": {
+          "type": "string",
+          "description": "Reference to the base InventoryItem for common attributes and barcode. (Relationship: InventoryItem 1:N FinishedGoodInventory)"
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard that produced these finished goods. (Relationship: JobCard 1:N FinishedGoodInventory)"
+        },
+        "salesOrderId": {
+          "type": "string",
+          "description": "Reference to the SalesOrder associated with these finished goods. (Relationship: SalesOrder 1:N FinishedGoodInventory)"
+        },
+        "estimateId": {
+          "type": "string",
+          "description": "Reference to the Estimate that defined these finished goods. (Relationship: Estimate 1:N FinishedGoodInventory)"
+        },
+        "productCode": {
+          "type": "string",
+          "description": "The product code of the finished label from the estimate."
+        },
+        "labelsPerRoll": {
+          "type": "number",
+          "description": "The number of labels contained in each individual finished roll or package."
+        },
+        "totalLabels": {
+          "type": "number",
+          "description": "The total number of finished labels in this specific inventory item (e.g., a box of rolls)."
+        },
+        "packingDetails": {
+          "type": "string",
+          "description": "Details about how the finished goods are packed (e.g., '10 rolls per box', 'on pallet')."
+        },
+        "productionDate": {
+          "type": "string",
+          "description": "The date when these finished goods were produced.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "inventoryItemId",
+        "jobCardId",
+        "salesOrderId",
+        "estimateId",
+        "productCode",
+        "totalLabels",
+        "productionDate"
+      ]
+    },
+    "WorkInProcessInventory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "WorkInProcessInventory",
+      "type": "object",
+      "description": "Specific details for work-in-process (WIP) items in inventory.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the WorkInProcessInventory entity."
+        },
+        "inventoryItemId": {
+          "type": "string",
+          "description": "Reference to the base InventoryItem for common attributes and barcode. (Relationship: InventoryItem 1:N WorkInProcessInventory)"
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard associated with this WIP item. (Relationship: JobCard 1:N WorkInProcessInventory)"
+        },
+        "productionRunId": {
+          "type": "string",
+          "description": "Reference to the last ProductionRun that processed this WIP item. (Relationship: ProductionRun 1:N WorkInProcessInventory)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to the Material that this WIP item is derived from (e.g., partially printed roll material). (Relationship: Material 1:N WorkInProcessInventory)"
+        },
+        "stage": {
+          "type": "string",
+          "description": "The current stage of production for this WIP item (e.g., 'After Slitting', 'After Printing', 'After Rewinding')."
+        },
+        "quantityLabels": {
+          "type": "number",
+          "description": "The estimated number of labels on the WIP roll/item, if trackable at this stage."
+        },
+        "quantityMeters": {
+          "type": "number",
+          "description": "The remaining length of material in meters for the WIP item."
+        }
+      },
+      "required": [
+        "id",
+        "inventoryItemId",
+        "jobCardId",
+        "materialId",
+        "stage",
+        "quantityMeters"
+      ]
+    },
+    "InventoryTransaction": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InventoryTransaction",
+      "type": "object",
+      "description": "Records all movements and adjustments of inventory items.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the InventoryTransaction entity."
+        },
+        "inventoryItemId": {
+          "type": "string",
+          "description": "Reference to the InventoryItem involved in this transaction. (Relationship: InventoryItem 1:N InventoryTransaction)"
+        },
+        "transactionType": {
+          "type": "string",
+          "description": "The type of inventory transaction (e.g., 'Inbound', 'Outbound', 'Adjustment', 'Transfer', 'Consumed')."
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The quantity of the item moved in this transaction."
+        },
+        "unitOfMeasure": {
+          "type": "string",
+          "description": "The unit of measure for the transaction quantity."
+        },
+        "transactionDate": {
+          "type": "string",
+          "description": "The date and time when the transaction occurred.",
+          "format": "date-time"
+        },
+        "sourceReferenceType": {
+          "type": "string",
+          "description": "The type of document or process that triggered this transaction (e.g., 'PurchaseOrder', 'ProductionRun', 'DispatchChallan', 'Adjustment')."
+        },
+        "sourceReferenceId": {
+          "type": "string",
+          "description": "Reference to the specific document or process that triggered this transaction (e.g., `purchaseOrderId`, `productionRunId`)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the inventory transaction."
+        },
+        "transactedById": {
+          "type": "string",
+          "description": "Reference to the User who recorded this transaction. (Relationship: User 1:N InventoryTransaction)"
+        }
+      },
+      "required": [
+        "id",
+        "inventoryItemId",
+        "transactionType",
+        "quantity",
+        "unitOfMeasure",
+        "transactionDate",
+        "sourceReferenceType",
+        "sourceReferenceId",
+        "transactedById"
+      ]
+    },
+    "PurchaseOrder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PurchaseOrder",
+      "type": "object",
+      "description": "Manages purchase orders placed with suppliers for raw materials and other items.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the PurchaseOrder entity."
+        },
+        "poNumber": {
+          "type": "string",
+          "description": "A unique, human-readable purchase order number."
+        },
+        "supplierId": {
+          "type": "string",
+          "description": "Reference to the Supplier from whom the items are being purchased. (Relationship: Supplier 1:N PurchaseOrder)"
+        },
+        "orderDate": {
+          "type": "string",
+          "description": "The date when the purchase order was placed.",
+          "format": "date-time"
+        },
+        "requiredDate": {
+          "type": "string",
+          "description": "The date by which the ordered items are required.",
+          "format": "date-time"
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the purchase order (e.g., 'Draft', 'Ordered', 'Partial Received', 'Received', 'Cancelled')."
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "The total monetary amount of the purchase order."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this purchase order. (Relationship: User 1:N PurchaseOrder)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the purchase order was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "poNumber",
+        "supplierId",
+        "orderDate",
+        "requiredDate",
+        "status",
+        "totalAmount",
+        "createdById",
+        "createdAt"
+      ]
+    },
+    "PurchaseOrderItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PurchaseOrderItem",
+      "type": "object",
+      "description": "Details a single item within a purchase order.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the PurchaseOrderItem entity."
+        },
+        "purchaseOrderId": {
+          "type": "string",
+          "description": "Reference to the PurchaseOrder this item belongs to. (Relationship: PurchaseOrder 1:N PurchaseOrderItem)"
+        },
+        "materialId": {
+          "type": "string",
+          "description": "Reference to the Material being purchased. (Relationship: Material 1:N PurchaseOrderItem)"
+        },
+        "orderedQuantity": {
+          "type": "number",
+          "description": "The quantity of the material ordered."
+        },
+        "receivedQuantity": {
+          "type": "number",
+          "description": "The quantity of the material already received."
+        },
+        "unitPrice": {
+          "type": "number",
+          "description": "The unit price of the ordered material."
+        },
+        "lineTotal": {
+          "type": "number",
+          "description": "The total cost for this line item (ordered quantity * unit price)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the purchase order item."
+        }
+      },
+      "required": [
+        "id",
+        "purchaseOrderId",
+        "materialId",
+        "orderedQuantity",
+        "unitPrice",
+        "lineTotal"
+      ]
+    },
+    "Supplier": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Supplier",
+      "type": "object",
+      "description": "Stores information about material suppliers.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Supplier entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The official name of the supplier company."
+        },
+        "contactPerson": {
+          "type": "string",
+          "description": "The primary contact person at the supplier company."
+        },
+        "email": {
+          "type": "string",
+          "description": "The email address of the supplier's contact person.",
+          "format": "email"
+        },
+        "phone": {
+          "type": "string",
+          "description": "The primary phone number of the supplier."
+        },
+        "address": {
+          "type": "string",
+          "description": "The billing and primary physical address of the supplier."
+        },
+        "gstNumber": {
+          "type": "string",
+          "description": "The Goods and Services Tax (GST) registration number of the supplier."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "contactPerson",
+        "email",
+        "phone",
+        "address",
+        "gstNumber"
+      ]
+    },
+    "QualityCheck": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "QualityCheck",
+      "type": "object",
+      "description": "Records details of a quality control check performed during or after production.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the QualityCheck entity."
+        },
+        "jobCardId": {
+          "type": "string",
+          "description": "Reference to the JobCard being inspected. (Relationship: JobCard 1:N QualityCheck)"
+        },
+        "productionRunId": {
+          "type": "string",
+          "description": "Reference to the specific ProductionRun associated with this check. (Relationship: ProductionRun 1:N QualityCheck)"
+        },
+        "checkDate": {
+          "type": "string",
+          "description": "The date and time when the quality check was performed.",
+          "format": "date-time"
+        },
+        "inspectorId": {
+          "type": "string",
+          "description": "Reference to the User who performed the quality check. (Relationship: User 1:N QualityCheck)"
+        },
+        "status": {
+          "type": "string",
+          "description": "The overall status of the quality check (e.g., 'Passed', 'Failed', 'Rework Required', 'Approved')."
+        },
+        "notes": {
+          "type": "string",
+          "description": "General notes or observations from the quality inspection."
+        },
+        "checkedQuantity": {
+          "type": "number",
+          "description": "The quantity of items/labels that were inspected."
+        },
+        "defectiveQuantity": {
+          "type": "number",
+          "description": "The quantity of items/labels found to be defective."
+        },
+        "passedQuantity": {
+          "type": "number",
+          "description": "The quantity of items/labels that passed the quality check."
+        }
+      },
+      "required": [
+        "id",
+        "jobCardId",
+        "checkDate",
+        "inspectorId",
+        "status",
+        "checkedQuantity",
+        "passedQuantity"
+      ]
+    },
+    "Defect": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Defect",
+      "type": "object",
+      "description": "Master data for common defects found in label production.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Defect entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the defect (e.g., 'Ink Smudge', 'Misregistration', 'Die Cut Error')."
+        },
+        "description": {
+          "type": "string",
+          "description": "A detailed description of the defect."
+        },
+        "severity": {
+          "type": "string",
+          "description": "The severity level of the defect (e.g., 'Minor', 'Major', 'Critical')."
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "severity"
+      ]
+    },
+    "QualityCheckDefect": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "QualityCheckDefect",
+      "type": "object",
+      "description": "Links a specific quality check to one or more detected defects, indicating the quantity of each defect.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the QualityCheckDefect entity."
+        },
+        "qualityCheckId": {
+          "type": "string",
+          "description": "Reference to the QualityCheck where the defect was found. (Relationship: QualityCheck 1:N QualityCheckDefect)"
+        },
+        "defectId": {
+          "type": "string",
+          "description": "Reference to the Defect type found. (Relationship: Defect 1:N QualityCheckDefect)"
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The number of instances of this specific defect found during the check."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Specific notes related to this particular defect instance."
+        }
+      },
+      "required": [
+        "id",
+        "qualityCheckId",
+        "defectId",
+        "quantity"
+      ]
+    },
+    "DispatchChallan": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DispatchChallan",
+      "type": "object",
+      "description": "Generates a dispatch challan (delivery note) for outgoing goods.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the DispatchChallan entity."
+        },
+        "challanNumber": {
+          "type": "string",
+          "description": "A unique, human-readable dispatch challan number."
+        },
+        "salesOrderId": {
+          "type": "string",
+          "description": "Reference to the SalesOrder being dispatched. (Relationship: SalesOrder 1:N DispatchChallan)"
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Reference to the Customer receiving the goods. (Relationship: Customer 1:N DispatchChallan)"
+        },
+        "dispatchDate": {
+          "type": "string",
+          "description": "The date when the goods were dispatched.",
+          "format": "date-time"
+        },
+        "shippingAddress": {
+          "type": "string",
+          "description": "The address to which the goods are shipped."
+        },
+        "status": {
+          "type": "string",
+          "description": "The current status of the dispatch (e.g., 'Pending', 'Dispatched', 'Delivered')."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the dispatch."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this dispatch challan. (Relationship: User 1:N DispatchChallan)"
+        }
+      },
+      "required": [
+        "id",
+        "challanNumber",
+        "salesOrderId",
+        "customerId",
+        "dispatchDate",
+        "shippingAddress",
+        "status",
+        "createdById"
+      ]
+    },
+    "DispatchChallanItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DispatchChallanItem",
+      "type": "object",
+      "description": "Details a single finished good item included in a dispatch challan.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the DispatchChallanItem entity."
+        },
+        "dispatchChallanId": {
+          "type": "string",
+          "description": "Reference to the DispatchChallan this item belongs to. (Relationship: DispatchChallan 1:N DispatchChallanItem)"
+        },
+        "finishedGoodInventoryId": {
+          "type": "string",
+          "description": "Reference to the specific FinishedGoodInventory item being dispatched. (Relationship: FinishedGoodInventory 1:N DispatchChallanItem)"
+        },
+        "quantityLabels": {
+          "type": "number",
+          "description": "The quantity of labels dispatched for this item."
+        },
+        "quantityRolls": {
+          "type": "number",
+          "description": "The quantity of finished rolls dispatched for this item (if packed in rolls)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the dispatched item."
+        }
+      },
+      "required": [
+        "id",
+        "dispatchChallanId",
+        "finishedGoodInventoryId",
+        "quantityLabels"
+      ]
+    },
+    "PackingList": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PackingList",
+      "type": "object",
+      "description": "Generates a packing list detailing the contents of a shipment.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the PackingList entity."
+        },
+        "packingListNumber": {
+          "type": "string",
+          "description": "A unique, human-readable packing list number."
+        },
+        "dispatchChallanId": {
+          "type": "string",
+          "description": "Reference to the DispatchChallan this packing list is associated with. (Relationship: DispatchChallan 1:N PackingList)"
+        },
+        "packingDate": {
+          "type": "string",
+          "description": "The date when the packing list was generated.",
+          "format": "date-time"
+        },
+        "packedById": {
+          "type": "string",
+          "description": "Reference to the User who prepared the packing list. (Relationship: User 1:N PackingList)"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Additional notes about the packing list."
+        }
+      },
+      "required": [
+        "id",
+        "packingListNumber",
+        "dispatchChallanId",
+        "packingDate",
+        "packedById"
+      ]
+    },
+    "PackingListItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "PackingListItem",
+      "type": "object",
+      "description": "Details a single item within a packing list, including package specifics.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the PackingListItem entity."
+        },
+        "packingListId": {
+          "type": "string",
+          "description": "Reference to the PackingList this item belongs to. (Relationship: PackingList 1:N PackingListItem)"
+        },
+        "finishedGoodInventoryId": {
+          "type": "string",
+          "description": "Reference to the specific FinishedGoodInventory item being packed. (Relationship: FinishedGoodInventory 1:N PackingListItem)"
+        },
+        "quantityLabels": {
+          "type": "number",
+          "description": "The quantity of labels for this item in the package."
+        },
+        "packageIdentifier": {
+          "type": "string",
+          "description": "An identifier for the physical package (e.g., 'Box 1 of 5', 'Pallet A')."
+        },
+        "dimensions": {
+          "type": "string",
+          "description": "The physical dimensions of the package (e.g., 'LWH: 30x20x15 cm')."
+        },
+        "weightKg": {
+          "type": "number",
+          "description": "The weight of the package in kilograms."
+        }
+      },
+      "required": [
+        "id",
+        "packingListId",
+        "finishedGoodInventoryId",
+        "quantityLabels",
+        "packageIdentifier",
+        "weightKg"
+      ]
+    },
+    "Invoice": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Invoice",
+      "type": "object",
+      "description": "Generates and manages customer invoices, including financial details and GST information.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Invoice entity."
+        },
+        "invoiceNumber": {
+          "type": "string",
+          "description": "A unique, human-readable invoice number."
+        },
+        "salesOrderId": {
+          "type": "string",
+          "description": "Reference to the SalesOrder this invoice is generated for. (Relationship: SalesOrder 1:N Invoice)"
+        },
+        "customerId": {
+          "type": "string",
+          "description": "Reference to the Customer being billed. (Relationship: Customer 1:N Invoice)"
+        },
+        "invoiceDate": {
+          "type": "string",
+          "description": "The date when the invoice was issued.",
+          "format": "date-time"
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "The date by which the invoice payment is due.",
+          "format": "date-time"
+        },
+        "totalAmountExcludingGst": {
+          "type": "number",
+          "description": "The total amount of the invoice before Goods and Services Tax (GST)."
+        },
+        "gstAmount": {
+          "type": "number",
+          "description": "The total GST amount charged on the invoice."
+        },
+        "totalAmountIncludingGst": {
+          "type": "number",
+          "description": "The final total amount of the invoice, including GST."
+        },
+        "status": {
+          "type": "string",
+          "description": "The payment status of the invoice (e.g., 'Draft', 'Issued', 'Paid', 'Partially Paid', 'Overdue', 'Cancelled')."
+        },
+        "paymentTerms": {
+          "type": "string",
+          "description": "The agreed payment terms for the invoice (e.g., 'Net 30', 'Due on Receipt')."
+        },
+        "tallyExportStatus": {
+          "type": "boolean",
+          "description": "Indicates whether the invoice has been exported to Tally accounting software."
+        },
+        "createdById": {
+          "type": "string",
+          "description": "Reference to the User who created this invoice. (Relationship: User 1:N Invoice)"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp when the invoice was created.",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "invoiceNumber",
+        "salesOrderId",
+        "customerId",
+        "invoiceDate",
+        "dueDate",
+        "totalAmountExcludingGst",
+        "gstAmount",
+        "totalAmountIncludingGst",
+        "status",
+        "paymentTerms",
+        "tallyExportStatus",
+        "createdById",
+        "createdAt"
+      ]
+    },
+    "InvoiceItem": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "InvoiceItem",
+      "type": "object",
+      "description": "Details a single line item within an invoice.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the InvoiceItem entity."
+        },
+        "invoiceId": {
+          "type": "string",
+          "description": "Reference to the Invoice this item belongs to. (Relationship: Invoice 1:N InvoiceItem)"
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the invoiced item or service (e.g., 'Printing of 10000 labels, Product Code ABC')."
+        },
+        "quantity": {
+          "type": "number",
+          "description": "The quantity of the item or service billed."
+        },
+        "unitPrice": {
+          "type": "number",
+          "description": "The unit price of the item or service."
+        },
+        "gstRatePercentage": {
+          "type": "number",
+          "description": "The Goods and Services Tax (GST) rate applicable to this item, as a percentage (e.g., 18 for 18%)."
+        },
+        "itemAmountExcludingGst": {
+          "type": "number",
+          "description": "The total amount for this line item, excluding GST."
+        },
+        "itemGstAmount": {
+          "type": "number",
+          "description": "The GST amount for this line item."
+        },
+        "itemAmountIncludingGst": {
+          "type": "number",
+          "description": "The total amount for this line item, including GST."
+        }
+      },
+      "required": [
+        "id",
+        "invoiceId",
+        "description",
+        "quantity",
+        "unitPrice",
+        "gstRatePercentage",
+        "itemAmountExcludingGst",
+        "itemGstAmount",
+        "itemAmountIncludingGst"
+      ]
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/adminUsers/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A collection where the mere existence of a document signifies the user has an 'Admin' role, used for authorization without `get()` calls. This denormalizes role for DBAC.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user with the Admin role."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/managerUsers/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A collection where the mere existence of a document signifies the user has a 'Manager' role, used for authorization without `get()` calls. This denormalizes role for DBAC.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user with the Manager role."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/operatorUsers/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "A collection where the mere existence of a document signifies the user has an 'Operator' role, used for authorization without `get()` calls. This denormalizes role for DBAC.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user with the Operator role."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/users/{userId}",
+        "definition": {
+          "entityName": "User",
+          "schema": {
+            "$ref": "#/backend/entities/User"
+          },
+          "description": "Stores user profiles. Access restricted to the user themselves for their profile, and Admin for management.",
+          "params": [
+            {
+              "name": "userId",
+              "description": "The unique identifier of the user."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/roles/{roleId}",
+        "definition": {
+          "entityName": "Role",
+          "schema": {
+            "$ref": "#/backend/entities/Role"
+          },
+          "description": "Master data for defining user roles (e.g., Admin, Manager, Operator). Managed by Admin roles.",
+          "params": [
+            {
+              "name": "roleId",
+              "description": "The unique identifier for the role."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/customers/{customerId}",
+        "definition": {
+          "entityName": "Customer",
+          "schema": {
+            "$ref": "#/backend/entities/Customer"
+          },
+          "description": "Master data for customer information. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "customerId",
+              "description": "The unique identifier for the customer."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/materials/{materialId}",
+        "definition": {
+          "entityName": "Material",
+          "schema": {
+            "$ref": "#/backend/entities/Material"
+          },
+          "description": "Master data for raw materials. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "materialId",
+              "description": "The unique identifier for the material."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/machines/{machineId}",
+        "definition": {
+          "entityName": "Machine",
+          "schema": {
+            "$ref": "#/backend/entities/Machine"
+          },
+          "description": "Master data for production machines. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "machineId",
+              "description": "The unique identifier for the machine."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/cylinders/{cylinderId}",
+        "definition": {
+          "entityName": "Cylinder",
+          "schema": {
+            "$ref": "#/backend/entities/Cylinder"
+          },
+          "description": "Master data for printing cylinders. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "cylinderId",
+              "description": "The unique identifier for the cylinder."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/dies/{dieId}",
+        "definition": {
+          "entityName": "Die",
+          "schema": {
+            "$ref": "#/backend/entities/Die"
+          },
+          "description": "Master data for cutting dies. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "dieId",
+              "description": "The unique identifier for the die."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/suppliers/{supplierId}",
+        "definition": {
+          "entityName": "Supplier",
+          "schema": {
+            "$ref": "#/backend/entities/Supplier"
+          },
+          "description": "Master data for suppliers. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "supplierId",
+              "description": "The unique identifier for the supplier."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/defects/{defectId}",
+        "definition": {
+          "entityName": "Defect",
+          "schema": {
+            "$ref": "#/backend/entities/Defect"
+          },
+          "description": "Master data for common production defects. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "defectId",
+              "description": "The unique identifier for the defect."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/printingRates/{printingRateId}",
+        "definition": {
+          "entityName": "PrintingRate",
+          "schema": {
+            "$ref": "#/backend/entities/PrintingRate"
+          },
+          "description": "Master data for printing rates. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "printingRateId",
+              "description": "The unique identifier for the printing rate."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/uvRates/{uvRateId}",
+        "definition": {
+          "entityName": "UvRate",
+          "schema": {
+            "$ref": "#/backend/entities/UvRate"
+          },
+          "description": "Master data for UV rates. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "uvRateId",
+              "description": "The unique identifier for the UV rate."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/inkRates/{inkRateId}",
+        "definition": {
+          "entityName": "InkRate",
+          "schema": {
+            "$ref": "#/backend/entities/InkRate"
+          },
+          "description": "Master data for ink rates. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "inkRateId",
+              "description": "The unique identifier for the ink rate."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/laborRates/{laborRateId}",
+        "definition": {
+          "entityName": "LaborRate",
+          "schema": {
+            "$ref": "#/backend/entities/LaborRate"
+          },
+          "description": "Master data for labor rates. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "laborRateId",
+              "description": "The unique identifier for the labor rate."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/plateRates/{plateRateId}",
+        "definition": {
+          "entityName": "PlateRate",
+          "schema": {
+            "$ref": "#/backend/entities/PlateRate"
+          },
+          "description": "Master data for plate rates. Accessible by appropriate internal roles (e.g., Admin, Manager).",
+          "params": [
+            {
+              "name": "plateRateId",
+              "description": "The unique identifier for the plate rate."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/estimates/{estimateId}",
+        "definition": {
+          "entityName": "Estimate",
+          "schema": {
+            "$ref": "#/backend/entities/Estimate"
+          },
+          "description": "Stores detailed cost and layout estimates. Includes `createdById` for owner-based authorization and `status` for lifecycle management. Accessible by creator, managers, and admins.",
+          "params": [
+            {
+              "name": "estimateId",
+              "description": "The unique identifier for the estimate."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/artworks/{artworkId}",
+        "definition": {
+          "entityName": "Artwork",
+          "schema": {
+            "$ref": "#/backend/entities/Artwork"
+          },
+          "description": "Manages design artwork files. Includes `uploadedById` for owner-based authorization. For artworks linked to an estimate, `estimateCreatedById` (denormalized owner of the linked estimate) will be included for authorization independence.",
+          "params": [
+            {
+              "name": "artworkId",
+              "description": "The unique identifier for the artwork."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/boms/{bomId}",
+        "definition": {
+          "entityName": "BillOfMaterial",
+          "schema": {
+            "$ref": "#/backend/entities/BillOfMaterial"
+          },
+          "description": "Defines Bills of Material for products. Includes `createdById` for owner-based authorization. Accessible by creator, managers, and admins.",
+          "params": [
+            {
+              "name": "bomId",
+              "description": "The unique identifier for the Bill of Material."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/boms/{bomId}/components/{componentId}",
+        "definition": {
+          "entityName": "BomComponent",
+          "schema": {
+            "$ref": "#/backend/entities/BomComponent"
+          },
+          "description": "Details individual components within a BOM. Includes denormalized `bomCreatedById` for authorization independence to allow subcollection access based on BOM ownership.",
+          "params": [
+            {
+              "name": "bomId",
+              "description": "The unique identifier of the parent Bill of Material."
+            },
+            {
+              "name": "componentId",
+              "description": "The unique identifier for the BOM component."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/salesOrders/{salesOrderId}",
+        "definition": {
+          "entityName": "SalesOrder",
+          "schema": {
+            "$ref": "#/backend/entities/SalesOrder"
+          },
+          "description": "Represents confirmed customer orders. Includes `createdById` for owner-based authorization and `status` for lifecycle tracking. Links to `estimateId`.",
+          "params": [
+            {
+              "name": "salesOrderId",
+              "description": "The unique identifier for the sales order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/jobCards/{jobCardId}",
+        "definition": {
+          "entityName": "JobCard",
+          "schema": {
+            "$ref": "#/backend/entities/JobCard"
+          },
+          "description": "Details specific production jobs. Includes `createdById` for owner-based authorization and `status` for workflow tracking. Links to `salesOrderId` and `estimateId`.",
+          "params": [
+            {
+              "name": "jobCardId",
+              "description": "The unique identifier for the job card."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/jobCards/{jobCardId}/assignments/{assignmentId}",
+        "definition": {
+          "entityName": "JobCardAssignment",
+          "schema": {
+            "$ref": "#/backend/entities/JobCardAssignment"
+          },
+          "description": "Assigns machines or operators to a job card. Includes denormalized `jobCardCreatedById` for authorization independence to allow subcollection access based on Job Card ownership. `entityId` allows direct assignment for operator-specific access.",
+          "params": [
+            {
+              "name": "jobCardId",
+              "description": "The unique identifier of the parent Job Card."
+            },
+            {
+              "name": "assignmentId",
+              "description": "The unique identifier for the job card assignment."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/jobCards/{jobCardId}/materialRequirements/{requirementId}",
+        "definition": {
+          "entityName": "JobCardMaterialRequirement",
+          "schema": {
+            "$ref": "#/backend/entities/JobCardMaterialRequirement"
+          },
+          "description": "Lists material requirements for a job card. Includes denormalized `jobCardCreatedById` for authorization independence to allow subcollection access based on Job Card ownership.",
+          "params": [
+            {
+              "name": "jobCardId",
+              "description": "The unique identifier of the parent Job Card."
+            },
+            {
+              "name": "requirementId",
+              "description": "The unique identifier for the material requirement."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/productionRuns/{productionRunId}",
+        "definition": {
+          "entityName": "ProductionRun",
+          "schema": {
+            "$ref": "#/backend/entities/ProductionRun"
+          },
+          "description": "Tracks specific machine runs. Includes `createdById` for creator-based authorization, `operatorId` for operator-specific access, and `status` for workflow tracking. Links to `jobCardId`.",
+          "params": [
+            {
+              "name": "productionRunId",
+              "description": "The unique identifier for the production run."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/productionRuns/{productionRunId}/logEntries/{logEntryId}",
+        "definition": {
+          "entityName": "ProductionLogEntry",
+          "schema": {
+            "$ref": "#/backend/entities/ProductionLogEntry"
+          },
+          "description": "Logs events during a production run. Includes `loggedById` for entry creator authorization and denormalized `productionRunOperatorId` for authorization independence to allow subcollection access based on Production Run operator.",
+          "params": [
+            {
+              "name": "productionRunId",
+              "description": "The unique identifier of the parent Production Run."
+            },
+            {
+              "name": "logEntryId",
+              "description": "The unique identifier for the production log entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/inventoryItems/{inventoryItemId}",
+        "definition": {
+          "entityName": "InventoryItem",
+          "schema": {
+            "$ref": "#/backend/entities/InventoryItem"
+          },
+          "description": "Base collection for all physical stock items, providing common attributes and barcode tracking. Access is generally role-based (e.g., Managers for updates, Operators for read/scan).",
+          "params": [
+            {
+              "name": "inventoryItemId",
+              "description": "The unique identifier for the inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/jumboRolls/{jumboRollId}",
+        "definition": {
+          "entityName": "JumboRollInventory",
+          "schema": {
+            "$ref": "#/backend/entities/JumboRollInventory"
+          },
+          "description": "Specific details for jumbo rolls in inventory. Links to `inventoryItemId` and `materialId`. Access is generally role-based.",
+          "params": [
+            {
+              "name": "jumboRollId",
+              "description": "The unique identifier for the jumbo roll inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/slittedRolls/{slittedRollId}",
+        "definition": {
+          "entityName": "SlittedRollInventory",
+          "schema": {
+            "$ref": "#/backend/entities/SlittedRollInventory"
+          },
+          "description": "Specific details for slitted rolls in inventory. Links to `inventoryItemId`, `jumboRollInventoryId`, `productionRunId`, `jobCardId`. Access is generally role-based.",
+          "params": [
+            {
+              "name": "slittedRollId",
+              "description": "The unique identifier for the slitted roll inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/wipItems/{wipItemId}",
+        "definition": {
+          "entityName": "WorkInProcessInventory",
+          "schema": {
+            "$ref": "#/backend/entities/WorkInProcessInventory"
+          },
+          "description": "Specific details for work-in-process (WIP) items in inventory. Links to `inventoryItemId`, `jobCardId`, `productionRunId`, `materialId`. Access is generally role-based.",
+          "params": [
+            {
+              "name": "wipItemId",
+              "description": "The unique identifier for the WIP inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/finishedGoods/{finishedGoodId}",
+        "definition": {
+          "entityName": "FinishedGoodInventory",
+          "schema": {
+            "$ref": "#/backend/entities/FinishedGoodInventory"
+          },
+          "description": "Specific details for finished goods in inventory. Links to `inventoryItemId`, `jobCardId`, `salesOrderId`, `estimateId`. Access is generally role-based.",
+          "params": [
+            {
+              "name": "finishedGoodId",
+              "description": "The unique identifier for the finished good inventory item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/inventoryTransactions/{transactionId}",
+        "definition": {
+          "entityName": "InventoryTransaction",
+          "schema": {
+            "$ref": "#/backend/entities/InventoryTransaction"
+          },
+          "description": "Records all movements and adjustments of inventory items. Includes `transactedById` for owner-based authorization. Links to `inventoryItemId`.",
+          "params": [
+            {
+              "name": "transactionId",
+              "description": "The unique identifier for the inventory transaction."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/purchaseOrders/{purchaseOrderId}",
+        "definition": {
+          "entityName": "PurchaseOrder",
+          "schema": {
+            "$ref": "#/backend/entities/PurchaseOrder"
+          },
+          "description": "Manages purchase orders placed with suppliers. Includes `createdById` for owner-based authorization and `status` for lifecycle tracking.",
+          "params": [
+            {
+              "name": "purchaseOrderId",
+              "description": "The unique identifier for the purchase order."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/purchaseOrders/{purchaseOrderId}/items/{purchaseOrderItemId}",
+        "definition": {
+          "entityName": "PurchaseOrderItem",
+          "schema": {
+            "$ref": "#/backend/entities/PurchaseOrderItem"
+          },
+          "description": "Details individual items within a purchase order. Includes denormalized `purchaseOrderCreatedById` for authorization independence to allow subcollection access based on Purchase Order ownership.",
+          "params": [
+            {
+              "name": "purchaseOrderId",
+              "description": "The unique identifier of the parent Purchase Order."
+            },
+            {
+              "name": "purchaseOrderItemId",
+              "description": "The unique identifier for the purchase order item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/qualityChecks/{qualityCheckId}",
+        "definition": {
+          "entityName": "QualityCheck",
+          "schema": {
+            "$ref": "#/backend/entities/QualityCheck"
+          },
+          "description": "Records quality control checks. Includes `inspectorId` for owner-based authorization. Links to `jobCardId` and `productionRunId`.",
+          "params": [
+            {
+              "name": "qualityCheckId",
+              "description": "The unique identifier for the quality check."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/qualityChecks/{qualityCheckId}/defects/{qualityCheckDefectId}",
+        "definition": {
+          "entityName": "QualityCheckDefect",
+          "schema": {
+            "$ref": "#/backend/entities/QualityCheckDefect"
+          },
+          "description": "Links a quality check to detected defects. Includes denormalized `qualityCheckInspectorId` for authorization independence to allow subcollection access based on Quality Check inspector.",
+          "params": [
+            {
+              "name": "qualityCheckId",
+              "description": "The unique identifier of the parent Quality Check."
+            },
+            {
+              "name": "qualityCheckDefectId",
+              "description": "The unique identifier for the quality check defect entry."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/dispatchChallans/{dispatchChallanId}",
+        "definition": {
+          "entityName": "DispatchChallan",
+          "schema": {
+            "$ref": "#/backend/entities/DispatchChallan"
+          },
+          "description": "Generates dispatch challans. Includes `createdById` for owner-based authorization and `status` for lifecycle tracking. Links to `salesOrderId` and `customerId`.",
+          "params": [
+            {
+              "name": "dispatchChallanId",
+              "description": "The unique identifier for the dispatch challan."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/dispatchChallans/{dispatchChallanId}/items/{dispatchChallanItemId}",
+        "definition": {
+          "entityName": "DispatchChallanItem",
+          "schema": {
+            "$ref": "#/backend/entities/DispatchChallanItem"
+          },
+          "description": "Details finished goods included in a dispatch challan. Includes denormalized `dispatchChallanCreatedById` for authorization independence to allow subcollection access based on Dispatch Challan ownership.",
+          "params": [
+            {
+              "name": "dispatchChallanId",
+              "description": "The unique identifier of the parent Dispatch Challan."
+            },
+            {
+              "name": "dispatchChallanItemId",
+              "description": "The unique identifier for the dispatch challan item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/packingLists/{packingListId}",
+        "definition": {
+          "entityName": "PackingList",
+          "schema": {
+            "$ref": "#/backend/entities/PackingList"
+          },
+          "description": "Generates packing lists for shipments. Includes `packedById` for owner-based authorization. Links to `dispatchChallanId`.",
+          "params": [
+            {
+              "name": "packingListId",
+              "description": "The unique identifier for the packing list."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/packingLists/{packingListId}/items/{packingListItemId}",
+        "definition": {
+          "entityName": "PackingListItem",
+          "schema": {
+            "$ref": "#/backend/entities/PackingListItem"
+          },
+          "description": "Details items within a packing list. Includes denormalized `packingListPackedById` for authorization independence to allow subcollection access based on Packing List creator.",
+          "params": [
+            {
+              "name": "packingListId",
+              "description": "The unique identifier of the parent Packing List."
+            },
+            {
+              "name": "packingListItemId",
+              "description": "The unique identifier for the packing list item."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/invoices/{invoiceId}",
+        "definition": {
+          "entityName": "Invoice",
+          "schema": {
+            "$ref": "#/backend/entities/Invoice"
+          },
+          "description": "Generates and manages customer invoices. Includes `createdById` for owner-based authorization and `status` for payment tracking. Links to `salesOrderId` and `customerId`.",
+          "params": [
+            {
+              "name": "invoiceId",
+              "description": "The unique identifier for the invoice."
+            }
+          ]
+        }
+      },
+      {
+        "path": "/invoices/{invoiceId}/items/{invoiceItemId}",
+        "definition": {
+          "entityName": "InvoiceItem",
+          "schema": {
+            "$ref": "#/backend/entities/InvoiceItem"
+          },
+          "description": "Details line items within an invoice. Includes denormalized `invoiceCreatedById` for authorization independence to allow subcollection access based on Invoice ownership.",
+          "params": [
+            {
+              "name": "invoiceId",
+              "description": "The unique identifier of the parent Invoice."
+            },
+            {
+              "name": "invoiceItemId",
+              "description": "The unique identifier for the invoice item."
+            }
+          ]
+        }
+      }
+    ],
+    "reasoning": "The Firestore data structure is designed with a strong emphasis on Authorization Independence, Structural Segregation, and DBAC principles, as mandated. \n\n**Authorization Independence (CRITICAL):** To eliminate the need for `get()` calls in security rules, authorization-relevant fields are consistently denormalized. For top-level collections (e.g., `estimates`, `salesOrders`, `jobCards`), the `createdById` field directly links the document to its creator, enabling direct `request.auth.uid == resource.data.createdById` checks. For subcollections (e.g., `jobCards/{jobCardId}/assignments`), the parent's `createdById` (e.g., `jobCardCreatedById`) is explicitly denormalized into the subcollection document. This ensures that each document carries its own authorization context, allowing for atomic operations and simplifying security rules by avoiding cross-document reads.\n\n**Structural Segregation (Homogeneous Security Posture):** Each collection is designed to hold documents with a uniform security posture. Master data collections (e.g., `customers`, `materials`, `machines`, `rates`) are primarily accessible by administrative or managerial roles. Transactional collections (e.g., `estimates`, `salesOrders`, `productionRuns`) are secured based on `createdById` for individual users and role-based access for broader organizational visibility. This segregation simplifies rule sets by preventing the need for complex conditional logic within a single collection to differentiate access levels.\n\n**DBAC (No Custom Claims):** User roles are implemented through dedicated top-level collections (e.g., `adminUsers/{userId}`, `managerUsers/{userId}`, `operatorUsers/{userId}`). The mere existence of a document at these paths signifies the user's role. Security rules can check `exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))` to determine a user's role without relying on custom claims or `get()` operations, providing a robust, database-centric approach to access control based on 'existence over content'.\n\n**QAPs (Rules are not Filters):** The structure facilitates secure and efficient `list` operations. By embedding `createdById` in transactional documents, client-side applications can construct queries that filter documents based on the `request.auth.uid` (e.g., `db.collection('estimates').where('createdById', '==', userId)`). Security rules then merely validate that the query parameters match the user's permissions, ensuring that only authorized data is returned and preventing unauthorized access attempts. For role-based listing (e.g., a Manager viewing all 'In Progress' Job Cards), rules would permit the `list` operation if the user holds the 'Manager' role, assuming the client-side query provides the necessary filters. The `status` field in transactional documents further aids in query-driven access control.\n\n**Data Integrity and Naming:** Consistent semantic naming conventions are used for paths and parameters (e.g., `userId`, `estimateId`). Explicit state modeling (e.g., `status` field) ensures predictability. All relationships are defined by IDs, and where necessary for authorization independence, relevant parent IDs or owner IDs are denormalized.\n\n**Note on Conflict:** This Firestore structure design adheres strictly to the provided JSON schema and the Firebase Architect instructions, which explicitly reference Firebase/Firestore concepts and output format. It overrides the conflicting 'PHP/MySQL' requirement found within the broader user request, as fulfilling both simultaneously is impossible within a single data structure recommendation."
+  }
+}
