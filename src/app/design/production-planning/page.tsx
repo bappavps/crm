@@ -87,18 +87,29 @@ export default function JobPlanningPage() {
       qty_per_roll: Number(formData.get("qty_per_roll")),
       roll_direction: formData.get("roll_direction") as string,
       remarks: formData.get("remarks") as string,
-      status: "READY FOR PRODUCTION",
+      status: "WAITING FOR SLITTING",
       created_date: new Date().toISOString(),
       created_by: user.uid,
       created_by_name: user.displayName || user.email?.split('@')[0] || "Designer"
     }
 
-    addDocumentNonBlocking(collection(firestore, 'job_planning'), jobData)
+    addDocumentNonBlocking(collection(firestore, 'job_planning'), jobData).then((docRef) => {
+      if (docRef) {
+        // Create Notification for Production
+        addDocumentNonBlocking(collection(firestore, 'notifications'), {
+          type: 'SLITTING',
+          message: `New Job ${jobData.plate_no} waiting for slitting`,
+          jobId: docRef.id,
+          createdAt: new Date().toISOString(),
+          read: false
+        })
+      }
+    })
 
     setIsDialogOpen(false)
     toast({
       title: "Job Planned",
-      description: `${jobData.job_name} has been added to the master planning board.`
+      description: `${jobData.job_name} has been added and notified to production.`
     })
   }
 
@@ -397,7 +408,7 @@ export default function JobPlanningPage() {
                     <TableCell className="text-xs border-r">{j.roll_direction}</TableCell>
                     <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px] border-r">{j.remarks || '-'}</TableCell>
                     <TableCell className="border-r">
-                      <Badge className={j.status === 'READY FOR PRODUCTION' ? 'bg-emerald-500' : 'bg-primary'} style={{ fontSize: '9px' }}>
+                      <Badge className={j.status === 'WAITING FOR SLITTING' ? 'bg-amber-500' : j.status === 'SLITTING DONE' ? 'bg-emerald-500' : 'bg-primary'} style={{ fontSize: '9px' }}>
                         {j.status}
                       </Badge>
                     </TableCell>

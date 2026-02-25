@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
@@ -8,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Scissors, Plus, Loader2, ArrowRightLeft, RefreshCw, ListTodo, CheckCircle2, AlertTriangle, Sparkles } from "lucide-react"
+import { Scissors, Plus, Loader2, ArrowRightLeft, RefreshCw, ListTodo, CheckCircle2, AlertTriangle, Sparkles, Clock } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -18,7 +19,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, query, where, getDocs, deleteDoc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -67,11 +68,11 @@ export default function SlittingPage() {
 
   const activeJumbos = jumbos?.filter(j => j.status === 'In Stock') || []
   const slittedRolls = inventory?.filter(item => item.itemType === 'Slitted Roll') || []
-  const readyJobs = jobs?.filter(job => job.status === 'READY FOR PRODUCTION') || []
+  const waitingJobs = jobs?.filter(job => job.status === 'WAITING FOR SLITTING') || []
 
   const selectedJobData = useMemo(() => 
-    readyJobs.find(j => j.id === selectedJobId), 
-    [readyJobs, selectedJobId]
+    waitingJobs.find(j => j.id === selectedJobId), 
+    [waitingJobs, selectedJobId]
   )
 
   // AUTO PAPER SUGGESTION LOGIC
@@ -106,7 +107,7 @@ export default function SlittingPage() {
     setSelectedJumboId(null)
   }
 
-  const handleSlittingConversion = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSlittingConversion = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user || !selectedJobData || !selectedJumboId) return
 
@@ -121,16 +122,24 @@ export default function SlittingPage() {
     const slitWidth = Number(formData.get("slitWidth"))
     const numRolls = Number(formData.get("numRolls"))
 
+    // 1. Mark Jumbo as Consumed
     updateDocumentNonBlocking(doc(firestore, 'jumbo_stock', selectedJumboId), {
       status: "Consumed",
       updatedAt: new Date().toISOString()
     })
 
+    // 2. Update Job Status to SLITTING DONE
     updateDocumentNonBlocking(doc(firestore, 'job_planning', selectedJobData.id), {
-      status: "MATERIAL ASSIGNED",
+      status: "SLITTING DONE",
       updatedAt: new Date().toISOString()
     })
 
+    // 3. Remove associated notification
+    const nq = query(collection(firestore, 'notifications'), where("jobId", "==", selectedJobData.id))
+    const nSnap = await getDocs(nq)
+    nSnap.docs.forEach(d => deleteDoc(d.ref))
+
+    // 4. Create Slitted Child Rolls
     const sep = settings?.separator || "-"
     const prefixType = settings?.childRollPrefixType || "Alphabet"
 
@@ -169,8 +178,8 @@ export default function SlittingPage() {
     setSelectedJobId(null)
     setSelectedJumboId(null)
     toast({
-      title: "Conversion Successful",
-      description: `Material assigned to Job ${selectedJobData.job_name}.`
+      title: "Slitting Completed",
+      description: `Material assigned to Job ${selectedJobData.job_name}. Notification cleared.`
     })
   }
 
@@ -179,11 +188,82 @@ export default function SlittingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Slitting (Conversion)</h2>
-          <p className="text-muted-foreground">Assign jumbo stock to released technical plans (Master Planning).</p>
+          <p className="text-muted-foreground">Process jobs released by Design and execute material conversion.</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
+        <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90 shadow-lg">
           <Scissors className="mr-2 h-4 w-4" /> Start Slitting Run
         </Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Waiting Jobs Dashboard Section */}
+        <Card className="lg:col-span-1 border-amber-100 shadow-sm">
+          <CardHeader className="bg-amber-50/50 pb-4">
+            <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-700 uppercase tracking-wider">
+              <Clock className="h-4 w-4" /> Jobs Waiting for Slitting
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 max-h-[600px] overflow-auto">
+            {waitingJobs.length > 0 ? (
+              <div className="divide-y">
+                {waitingJobs.map((job) => (
+                  <div key={job.id} className="p-4 hover:bg-muted/30 transition-colors group cursor-pointer" onClick={() => { setSelectedJobId(job.id); setIsDialogOpen(true); }}>
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="font-black text-primary text-xs tracking-tighter">{job.plate_no}</span>
+                      <Badge variant="outline" className="text-[10px] px-1 h-4 bg-white">{job.material}</Badge>
+                    </div>
+                    <p className="text-sm font-bold truncate group-hover:text-primary transition-colors">{job.job_name}</p>
+                    <div className="flex justify-between mt-2 text-[10px] text-muted-foreground font-medium">
+                      <span>{job.paper_width}mm width</span>
+                      <span>{job.allocate_meters}m required</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-10 text-center text-muted-foreground">
+                <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                <p className="text-xs">No pending jobs in queue.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Master Assigned Slitted Stock</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>Roll ID</TableHead>
+                  <TableHead>Assigned Master Plate</TableHead>
+                  <TableHead>Dimensions</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {itemsLoading ? (
+                  <TableRow><TableCell colSpan={4} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                ) : slittedRolls.slice(0, 15).map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-mono text-xs font-bold">{s.barcode}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-primary">{s.assigned_job_id || 'Unassigned'}</span>
+                        <span className="text-[10px] text-muted-foreground line-clamp-1">{s.assigned_job_name}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs font-mono">{s.dimensions}</TableCell>
+                    <TableCell><Badge variant={s.status === 'ASSIGNED' ? 'default' : 'secondary'}>{s.status}</Badge></TableCell>
+                  </TableRow>
+                ))}
+                {slittedRolls.length === 0 && !itemsLoading && (
+                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">No slitted stock assigned to master plans.</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -191,18 +271,18 @@ export default function SlittingPage() {
           <form onSubmit={handleSlittingConversion}>
             <DialogHeader>
               <DialogTitle>Execute Slitting & Assign Plan</DialogTitle>
-              <DialogDescription>Select a released master plan to see auto-paper suggestions based on technical requirements.</DialogDescription>
+              <DialogDescription>Select a job from the slitting queue to see auto-paper suggestions.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="jobId">Select Master Plan (Design Desk)</Label>
-                <Select name="jobId" onValueChange={handleJobSelect} required>
-                  <SelectTrigger><SelectValue placeholder="Select Plan ID" /></SelectTrigger>
+                <Label htmlFor="jobId">Select Job from Queue</Label>
+                <Select value={selectedJobId || ""} onValueChange={handleJobSelect} required>
+                  <SelectTrigger><SelectValue placeholder="Choose Job to Slit" /></SelectTrigger>
                   <SelectContent>
-                    {readyJobs.map((j) => (
+                    {waitingJobs.map((j) => (
                       <SelectItem key={j.id} value={j.id}>{j.plate_no} - {j.job_name}</SelectItem>
                     ))}
-                    {readyJobs.length === 0 && <SelectItem value="none" disabled>No plans released by Design</SelectItem>}
+                    {waitingJobs.length === 0 && <SelectItem value="none" disabled>No jobs in waiting queue</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
@@ -238,7 +318,7 @@ export default function SlittingPage() {
                   </div>
                   
                   {suggestedRolls.length > 0 ? (
-                    <div className="border rounded-md overflow-hidden">
+                    <div className="border rounded-md overflow-hidden shadow-inner bg-background">
                       <Table>
                         <TableHeader className="bg-muted/50">
                           <TableRow>
@@ -315,50 +395,12 @@ export default function SlittingPage() {
             </div>
             <DialogFooter>
               <Button type="submit" className="w-full h-12" disabled={!selectedJumboId}>
-                Confirm Conversion & Assign to Plan
+                Confirm Conversion & Complete Notification
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-
-      <div className="grid grid-cols-1 gap-6">
-        <Card>
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Master Assigned Slitted Stock</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Roll ID</TableHead>
-                  <TableHead>Assigned Master Plate</TableHead>
-                  <TableHead>Dimensions</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {itemsLoading ? (
-                  <TableRow><TableCell colSpan={4} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                ) : slittedRolls.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-mono text-xs font-bold">{s.barcode}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-primary">{s.assigned_job_id || 'Unassigned'}</span>
-                        <span className="text-[10px] text-muted-foreground line-clamp-1">{s.assigned_job_name}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-xs font-mono">{s.dimensions}</TableCell>
-                    <TableCell><Badge variant={s.status === 'ASSIGNED' ? 'default' : 'secondary'}>{s.status}</Badge></TableCell>
-                  </TableRow>
-                ))}
-                {slittedRolls.length === 0 && !itemsLoading && (
-                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">No slitted stock assigned to master plans.</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
     </div>
   )
 }

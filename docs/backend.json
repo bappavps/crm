@@ -104,26 +104,16 @@
         "currentSequence": { "type": "number" }
       }
     },
-    "Customer": {
-      "title": "Customer",
+    "Notification": {
+      "title": "Notification",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "name": { "type": "string" },
-        "gstNumber": { "type": "string" }
-      }
-    },
-    "Supplier": {
-      "title": "Supplier",
-      "description": "Paper and material vendors.",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "gstNumber": { "type": "string" },
-        "contactPerson": { "type": "string" },
-        "email": { "type": "string" },
-        "phone": { "type": "string" }
+        "type": { "type": "string" },
+        "message": { "type": "string" },
+        "jobId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" }
       }
     }
   },
@@ -170,6 +160,14 @@
           "entityName": "User",
           "schema": { "$ref": "#/backend/entities/User" },
           "description": "User profiles."
+        }
+      },
+      {
+        "path": "/notifications/{id}",
+        "definition": {
+          "entityName": "Notification",
+          "schema": { "$ref": "#/backend/entities/Notification" },
+          "description": "System alerts and workflow notifications."
         }
       }
     ]
