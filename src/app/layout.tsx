@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase";
 import { AuthInitializer } from "@/components/auth-initializer";
 import { AppShell } from "@/components/layout/shell";
+import { cn } from "@/lib/utils";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -25,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="antialiased bg-background overflow-hidden font-sans" suppressHydrationWarning>
+      <body className={cn("antialiased bg-background overflow-hidden font-sans", inter.className)} suppressHydrationWarning>
         <FirebaseClientProvider>
           <AuthInitializer />
           <AppShell>

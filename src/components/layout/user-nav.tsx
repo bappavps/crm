@@ -1,5 +1,7 @@
+
 'use client';
 
+import { useState, useEffect } from "react";
 import { useUser, useAuth } from "@/firebase";
 import { signOut } from "firebase/auth";
 import {
@@ -12,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { LogOut, User, Settings, Shield } from "lucide-react";
+import { LogOut, User, Settings, Shield, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -23,6 +25,11 @@ export function UserNav() {
   const { user, isUserLoading } = useUser();
   const auth = useAuth();
   const { toast } = useToast();
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleLogout = async () => {
     if (auth) {
@@ -33,7 +40,7 @@ export function UserNav() {
       });
       // Delay slightly to allow the toast to be seen before reload
       setTimeout(() => {
-        window.location.href = '/';
+        window.location.href = '/login';
       }, 1000);
     }
   };
@@ -45,7 +52,7 @@ export function UserNav() {
     });
   };
 
-  if (isUserLoading) {
+  if (!isMounted || isUserLoading) {
     return (
       <div className="flex items-center gap-4 animate-pulse">
         <div className="h-4 w-24 bg-muted rounded"></div>
@@ -76,10 +83,10 @@ export function UserNav() {
         <Button variant="ghost" className="relative h-10 w-auto px-2 flex items-center gap-3 hover:bg-primary/5">
           <div className="flex flex-col items-end">
             <span className="text-sm font-bold text-foreground">
-              {user?.displayName || "System Admin"}
+              {user?.displayName || "System User"}
             </span>
             <span className="text-[10px] text-muted-foreground uppercase tracking-tighter">
-              {user?.email || "Active Session"}
+              {user?.email ? user.email : "Active Session"}
             </span>
           </div>
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shadow-sm transition-all">
@@ -92,7 +99,7 @@ export function UserNav() {
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">{user?.displayName || "System User"}</p>
             <p className="text-xs leading-none text-muted-foreground">
-              {user?.email || "Authenticated via Anonymous"}
+              {user?.email || "Authenticated Session"}
             </p>
           </div>
         </DropdownMenuLabel>

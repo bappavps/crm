@@ -1,5 +1,7 @@
+
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
   BarChart, 
@@ -18,7 +20,8 @@ import {
   Package, 
   TrendingUp, 
   ArrowUpRight,
-  Clock
+  Clock,
+  Loader2
 } from "lucide-react"
 
 const data = [
@@ -31,6 +34,12 @@ const data = [
 ];
 
 export default function Dashboard() {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -96,33 +105,41 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle>Production vs Orders</CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="orders" fill="#E4892B" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="production" fill="#A33131" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+          <CardContent className="h-[300px] flex items-center justify-center">
+            {!isMounted ? (
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/20" />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="orders" fill="#E4892B" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="production" fill="#A33131" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
         <Card className="col-span-3">
           <CardHeader>
             <CardTitle>Revenue Stream</CardTitle>
           </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="sales" stroke="#E4892B" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+          <CardContent className="h-[300px] flex items-center justify-center">
+            {!isMounted ? (
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/20" />
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={data}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="sales" stroke="#E4892B" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
