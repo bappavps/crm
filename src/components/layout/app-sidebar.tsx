@@ -23,7 +23,8 @@ import {
   Box,
   ClipboardCheck,
   Hash,
-  Briefcase
+  Briefcase,
+  ListTodo
 } from "lucide-react"
 import {
   Sidebar,
@@ -47,9 +48,9 @@ const navGroups = [
     ]
   },
   {
-    label: "Design",
+    label: "Design & Planning",
     items: [
-      { name: 'Jobs', icon: Briefcase, href: '/design/jobs' },
+      { name: 'Production Planning', icon: ListTodo, href: '/design/production-planning' },
       { name: 'Artwork', icon: Palette, href: '/artwork' },
     ]
   },

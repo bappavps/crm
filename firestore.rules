@@ -3,12 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * SHREE LABEL ERP - SECURITY RULES
-     */
-
-    // --- GLOBAL HELPER FUNCTIONS ---
-
     function isSignedIn() {
       return request.auth != null;
     }
@@ -33,28 +27,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // --- ROLE & USER MANAGEMENT ---
-
-    match /adminUsers/{userId} {
-      allow read: if isInternalStaff() || isOwner(userId);
-      allow write: if isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId)));
-    }
-    match /designUsers/{userId} {
-      allow read: if isInternalStaff() || isOwner(userId);
-      allow write: if isAdmin();
-    }
-    match /productionUsers/{userId} {
-      allow read: if isInternalStaff() || isOwner(userId);
-      allow write: if isAdmin();
-    }
-    match /managerUsers/{userId} {
-      allow read: if isInternalStaff() || isOwner(userId);
-      allow write: if isAdmin();
-    }
-    match /operatorUsers/{userId} {
-      allow read: if isInternalStaff() || isOwner(userId);
-      allow write: if isAdmin();
-    }
+    match /adminUsers/{userId} { allow read: if isInternalStaff() || isOwner(userId); allow write: if isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId))); }
+    match /designUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
+    match /productionUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
+    match /managerUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
+    match /operatorUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
 
     match /users/{userId} {
       allow get, list: if isInternalStaff() || isOwner(userId);
@@ -63,29 +40,19 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // --- MASTER DATA & SETTINGS ---
-
-    match /customers/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    match /materials/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    match /machines/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    match /cylinders/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    match /dies/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    match /suppliers/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    
-    match /settings/{id} {
-      allow read: if isInternalStaff();
-      allow write: if isAdmin();
-    }
-    
     match /jumbo_stock/{id} { allow read, write: if isInternalStaff(); }
     match /inventoryItems/{id} { allow read, write: if isInternalStaff(); }
-    match /jobs/{id} { 
+    match /production_jobs/{id} { 
       allow read: if isInternalStaff(); 
       allow create, update, delete: if isDesign(); 
     }
-
-    // --- TRANSACTIONAL ---
-
+    match /settings/{id} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
+    match /customers/{id} { allow read, write: if isInternalStaff(); }
+    match /materials/{id} { allow read, write: if isInternalStaff(); }
+    match /machines/{id} { allow read, write: if isInternalStaff(); }
+    match /cylinders/{id} { allow read, write: if isInternalStaff(); }
+    match /dies/{id} { allow read, write: if isInternalStaff(); }
+    match /suppliers/{id} { allow read, write: if isInternalStaff(); }
     match /estimates/{id} { allow read, write: if isInternalStaff(); }
     match /salesOrders/{id} { allow read, write: if isInternalStaff(); }
     match /jobCards/{id} { allow read, write: if isInternalStaff(); }
