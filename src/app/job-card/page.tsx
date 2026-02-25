@@ -5,12 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { FilePlus, Play, CheckCircle2 } from "lucide-react"
-import { useCollection, useFirestore, useMemoFirebase } from "@/firebase"
+import { useCollection, useFirestore, useMemoFirebase, useUser } from "@/firebase"
 import { collection } from "firebase/firestore"
 
 export default function JobCardPage() {
   const firestore = useFirestore()
-  const jobCardsQuery = useMemoFirebase(() => collection(firestore!, 'jobCards'), [firestore])
+  const { user } = useUser()
+
+  // Firestore Queries - Conditional on user being logged in
+  const jobCardsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'jobCards');
+  }, [firestore, user])
+  
   const { data: jobCards, isLoading } = useCollection(jobCardsQuery)
 
   // Static fallback for prototype look

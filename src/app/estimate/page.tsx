@@ -21,11 +21,26 @@ export default function EstimatePage() {
   const { user } = useUser()
   const firestore = useFirestore()
 
-  // Master Data Queries
-  const customersQuery = useMemoFirebase(() => collection(firestore!, 'customers'), [firestore])
-  const materialsQuery = useMemoFirebase(() => collection(firestore!, 'materials'), [firestore])
-  const machinesQuery = useMemoFirebase(() => collection(firestore!, 'machines'), [firestore])
-  const cylindersQuery = useMemoFirebase(() => collection(firestore!, 'cylinders'), [firestore])
+  // Master Data Queries - Conditional on user being logged in
+  const customersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'customers');
+  }, [firestore, user])
+
+  const materialsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'materials');
+  }, [firestore, user])
+
+  const machinesQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'machines');
+  }, [firestore, user])
+
+  const cylindersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'cylinders');
+  }, [firestore, user])
 
   const { data: customers } = useCollection(customersQuery)
   const { data: materials } = useCollection(materialsQuery)

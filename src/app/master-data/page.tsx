@@ -29,11 +29,26 @@ export default function MasterDataPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders">("materials")
 
-  // Firestore Queries
-  const materialsQuery = useMemoFirebase(() => collection(firestore!, 'materials'), [firestore])
-  const machinesQuery = useMemoFirebase(() => collection(firestore!, 'machines'), [firestore])
-  const customersQuery = useMemoFirebase(() => collection(firestore!, 'customers'), [firestore])
-  const cylindersQuery = useMemoFirebase(() => collection(firestore!, 'cylinders'), [firestore])
+  // Firestore Queries - Conditional on user being logged in
+  const materialsQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'materials');
+  }, [firestore, user])
+
+  const machinesQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'machines');
+  }, [firestore, user])
+
+  const customersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'customers');
+  }, [firestore, user])
+
+  const cylindersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'cylinders');
+  }, [firestore, user])
 
   const { data: materials } = useCollection(materialsQuery)
   const { data: machines } = useCollection(machinesQuery)
