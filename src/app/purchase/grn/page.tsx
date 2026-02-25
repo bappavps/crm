@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Loader2, ClipboardCheck, Printer, Barcode, Calculator } from "lucide-react"
+import { Plus, Loader2, ClipboardCheck, Printer } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -111,8 +111,13 @@ export default function GRNPage() {
       gsm: formData.gsm,
       weightKg: formData.weightKg,
       purchaseRate: Number(submissionData.get("purchaseRate")),
+      wastage: 0,
+      jobNo: submissionData.get("jobNo") as string || "",
+      productName: submissionData.get("productName") as string || "",
+      code: submissionData.get("code") as string || "",
       lotNumber: submissionData.get("lotNumber") as string,
       receivedDate: submissionData.get("receivedDate") as string || new Date().toISOString(),
+      date: new Date().toISOString(),
       status: "In Stock",
       createdAt: new Date().toISOString(),
       createdById: user.uid
@@ -124,7 +129,7 @@ export default function GRNPage() {
     setFormData({ widthMm: 1020, weightKg: 0, gsm: 0, lengthMeters: 0, sqm: 0 })
     toast({
       title: "GRN Recorded",
-      description: `Jumbo Roll ${jumboData.rollNo} added to inventory. Barcode generated.`
+      description: `Jumbo Roll ${jumboData.rollNo} added to inventory.`
     })
   }
 
@@ -133,7 +138,6 @@ export default function GRNPage() {
       title: "Barcode Printer",
       description: `Printing barcode label for ${jumbo.rollNo}...`
     })
-    // Real-world: trigger browser print or Zebra printer API
   }
 
   return (
@@ -147,7 +151,7 @@ export default function GRNPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleAddJumbo}>
             <DialogHeader>
               <DialogTitle>Jumbo Roll Inventory Intake</DialogTitle>
@@ -205,6 +209,17 @@ export default function GRNPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
+                  <Label htmlFor="jobNo">Job No (Optional)</Label>
+                  <Input id="jobNo" name="jobNo" placeholder="JC-12345" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="productName">Product Name</Label>
+                  <Input id="productName" name="productName" placeholder="e.g. Pharma Label" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
                   <Label htmlFor="companyRollNo">Company Roll No</Label>
                   <Input id="companyRollNo" name="companyRollNo" placeholder="MFR-9901" required />
                 </div>
@@ -226,7 +241,7 @@ export default function GRNPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12 text-lg">Save Jumbo & Generate Barcode</Button>
+              <Button type="submit" className="w-full h-12 text-lg">Save Jumbo Entry</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -238,51 +253,70 @@ export default function GRNPage() {
             <ClipboardCheck className="h-5 w-5 text-primary" /> Jumbo Roll Registry (Stock)
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Roll No</TableHead>
-                <TableHead>Paper Type</TableHead>
-                <TableHead>Width</TableHead>
-                <TableHead>Length</TableHead>
-                <TableHead>Weight</TableHead>
-                <TableHead>Lot No</TableHead>
-                <TableHead className="text-right">Barcode</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[2400px]">
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead className="w-[120px] font-bold border-r">ROLL NO</TableHead>
+                  <TableHead className="w-[180px] font-bold border-r">PAPER COMPANY</TableHead>
+                  <TableHead className="w-[180px] font-bold border-r">PAPER TYPE</TableHead>
+                  <TableHead className="w-[100px] font-bold border-r">WIDTH (MM)</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r">LENGTH (MTR)</TableHead>
+                  <TableHead className="w-[100px] font-bold border-r">SQM</TableHead>
+                  <TableHead className="w-[80px] font-bold border-r">GSM</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r">WEIGHT (KG)</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r">Purchase Rate</TableHead>
+                  <TableHead className="w-[100px] font-bold border-r">WASTAGE</TableHead>
+                  <TableHead className="w-[140px] font-bold border-r">DATE OF USE</TableHead>
+                  <TableHead className="w-[160px] font-bold border-r">DATE OF RECEIVED</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r">Job no</TableHead>
+                  <TableHead className="w-[100px] font-bold border-r">SIZE</TableHead>
+                  <TableHead className="w-[200px] font-bold border-r">PRODUCT NAME</TableHead>
+                  <TableHead className="w-[120px] font-bold border-r">Code</TableHead>
+                  <TableHead className="w-[180px] font-bold border-r">Lot no/BATCH NO</TableHead>
+                  <TableHead className="w-[140px] font-bold border-r">Date</TableHead>
+                  <TableHead className="w-[180px] font-bold">Company Roll no</TableHead>
                 </TableRow>
-              ) : jumbos?.filter(j => j.status === 'In Stock').map((j) => (
-                <TableRow key={j.id}>
-                  <TableCell className="font-bold text-primary">{j.rollNo}</TableCell>
-                  <TableCell className="text-xs">
-                    <div className="font-semibold">{j.paperType}</div>
-                    <div className="text-muted-foreground">{j.paperCompany}</div>
-                  </TableCell>
-                  <TableCell className="text-xs">{j.widthMm}mm</TableCell>
-                  <TableCell className="text-xs font-mono">{j.lengthMeters}m</TableCell>
-                  <TableCell className="text-xs">{j.weightKg}kg</TableCell>
-                  <TableCell className="text-xs font-mono">{j.lotNumber}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => handlePrintBarcode(j)}>
-                      <Printer className="h-3 w-3 mr-1" /> Print
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!jumbos || jumbos.filter(j => j.status === 'In Stock').length === 0) && !isLoading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10 text-muted-foreground italic">
-                    No Jumbo Rolls currently in stock. Record a GRN to begin.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
+                  </TableRow>
+                ) : jumbos?.filter(j => j.status === 'In Stock').map((j) => (
+                  <TableRow key={j.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="font-bold text-primary border-r">{j.rollNo}</TableCell>
+                    <TableCell className="border-r">{j.paperCompany}</TableCell>
+                    <TableCell className="border-r">{j.paperType}</TableCell>
+                    <TableCell className="border-r">{j.widthMm} mm</TableCell>
+                    <TableCell className="border-r font-mono">{j.lengthMeters} m</TableCell>
+                    <TableCell className="border-r">{j.sqm}</TableCell>
+                    <TableCell className="border-r">{j.gsm}</TableCell>
+                    <TableCell className="border-r font-semibold">{j.weightKg} kg</TableCell>
+                    <TableCell className="border-r">₹{j.purchaseRate?.toFixed(2)}</TableCell>
+                    <TableCell className="border-r text-muted-foreground">{j.wastage || 0}</TableCell>
+                    <TableCell className="border-r text-muted-foreground italic">{j.dateOfUse ? new Date(j.dateOfUse).toLocaleDateString() : 'N/A'}</TableCell>
+                    <TableCell className="border-r">{new Date(j.receivedDate).toLocaleDateString()}</TableCell>
+                    <TableCell className="border-r font-mono text-xs">{j.jobNo || '-'}</TableCell>
+                    <TableCell className="border-r text-muted-foreground">{j.size || '-'}</TableCell>
+                    <TableCell className="border-r truncate max-w-[200px]">{j.productName || '-'}</TableCell>
+                    <TableCell className="border-r text-xs">{j.code || '-'}</TableCell>
+                    <TableCell className="border-r font-mono text-xs">{j.lotNumber}</TableCell>
+                    <TableCell className="border-r text-xs">{new Date(j.date || j.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell className="font-mono text-xs">{j.companyRollNo}</TableCell>
+                  </TableRow>
+                ))}
+                {(!jumbos || jumbos.filter(j => j.status === 'In Stock').length === 0) && !isLoading && (
+                  <TableRow>
+                    <TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">
+                      No Jumbo Rolls currently in stock. Record a GRN to begin.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>
