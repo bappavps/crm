@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState } from "react"
@@ -155,7 +156,7 @@ export default function JobPlanningPage() {
                   <Input id="label_size" name="label_size" placeholder="50x100" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="repeat_length">Repeat (mm)</Label>
+                  <Label htmlFor="repeat_length">Repeat Length (mm)</Label>
                   <Input id="repeat_length" name="repeat_length" type="number" step="0.01" placeholder="508" required />
                 </div>
                 <div className="grid gap-2">
@@ -174,7 +175,7 @@ export default function JobPlanningPage() {
                   <Input id="allocate_meters" name="allocate_meters" type="number" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="label_qty" className="text-primary font-bold">Label Qty</Label>
+                  <Label htmlFor="label_qty" className="text-primary font-bold">Label Quantity</Label>
                   <Input id="label_qty" name="label_qty" type="number" required />
                 </div>
               </div>
@@ -209,7 +210,7 @@ export default function JobPlanningPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="remarks">Special Instructions / Remarks</Label>
+                <Label htmlFor="remarks">Remarks / Special Instructions</Label>
                 <Textarea id="remarks" name="remarks" placeholder="Color codes, varnish specifications, etc." />
               </div>
             </div>
@@ -237,28 +238,28 @@ export default function JobPlanningPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[2400px]">
+            <Table className="min-w-[2800px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="w-[80px]">S.No</TableHead>
-                  <TableHead className="w-[120px]">Order Date</TableHead>
-                  <TableHead className="w-[150px]">Planning Status</TableHead>
-                  <TableHead className="w-[120px]">Plate No</TableHead>
-                  <TableHead className="w-[200px]">Job Name</TableHead>
-                  <TableHead className="w-[100px]">Label Size</TableHead>
-                  <TableHead className="w-[100px]">Repeat</TableHead>
-                  <TableHead className="w-[150px]">Material</TableHead>
-                  <TableHead className="w-[120px]">Paper Width</TableHead>
-                  <TableHead className="w-[120px]">Die Type</TableHead>
-                  <TableHead className="w-[120px]">Alloc. Meter</TableHead>
-                  <TableHead className="w-[120px]">Label Qty</TableHead>
-                  <TableHead className="w-[100px]">Core</TableHead>
-                  <TableHead className="w-[100px]">Qty/Roll</TableHead>
-                  <TableHead className="w-[120px]">Direction</TableHead>
-                  <TableHead className="w-[200px]">Remarks</TableHead>
-                  <TableHead className="w-[150px]">Status</TableHead>
-                  <TableHead className="w-[150px]">Created Date</TableHead>
-                  <TableHead className="w-[150px]">Created By</TableHead>
+                  <TableHead className="w-[100px] font-bold">SERIAL NO</TableHead>
+                  <TableHead className="w-[120px] font-bold">ORDER DATE</TableHead>
+                  <TableHead className="w-[150px] font-bold">PLANNING STATUS</TableHead>
+                  <TableHead className="w-[120px] font-bold">PLATE NO</TableHead>
+                  <TableHead className="w-[200px] font-bold">JOB NAME</TableHead>
+                  <TableHead className="w-[120px] font-bold">LABEL SIZE</TableHead>
+                  <TableHead className="w-[120px] font-bold">REPEAT LENGTH</TableHead>
+                  <TableHead className="w-[150px] font-bold">MATERIAL</TableHead>
+                  <TableHead className="w-[120px] font-bold">PAPER WIDTH</TableHead>
+                  <TableHead className="w-[120px] font-bold">DIE TYPE</TableHead>
+                  <TableHead className="w-[150px] font-bold">ALLOCATE METERS</TableHead>
+                  <TableHead className="w-[120px] font-bold">LABEL QTY</TableHead>
+                  <TableHead className="w-[100px] font-bold">CORE SIZE</TableHead>
+                  <TableHead className="w-[120px] font-bold">QTY PER ROLL</TableHead>
+                  <TableHead className="w-[150px] font-bold">ROLL DIRECTION</TableHead>
+                  <TableHead className="w-[250px] font-bold">REMARKS</TableHead>
+                  <TableHead className="w-[150px] font-bold">STATUS</TableHead>
+                  <TableHead className="w-[150px] font-bold">CREATED DATE</TableHead>
+                  <TableHead className="w-[150px] font-bold">CREATED BY</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

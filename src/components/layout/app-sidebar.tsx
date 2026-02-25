@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/sidebar"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useEffect, useState } from "react"
 
 const navGroups = [
   {
@@ -103,6 +104,26 @@ const adminNavigation = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) return (
+    <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl">
+      <SidebarHeader className="p-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
+            <FileText className="text-white w-6 h-6" />
+          </div>
+          <div>
+            <span className="block font-bold text-white text-lg">SLC ERP</span>
+          </div>
+        </div>
+      </SidebarHeader>
+    </Sidebar>
+  )
 
   return (
     <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl">
