@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -6,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Layers, FileDown, Plus, Loader2 } from "lucide-react"
+import { Layers, FileDown, Plus, Loader2, Info, Ruler, Zap, Box } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -18,6 +17,7 @@ import {
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -28,15 +28,17 @@ export default function BOMPage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
+  const [selectedBom, setSelectedBom] = useState<any>(null)
 
-  // Authorization check - ensures rules are ready
+  // Authorization check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Fetching Data from Firestore - Only when authorized
+  // Firestore Queries
   const bomsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'boms');
@@ -86,6 +88,13 @@ export default function BOMPage() {
       description: `New Bill of Materials ${bomData.bomNumber} has been generated.`
     })
   }
+
+  const openDetails = (bom: any) => {
+    setSelectedBom(bom)
+    setIsDetailsOpen(true)
+  }
+
+  const linkedEstimate = selectedBom ? estimates?.find(e => e.id === selectedBom.estimateId) : null
 
   return (
     <div className="space-y-6">
@@ -142,6 +151,87 @@ export default function BOMPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex justify-between items-center pr-6">
+              <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                <Info className="h-5 w-5 text-primary" /> {selectedBom?.bomNumber}
+              </DialogTitle>
+              <Badge className={selectedBom?.status === 'Approved' ? 'bg-emerald-500' : 'bg-amber-500'}>
+                {selectedBom?.status}
+              </Badge>
+            </div>
+            <DialogDescription>Technical Specification Sheet for {selectedBom?.jobName}</DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Linked Estimate</Label>
+                <p className="text-sm font-mono font-bold">{linkedEstimate?.estimateNumber || 'N/A'}</p>
+              </div>
+              <div className="space-y-1 text-right">
+                <Label className="text-[10px] uppercase font-bold text-muted-foreground">BOM Date</Label>
+                <p className="text-sm">{selectedBom ? new Date(selectedBom.bomDate).toLocaleDateString() : 'N/A'}</p>
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 text-primary">
+                <Ruler className="h-3 w-3" /> Layout Parameters
+              </h4>
+              <div className="grid grid-cols-3 gap-4 bg-muted/30 p-4 rounded-lg">
+                <div className="space-y-1">
+                  <Label className="text-[9px] uppercase text-muted-foreground">Label Size</Label>
+                  <p className="text-xs font-semibold">{linkedEstimate?.labelWidth}x{linkedEstimate?.labelLength} mm</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[9px] uppercase text-muted-foreground">Across / Around</Label>
+                  <p className="text-xs font-semibold">{linkedEstimate?.labelAcross} / {linkedEstimate?.labelAround}</p>
+                </div>
+                <div className="space-y-1 text-right">
+                  <Label className="text-[9px] uppercase text-muted-foreground">Repeat Length</Label>
+                  <p className="text-xs font-semibold">{linkedEstimate?.repeatLength} mm</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 text-primary">
+                <Zap className="h-3 w-3" /> Production Metrics
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="border rounded-md p-3">
+                  <Label className="text-[9px] uppercase text-muted-foreground">Running Meter</Label>
+                  <p className="text-base font-black text-accent">{linkedEstimate?.runningMeter?.toFixed(2)} m</p>
+                </div>
+                <div className="border rounded-md p-3">
+                  <Label className="text-[9px] uppercase text-muted-foreground">Total Material (inc. waste)</Label>
+                  <p className="text-base font-black text-foreground">{linkedEstimate?.totalMaterialRequiredSqM?.toFixed(2)} sqm</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-bold flex items-center gap-2">
+                <Box className="h-3 w-3" /> Technical Notes
+              </Label>
+              <div className="text-xs p-3 border rounded-md italic text-muted-foreground bg-amber-50/20">
+                {selectedBom?.description || "No additional technical notes provided for this job."}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Close Sheet</Button>
+            <Button onClick={() => toast({ title: "Printer Ready", description: "Generating floor copy..." })}>Print Floor Sheet</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
@@ -182,7 +272,7 @@ export default function BOMPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => toast({ title: "BOM Details", description: "Opening technical sheet..." })}>
+                    <Button variant="ghost" size="sm" onClick={() => openDetails(bom)}>
                       View Specs
                     </Button>
                   </TableCell>
