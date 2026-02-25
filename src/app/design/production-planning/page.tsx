@@ -18,7 +18,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2 } from "lucide-react"
+import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2, Filter } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -32,6 +32,7 @@ export default function JobPlanningPage() {
   const [isCoreManageOpen, setIsCoreManageOpen] = useState(false)
   const [newCoreName, setNewCoreName] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -111,11 +112,21 @@ export default function JobPlanningPage() {
     toast({ title: "Core Size Removed", description: `${name} has been deleted.` })
   }
 
-  const filteredJobs = jobs?.filter(job => 
-    job.job_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    job.plate_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    job.serial_no?.toLowerCase().includes(searchQuery.toLowerCase())
-  ) || []
+  const resetFilters = () => {
+    setSearchQuery("")
+    setStatusFilter("all")
+  }
+
+  const filteredJobs = jobs?.filter(job => {
+    const matchesSearch = 
+      job.job_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      job.plate_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      job.serial_no?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchesStatus = statusFilter === "all" || job.planning_status === statusFilter;
+    
+    return matchesSearch && matchesStatus;
+  }) || []
 
   return (
     <div className="space-y-6">
@@ -313,44 +324,58 @@ export default function JobPlanningPage() {
       </Dialog>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4">
           <CardTitle className="text-lg flex items-center gap-2">
             <ListTodo className="h-5 w-5 text-primary" /> Technical Plan Registry
           </CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search Plate or Job..." 
-              className="pl-8" 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search Plate or Job..." 
+                className="pl-8" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Plans</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+                <SelectItem value="In Progress">In Progress</SelectItem>
+                <SelectItem value="Released">Released</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" onClick={resetFilters}><FilterX className="h-4 w-4" /></Button>
           </div>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 border-t">
           <div className="overflow-x-auto">
             <Table className="min-w-[2800px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="w-[100px] font-bold">SERIAL NO</TableHead>
-                  <TableHead className="w-[120px] font-bold">ORDER DATE</TableHead>
-                  <TableHead className="w-[150px] font-bold">PLANNING STATUS</TableHead>
-                  <TableHead className="w-[120px] font-bold">PLATE NO</TableHead>
-                  <TableHead className="w-[200px] font-bold">JOB NAME</TableHead>
-                  <TableHead className="w-[120px] font-bold">LABEL SIZE</TableHead>
-                  <TableHead className="w-[120px] font-bold">REPEAT LENGTH</TableHead>
-                  <TableHead className="w-[150px] font-bold">MATERIAL</TableHead>
-                  <TableHead className="w-[120px] font-bold">PAPER WIDTH</TableHead>
-                  <TableHead className="w-[120px] font-bold">DIE TYPE</TableHead>
-                  <TableHead className="w-[150px] font-bold">ALLOCATE METERS</TableHead>
-                  <TableHead className="w-[120px] font-bold">LABEL QTY</TableHead>
-                  <TableHead className="w-[100px] font-bold">CORE SIZE</TableHead>
-                  <TableHead className="w-[120px] font-bold">QTY PER ROLL</TableHead>
-                  <TableHead className="w-[150px] font-bold">ROLL DIRECTION</TableHead>
-                  <TableHead className="w-[250px] font-bold">REMARKS</TableHead>
-                  <TableHead className="w-[150px] font-bold">STATUS</TableHead>
-                  <TableHead className="w-[150px] font-bold">CREATED DATE</TableHead>
-                  <TableHead className="w-[150px] font-bold">CREATED BY</TableHead>
+                  <TableHead className="w-[100px] text-xs font-bold border-r">SERIAL NO</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">ORDER DATE</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold border-r">PLANNING STATUS</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">PLATE NO</TableHead>
+                  <TableHead className="w-[200px] text-xs font-bold border-r">JOB NAME</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">LABEL SIZE</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">REPEAT LENGTH</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold border-r">MATERIAL</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">PAPER WIDTH</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">DIE TYPE</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold border-r">ALLOCATE METERS</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">LABEL QTY</TableHead>
+                  <TableHead className="w-[100px] text-xs font-bold border-r">CORE SIZE</TableHead>
+                  <TableHead className="w-[120px] text-xs font-bold border-r">QTY PER ROLL</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold border-r">ROLL DIRECTION</TableHead>
+                  <TableHead className="w-[250px] text-xs font-bold border-r">REMARKS</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold border-r">STATUS</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold border-r">CREATED DATE</TableHead>
+                  <TableHead className="w-[150px] text-xs font-bold">CREATED BY</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -358,36 +383,36 @@ export default function JobPlanningPage() {
                   <TableRow><TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : filteredJobs.map((j) => (
                   <TableRow key={j.id} className="hover:bg-muted/30">
-                    <TableCell className="font-bold">{j.serial_no}</TableCell>
-                    <TableCell className="text-xs">{j.order_date}</TableCell>
-                    <TableCell><Badge variant="secondary" className="text-[10px]">{j.planning_status}</Badge></TableCell>
-                    <TableCell className="font-bold text-primary">{j.plate_no}</TableCell>
-                    <TableCell className="font-medium text-sm">{j.job_name}</TableCell>
-                    <TableCell className="text-xs">{j.label_size}</TableCell>
-                    <TableCell className="text-xs font-mono">{j.repeat_length}mm</TableCell>
-                    <TableCell className="text-xs">{j.material}</TableCell>
-                    <TableCell className="text-xs font-bold">{j.paper_width}mm</TableCell>
-                    <TableCell className="text-xs">{j.die_type || '-'}</TableCell>
-                    <TableCell className="text-xs font-bold text-accent">{j.allocate_meters}m</TableCell>
-                    <TableCell className="text-xs">{j.label_qty?.toLocaleString()}</TableCell>
-                    <TableCell className="text-xs">{j.core_size}</TableCell>
-                    <TableCell className="text-xs">{j.qty_per_roll}</TableCell>
-                    <TableCell className="text-xs">{j.roll_direction}</TableCell>
-                    <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px]">{j.remarks || '-'}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-xs font-medium border-r">{j.serial_no}</TableCell>
+                    <TableCell className="text-xs border-r">{j.order_date}</TableCell>
+                    <TableCell className="border-r"><Badge variant="secondary" className="text-[9px] px-1 h-5">{j.planning_status}</Badge></TableCell>
+                    <TableCell className="text-xs font-bold text-primary border-r">{j.plate_no}</TableCell>
+                    <TableCell className="text-xs font-medium border-r">{j.job_name}</TableCell>
+                    <TableCell className="text-xs border-r">{j.label_size}</TableCell>
+                    <TableCell className="text-xs font-mono border-r">{j.repeat_length}mm</TableCell>
+                    <TableCell className="text-xs border-r">{j.material}</TableCell>
+                    <TableCell className="text-xs font-bold border-r">{j.paper_width}mm</TableCell>
+                    <TableCell className="text-xs border-r">{j.die_type || '-'}</TableCell>
+                    <TableCell className="text-xs font-bold text-accent border-r">{j.allocate_meters}m</TableCell>
+                    <TableCell className="text-xs border-r">{j.label_qty?.toLocaleString()}</TableCell>
+                    <TableCell className="text-xs border-r">{j.core_size}</TableCell>
+                    <TableCell className="text-xs border-r">{j.qty_per_roll}</TableCell>
+                    <TableCell className="text-xs border-r">{j.roll_direction}</TableCell>
+                    <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px] border-r">{j.remarks || '-'}</TableCell>
+                    <TableCell className="border-r">
                       <Badge className={
                         j.status === 'READY FOR PRODUCTION' ? 'bg-emerald-500' : 
                         j.status === 'MATERIAL ASSIGNED' ? 'bg-primary' : 'bg-slate-500'
-                      }>
+                      } style={{ fontSize: '9px' }}>
                         {j.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-[10px]">{new Date(j.created_date).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-[10px] border-r">{new Date(j.created_date).toLocaleDateString()}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{j.created_by_name}</TableCell>
                   </TableRow>
                 ))}
                 {filteredJobs.length === 0 && !isLoading && (
-                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No master plans found.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No master plans found matching filters.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
