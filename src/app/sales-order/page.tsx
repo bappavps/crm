@@ -1,20 +1,101 @@
 
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ShoppingCart, Plus, Search } from "lucide-react"
+import { ShoppingCart, Plus, Search, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
-
-const orders = [
-  { id: 'SO-9001', client: 'PharmaTech India', date: '2024-05-20', qty: '50,000', value: '₹1,25,000', status: 'Confirmed' },
-  { id: 'SO-9002', client: 'EcoDrinks Ltd', date: '2024-05-21', qty: '1,00,000', value: '₹2,10,000', status: 'Pending' },
-  { id: 'SO-9003', client: 'BeautyLine Cosme', date: '2024-05-22', qty: '20,000', value: '₹85,000', status: 'In Production' },
-]
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogDescription
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { collection } from "firebase/firestore"
+import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { useToast } from "@/hooks/use-toast"
 
 export default function SalesOrderPage() {
+  const { toast } = useToast()
+  const { user } = useUser()
+  const firestore = useFirestore()
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+
+  // Fetching Data from Firestore
+  const ordersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'salesOrders');
+  }, [firestore, user])
+
+  const customersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'customers');
+  }, [firestore, user])
+
+  const estimatesQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'estimates');
+  }, [firestore, user])
+
+  const { data: orders, isLoading: ordersLoading } = useCollection(ordersQuery)
+  const { data: customers } = useCollection(customersQuery)
+  const { data: estimates } = useCollection(estimatesQuery)
+
+  const handleCreateOrder = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!firestore || !user) return
+
+    const formData = new FormData(e.currentTarget)
+    const customerId = formData.get("customerId") as string
+    const estimateId = formData.get("estimateId") as string
+    const poNumber = formData.get("poNumber") as string
+    
+    const selectedCustomer = customers?.find(c => c.id === customerId)
+    const selectedEstimate = estimates?.find(e => e.id === estimateId)
+
+    if (!customerId) {
+      toast({ variant: "destructive", title: "Validation Error", description: "Customer is required." })
+      return
+    }
+
+    const orderData = {
+      orderNumber: `SO-${Date.now().toString().slice(-6)}`,
+      customerId,
+      customerName: selectedCustomer?.name || "New Customer",
+      estimateId: estimateId || "Direct Entry",
+      poNumber: poNumber || "N/A",
+      orderDate: new Date().toISOString(),
+      deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      status: "Confirmed",
+      totalAmount: selectedEstimate?.totalSellingPrice || 0,
+      qty: selectedEstimate?.orderQuantity || 0,
+      createdById: user.uid,
+      createdAt: new Date().toISOString()
+    }
+
+    addDocumentNonBlocking(collection(firestore, 'salesOrders'), orderData)
+
+    setIsDialogOpen(false)
+    toast({
+      title: "Sales Order Created",
+      description: `New order ${orderData.orderNumber} has been generated.`,
+    })
+  }
+
+  const filteredOrders = orders?.filter(order => 
+    order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    order.customerName?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -22,8 +103,54 @@ export default function SalesOrderPage() {
           <h2 className="text-3xl font-bold tracking-tight text-primary">Sales Orders</h2>
           <p className="text-muted-foreground">Manage customer orders and conversion from estimates.</p>
         </div>
-        <Button><Plus className="mr-2 h-4 w-4" /> Create Sales Order</Button>
+        <Button onClick={() => setIsDialogOpen(true)}><Plus className="mr-2 h-4 w-4" /> Create Sales Order</Button>
       </div>
+
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <form onSubmit={handleCreateOrder}>
+            <DialogHeader>
+              <DialogTitle>New Sales Order</DialogTitle>
+              <DialogDescription>Link this order to a customer and optionally pull data from an estimate.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="customerId">Select Customer</Label>
+                <Select name="customerId" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a Customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers?.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="estimateId">Approved Estimate (Optional)</Label>
+                <Select name="estimateId">
+                  <SelectTrigger>
+                    <SelectValue placeholder="Link an Estimate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {estimates?.filter(e => e.status === 'Draft' || e.status === 'Approved').map((e) => (
+                      <SelectItem key={e.id} value={e.id}>{e.estimateNumber} - {e.productCode}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="poNumber">PO Number</Label>
+                <Input id="poNumber" name="poNumber" placeholder="Customer PO reference" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="submit">Confirm Order</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -32,7 +159,12 @@ export default function SalesOrderPage() {
           </CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search orders..." className="pl-8" />
+            <Input 
+              placeholder="Search orders..." 
+              className="pl-8" 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
         </CardHeader>
         <CardContent>
@@ -49,15 +181,26 @@ export default function SalesOrderPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orders.map((order) => (
+              {ordersLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-10">
+                    <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
+                    <p className="text-xs text-muted-foreground mt-2">Syncing order data...</p>
+                  </TableCell>
+                </TableRow>
+              ) : filteredOrders?.map((order) => (
                 <TableRow key={order.id}>
-                  <TableCell className="font-bold">{order.id}</TableCell>
-                  <TableCell>{order.client}</TableCell>
-                  <TableCell>{order.date}</TableCell>
-                  <TableCell>{order.qty}</TableCell>
-                  <TableCell className="font-semibold text-primary">{order.value}</TableCell>
+                  <TableCell className="font-bold font-mono text-xs">{order.orderNumber}</TableCell>
+                  <TableCell className="font-medium">{order.customerName}</TableCell>
+                  <TableCell className="text-xs">{new Date(order.orderDate).toLocaleDateString()}</TableCell>
+                  <TableCell>{order.qty?.toLocaleString()}</TableCell>
+                  <TableCell className="font-semibold text-primary">₹{order.totalAmount?.toLocaleString()}</TableCell>
                   <TableCell>
-                    <Badge className={order.status === 'Confirmed' ? 'bg-blue-500' : order.status === 'In Production' ? 'bg-primary' : 'bg-amber-500'}>
+                    <Badge className={
+                      order.status === 'Confirmed' ? 'bg-blue-500' : 
+                      order.status === 'In Production' ? 'bg-primary' : 
+                      'bg-amber-500'
+                    }>
                       {order.status}
                     </Badge>
                   </TableCell>
@@ -66,6 +209,13 @@ export default function SalesOrderPage() {
                   </TableCell>
                 </TableRow>
               ))}
+              {(!filteredOrders || filteredOrders.length === 0) && !ordersLoading && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                    No active sales orders found. Use the "Create" button to add one.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>

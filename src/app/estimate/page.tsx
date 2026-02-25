@@ -11,9 +11,9 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, Printer, Calculator as CalcIcon, FilePlus } from "lucide-react"
+import { Save, Printer, Calculator as CalcIcon } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 export default function EstimatePage() {
@@ -21,7 +21,7 @@ export default function EstimatePage() {
   const { user } = useUser()
   const firestore = useFirestore()
 
-  // Master Data Queries - Conditional on user being logged in
+  // Master Data Queries
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'customers');
@@ -101,7 +101,7 @@ export default function EstimatePage() {
       ...metadata,
       ...results,
       estimateNumber: `EST-${Date.now().toString().slice(-6)}`,
-      status: "Draft",
+      status: "Approved",
       createdById: user.uid,
       createdAt: new Date().toISOString(),
       estimateDate: new Date().toISOString()
@@ -110,6 +110,41 @@ export default function EstimatePage() {
     toast({
       title: "Estimate Saved",
       description: `Estimate for ${metadata.productCode} has been stored.`,
+    })
+  }
+
+  const handleConvertToSO = () => {
+    if (!firestore || !user) return
+    
+    if (!metadata.customerId || !metadata.productCode) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Save the estimate with customer details first.",
+      })
+      return
+    }
+
+    const orderData = {
+      orderNumber: `SO-${Date.now().toString().slice(-6)}`,
+      customerId: metadata.customerId,
+      customerName: customers?.find(c => c.id === metadata.customerId)?.name || "Direct Customer",
+      estimateId: "converted",
+      poNumber: "AUTO-CONV",
+      orderDate: new Date().toISOString(),
+      deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      status: "Confirmed",
+      totalAmount: results.totalSellingPrice,
+      qty: inputs.orderQuantity,
+      createdById: user.uid,
+      createdAt: new Date().toISOString()
+    }
+
+    addDocumentNonBlocking(collection(firestore, 'salesOrders'), orderData)
+    
+    toast({
+      title: "Conversion Successful",
+      description: `Created Sales Order ${orderData.orderNumber} from this calculation.`,
     })
   }
 
@@ -261,7 +296,7 @@ export default function EstimatePage() {
               </div>
             </CardContent>
             <CardFooter className="bg-muted/50 border-t p-4 flex justify-between">
-              <Button size="sm" variant="outline" onClick={() => toast({title: "Conversion Successful", description: "Converted to SO-900X"})}>Create Sales Order</Button>
+              <Button size="sm" variant="outline" onClick={handleConvertToSO}>Create Sales Order</Button>
               <p className="text-[10px] italic text-muted-foreground">*Calculated at {inputs.machineSpeed}m/min with {inputs.wastagePercent}% wastage.</p>
             </CardFooter>
           </Card>
