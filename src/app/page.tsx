@@ -1,5 +1,7 @@
+
 "use client"
 
+import { useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
   BarChart, 
@@ -10,10 +12,7 @@ import {
   Tooltip, 
   ResponsiveContainer, 
   LineChart, 
-  Line,
-  PieChart,
-  Pie,
-  Cell
+  Line
 } from "recharts"
 import { 
   ShoppingCart, 
@@ -23,6 +22,8 @@ import {
   ArrowUpRight,
   Clock
 } from "lucide-react"
+import { useUser, useFirestore } from "@/firebase"
+import { doc, getDoc, setDoc } from "firebase/firestore"
 
 const data = [
   { name: 'Mon', orders: 40, production: 24, sales: 2400 },
@@ -33,15 +34,46 @@ const data = [
   { name: 'Sat', orders: 23, production: 38, sales: 3800 },
 ];
 
-const COLORS = ['#E4892B', '#A33131', '#2B2B2B', '#F5E6D3'];
-
 export default function Dashboard() {
+  const { user } = useUser();
+  const firestore = useFirestore();
+
+  useEffect(() => {
+    if (user && firestore) {
+      // Auto-initialize Admin role for the first user in the prototype
+      const adminRef = doc(firestore, 'adminUsers', user.uid);
+      getDoc(adminRef).then(snap => {
+        if (!snap.exists()) {
+          setDoc(adminRef, { 
+            id: user.uid, 
+            username: user.displayName || 'Admin', 
+            email: user.email,
+            roleId: 'Admin',
+            isActive: true,
+            createdAt: new Date().toISOString() 
+          });
+          // Also create the user profile
+          setDoc(doc(firestore, 'users', user.uid), {
+            id: user.uid,
+            username: user.displayName || 'Admin',
+            email: user.email,
+            firstName: 'System',
+            lastName: 'Admin',
+            roleId: 'Admin',
+            isActive: true,
+            createdAt: new Date().toISOString()
+          });
+        }
+      });
+    }
+  }, [user, firestore]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-          <p className="text-muted-foreground">Welcome back, Admin. Here is what's happening today.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-primary">Dashboard</h2>
+          <p className="text-muted-foreground">Shree Label Creation - Live ERP Operations</p>
         </div>
       </div>
 

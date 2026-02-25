@@ -12,9 +12,26 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
 import { Save, Printer, Calculator as CalcIcon, FilePlus } from "lucide-react"
+import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { collection, doc } from "firebase/firestore"
+import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 
 export default function EstimatePage() {
   const { toast } = useToast()
+  const { user } = useUser()
+  const firestore = useFirestore()
+
+  // Master Data Queries
+  const customersQuery = useMemoFirebase(() => collection(firestore!, 'customers'), [firestore])
+  const materialsQuery = useMemoFirebase(() => collection(firestore!, 'materials'), [firestore])
+  const machinesQuery = useMemoFirebase(() => collection(firestore!, 'machines'), [firestore])
+  const cylindersQuery = useMemoFirebase(() => collection(firestore!, 'cylinders'), [firestore])
+
+  const { data: customers } = useCollection(customersQuery)
+  const { data: materials } = useCollection(materialsQuery)
+  const { data: machines } = useCollection(machinesQuery)
+  const { data: cylinders } = useCollection(cylindersQuery)
+
   const [inputs, setInputs] = useState<EstimateInputs>({
     labelLength: 50,
     labelWidth: 100,
@@ -33,6 +50,14 @@ export default function EstimatePage() {
     wastagePercent: 5
   })
 
+  const [metadata, setMetadata] = useState({
+    customerId: "",
+    productCode: "",
+    materialId: "",
+    machineId: "",
+    cylinderId: ""
+  })
+
   const results = useMemo(() => calculateFlexoLayout(inputs), [inputs])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,17 +69,36 @@ export default function EstimatePage() {
   }
 
   const handleSave = () => {
+    if (!firestore || !user) return
+    
+    if (!metadata.customerId || !metadata.productCode) {
+      toast({
+        variant: "destructive",
+        title: "Validation Error",
+        description: "Please select a Customer and enter a Product Code.",
+      })
+      return
+    }
+
+    const estimatesRef = collection(firestore, 'estimates')
+    addDocumentNonBlocking(estimatesRef, {
+      ...inputs,
+      ...metadata,
+      ...results,
+      estimateNumber: `EST-${Date.now().toString().slice(-6)}`,
+      status: "Draft",
+      createdById: user.uid,
+      createdAt: new Date().toISOString(),
+      estimateDate: new Date().toISOString()
+    })
+
     toast({
       title: "Estimate Saved",
-      description: `Estimate for ${inputs.orderQuantity} labels has been stored.`,
+      description: `Estimate for ${metadata.productCode} has been stored.`,
     })
   }
 
   const handlePrint = () => {
-    toast({
-      title: "Generating PDF",
-      description: "Quotation is being prepared for printing.",
-    })
     window.print()
   }
 
@@ -67,7 +111,7 @@ export default function EstimatePage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handlePrint}><Printer className="mr-2 h-4 w-4" /> Print PDF</Button>
-          <Button onClick={handleSave}><Save className="mr-2 h-4 w-4" /> Save Estimate</Button>
+          <Button onClick={handleSave} className="bg-primary hover:bg-primary/90"><Save className="mr-2 h-4 w-4" /> Save Estimate</Button>
         </div>
       </div>
 
@@ -80,13 +124,29 @@ export default function EstimatePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
+              <div className="space-y-2">
+                <Label>Customer</Label>
+                <Select onValueChange={(val) => setMetadata(p => ({...p, customerId: val}))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Product Code</Label>
+                <Input placeholder="e.g. LAB-101" onChange={(e) => setMetadata(p => ({...p, productCode: e.target.value}))} />
+              </div>
+              <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="labelLength">Label Length (mm)</Label>
+                  <Label htmlFor="labelLength">Length (mm)</Label>
                   <Input id="labelLength" name="labelLength" type="number" value={inputs.labelLength} onChange={handleInputChange} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="labelWidth">Label Width (mm)</Label>
+                  <Label htmlFor="labelWidth">Width (mm)</Label>
                   <Input id="labelWidth" name="labelWidth" type="number" value={inputs.labelWidth} onChange={handleInputChange} />
                 </div>
               </div>
@@ -96,66 +156,37 @@ export default function EstimatePage() {
                   <Input id="gap" name="gap" type="number" value={inputs.gap} onChange={handleInputChange} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="sideMargin">Side Margin (mm)</Label>
+                  <Label htmlFor="sideMargin">Margin (mm)</Label>
                   <Input id="sideMargin" name="sideMargin" type="number" value={inputs.sideMargin} onChange={handleInputChange} />
                 </div>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="orderQuantity">Order Quantity</Label>
-                <Select 
-                  value={inputs.orderQuantity.toString()} 
-                  onValueChange={(val) => setInputs(p => ({...p, orderQuantity: parseInt(val)}))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Qty" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="10000">10,000</SelectItem>
-                    <SelectItem value="20000">20,000</SelectItem>
-                    <SelectItem value="50000">50,000</SelectItem>
-                    <SelectItem value="100000">100,000</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Input id="orderQuantity" name="orderQuantity" type="number" value={inputs.orderQuantity} onChange={handleInputChange} />
               </div>
               <Separator />
               <div className="space-y-2">
-                <Label>Machine Constraints</Label>
+                <Label>Machine & Cylinder</Label>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] text-muted-foreground">Repeat (mm)</Label>
-                    <Input name="repeatLength" type="number" value={inputs.repeatLength} onChange={handleInputChange} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] text-muted-foreground">Max Width (mm)</Label>
-                    <Input name="printingWidthLimit" type="number" value={inputs.printingWidthLimit} onChange={handleInputChange} />
-                  </div>
+                  <Select onValueChange={(val) => {
+                    const cyl = cylinders?.find(c => c.id === val)
+                    if (cyl) setInputs(p => ({...p, repeatLength: Number(cyl.repeatLengthMm)}))
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Cylinder" /></SelectTrigger>
+                    <SelectContent>
+                      {cylinders?.map(c => <SelectItem key={c.id} value={c.id}>{c.name} ({c.repeatLengthMm}mm)</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select onValueChange={(val) => {
+                    const mach = machines?.find(m => m.id === val)
+                    if (mach) setInputs(p => ({...p, printingWidthLimit: Number(mach.maxPrintingWidthMm), machineCostPerHour: Number(mach.costPerHour)}))
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Machine" /></SelectTrigger>
+                    <SelectContent>
+                      {machines?.map(m => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="bg-primary/5">
-              <CardTitle className="text-lg">Commercials</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="materialRate">Material Rate (₹/sqm)</Label>
-                <Input id="materialRate" name="materialRate" type="number" value={inputs.materialRate} onChange={handleInputChange} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="printingRate">Print Rate (₹/m)</Label>
-                  <Input id="printingRate" name="printingRate" type="number" value={inputs.printingRate} onChange={handleInputChange} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="uvRate">UV Rate (₹/m)</Label>
-                  <Input id="uvRate" name="uvRate" type="number" value={inputs.uvRate} onChange={handleInputChange} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="machineSpeed">Speed (m/min)</Label>
-                <Input id="machineSpeed" name="machineSpeed" type="number" value={inputs.machineSpeed} onChange={handleInputChange} />
               </div>
             </CardContent>
           </Card>
@@ -163,97 +194,60 @@ export default function EstimatePage() {
 
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="border-primary/20 bg-primary/5 shadow-inner">
-              <CardHeader>
-                <CardTitle className="text-primary flex items-center justify-between">
-                  Layout Calculation
-                  <Badge variant="outline" className="font-bold border-primary text-primary">AUTO</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-y-4 text-sm">
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader><CardTitle className="text-primary text-base">Layout Calculation</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-2 gap-y-3 text-sm">
                 <div className="text-muted-foreground">Labels Across:</div>
                 <div className="font-bold text-right">{results.labelAcross}</div>
                 <div className="text-muted-foreground">Labels Around:</div>
                 <div className="font-bold text-right">{results.labelAround}</div>
-                <div className="text-muted-foreground">Labels per Repeat:</div>
-                <div className="font-bold text-right">{results.labelsPerRepeat}</div>
-                <Separator className="col-span-2" />
-                <div className="text-muted-foreground">Total Repeats:</div>
-                <div className="font-bold text-right">{results.totalRepeats}</div>
                 <div className="text-muted-foreground">Running Meter:</div>
                 <div className="font-bold text-right text-accent">{results.runningMeter.toFixed(2)} m</div>
-                <div className="text-muted-foreground">Slitting Size:</div>
+                <div className="text-muted-foreground">Slitting Width:</div>
                 <div className="font-bold text-right">{results.slittingSize} mm</div>
-                <div className="text-muted-foreground">Rolls from Jumbo:</div>
-                <div className="font-bold text-right">{results.rollsFromJumbo}</div>
               </CardContent>
             </Card>
 
-            <Card className="border-accent/20 bg-accent/5 shadow-inner">
-              <CardHeader>
-                <CardTitle className="text-accent">Costing Breakdown</CardTitle>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-y-4 text-sm">
+            <Card className="border-accent/20 bg-accent/5">
+              <CardHeader><CardTitle className="text-accent text-base">Costing Breakdown</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-2 gap-y-3 text-sm">
                 <div className="text-muted-foreground">Material Cost:</div>
                 <div className="font-bold text-right">₹{results.materialCost.toFixed(2)}</div>
                 <div className="text-muted-foreground">Printing Cost:</div>
                 <div className="font-bold text-right">₹{results.printingCost.toFixed(2)}</div>
-                <div className="text-muted-foreground">UV Cost:</div>
-                <div className="font-bold text-right">₹{results.uvCost.toFixed(2)}</div>
-                <div className="text-muted-foreground">Production Overhead:</div>
-                <div className="font-bold text-right">₹{(results.machineCostTotal + results.laborCostTotal).toFixed(2)}</div>
                 <Separator className="col-span-2" />
                 <div className="text-lg font-bold text-accent">Total Cost:</div>
                 <div className="text-lg font-bold text-right text-accent">₹{results.totalCost.toFixed(2)}</div>
-                <div className="text-muted-foreground">Cost per Label:</div>
-                <div className="font-bold text-right">₹{results.costPerLabel.toFixed(4)}</div>
               </CardContent>
             </Card>
           </div>
 
           <Card className="border-primary shadow-lg overflow-hidden">
-            <CardHeader className="bg-primary text-white">
-              <CardTitle className="flex items-center justify-between">
+            <CardHeader className="bg-primary text-white py-4">
+              <CardTitle className="flex items-center justify-between text-lg">
                 <span>Final Quotation Summary</span>
-                <Badge className="bg-white text-primary hover:bg-white/90">ORDER QTY: {inputs.orderQuantity.toLocaleString()}</Badge>
+                <Badge className="bg-white text-primary">QTY: {inputs.orderQuantity.toLocaleString()}</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-8 flex flex-col items-center justify-center space-y-6">
-              <div className="grid grid-cols-3 gap-12 w-full text-center">
+              <div className="grid grid-cols-3 gap-8 w-full text-center">
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-widest">Selling Price / Label</p>
-                  <p className="text-4xl font-black text-primary">₹{results.sellingPricePerLabel.toFixed(3)}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Price / Label</p>
+                  <p className="text-3xl font-black text-primary">₹{results.sellingPricePerLabel.toFixed(3)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-widest">Total Selling Price</p>
-                  <p className="text-4xl font-black text-foreground">₹{results.totalSellingPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Total Value</p>
+                  <p className="text-3xl font-black text-foreground">₹{results.totalSellingPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground uppercase tracking-widest">Estimated Profit</p>
-                  <p className="text-4xl font-black text-emerald-600">₹{results.profit.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}</p>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Net Profit</p>
+                  <p className="text-3xl font-black text-emerald-600">₹{results.profit.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
                 </div>
-              </div>
-              <div className="w-full h-2 bg-secondary rounded-full overflow-hidden flex">
-                <div 
-                  className="h-full bg-primary" 
-                  style={{ width: `${100 - results.profitPercent}%` }}
-                />
-                <div 
-                  className="h-full bg-emerald-500" 
-                  style={{ width: `${results.profitPercent}%` }}
-                />
-              </div>
-              <div className="flex justify-between w-full text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">
-                <span>Total Expenses ({(100 - results.profitPercent).toFixed(1)}%)</span>
-                <span>Net Profit Margin ({results.profitPercent.toFixed(1)}%)</span>
               </div>
             </CardContent>
             <CardFooter className="bg-muted/50 border-t p-4 flex justify-between">
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => toast({title: "BOM Created", description: "BOM-2024-X initiated."})}><FilePlus className="mr-2 h-4 w-4" /> Convert to BOM</Button>
-                <Button size="sm" variant="outline" onClick={() => toast({title: "Order Converted", description: "SO-900X generated."})}>Create Sales Order</Button>
-              </div>
-              <p className="text-xs italic text-muted-foreground">*Calculated based on {inputs.machineSpeed}m/min run speed with {inputs.wastagePercent}% wastage.</p>
+              <Button size="sm" variant="outline" onClick={() => toast({title: "Conversion Successful", description: "Converted to SO-900X"})}>Create Sales Order</Button>
+              <p className="text-[10px] italic text-muted-foreground">*Calculated at {inputs.machineSpeed}m/min with {inputs.wastagePercent}% wastage.</p>
             </CardFooter>
           </Card>
         </div>
