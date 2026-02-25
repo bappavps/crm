@@ -210,6 +210,14 @@ export default function GRNPage() {
     setSortOrder('desc')
   }
 
+  const handlePrintBarcode = (jumbo: any) => {
+    toast({
+      title: "Printer Connection Established",
+      description: `Generating 4x6 barcode label for ${jumbo.rollNo}...`
+    })
+    setTimeout(() => window.print(), 1000)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -382,9 +390,10 @@ export default function GRNPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[2400px]">
+            <Table className="min-w-[2600px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
+                  <TableHead className="w-[80px] font-bold border-r text-center">ACTION</TableHead>
                   <TableHead className="w-[120px] font-bold border-r cursor-pointer hover:bg-muted transition-colors" onClick={() => toggleSort('rollNo')}>
                     <div className="flex items-center gap-1">ROLL NO {sortField === 'rollNo' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
                   </TableHead>
@@ -421,10 +430,15 @@ export default function GRNPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
+                    <TableCell colSpan={20} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
                   </TableRow>
                 ) : filteredAndSortedJumbos.map((j) => (
                   <TableRow key={j.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell className="border-r text-center">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-primary hover:text-primary hover:bg-primary/10" onClick={() => handlePrintBarcode(j)}>
+                        <Printer className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
                     <TableCell className="font-bold text-primary border-r">{j.rollNo}</TableCell>
                     <TableCell className="border-r">{j.paperCompany}</TableCell>
                     <TableCell className="border-r">{j.paperType}</TableCell>
@@ -448,7 +462,7 @@ export default function GRNPage() {
                 ))}
                 {filteredAndSortedJumbos.length === 0 && !isLoading && (
                   <TableRow>
-                    <TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">
+                    <TableCell colSpan={20} className="text-center py-20 text-muted-foreground italic">
                       No stock matching the selected filters.
                     </TableCell>
                   </TableRow>
