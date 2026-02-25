@@ -115,13 +115,15 @@ export default function JobPlanningPage() {
   const resetFilters = () => {
     setSearchQuery("")
     setStatusFilter("all")
+    toast({ title: "Filters Reset", description: "Showing all job plans." })
   }
 
   const filteredJobs = jobs?.filter(job => {
+    const q = searchQuery.toLowerCase();
     const matchesSearch = 
-      job.job_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.plate_no?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.serial_no?.toLowerCase().includes(searchQuery.toLowerCase());
+      (job.job_name || "").toLowerCase().includes(q) ||
+      (job.plate_no || "").toLowerCase().includes(q) ||
+      (job.serial_no || "").toLowerCase().includes(q);
     
     const matchesStatus = statusFilter === "all" || job.planning_status === statusFilter;
     
@@ -349,7 +351,7 @@ export default function JobPlanningPage() {
                 <SelectItem value="Released">Released</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon" onClick={resetFilters}><FilterX className="h-4 w-4" /></Button>
+            <Button variant="outline" size="icon" onClick={resetFilters} title="Clear Filters"><FilterX className="h-4 w-4" /></Button>
           </div>
         </CardHeader>
         <CardContent className="p-0 border-t">
@@ -383,11 +385,11 @@ export default function JobPlanningPage() {
                   <TableRow><TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : filteredJobs.map((j) => (
                   <TableRow key={j.id} className="hover:bg-muted/30">
-                    <TableCell className="text-xs font-medium border-r">{j.serial_no}</TableCell>
+                    <TableCell className="text-xs border-r">{j.serial_no}</TableCell>
                     <TableCell className="text-xs border-r">{j.order_date}</TableCell>
                     <TableCell className="border-r"><Badge variant="secondary" className="text-[9px] px-1 h-5">{j.planning_status}</Badge></TableCell>
                     <TableCell className="text-xs font-bold text-primary border-r">{j.plate_no}</TableCell>
-                    <TableCell className="text-xs font-medium border-r">{j.job_name}</TableCell>
+                    <TableCell className="text-xs border-r">{j.job_name}</TableCell>
                     <TableCell className="text-xs border-r">{j.label_size}</TableCell>
                     <TableCell className="text-xs font-mono border-r">{j.repeat_length}mm</TableCell>
                     <TableCell className="text-xs border-r">{j.material}</TableCell>

@@ -106,9 +106,9 @@ export default function GRNPage() {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(j => 
-        j.rollNo?.toLowerCase().includes(q) || 
-        j.companyRollNo?.toLowerCase().includes(q) ||
-        j.productName?.toLowerCase().includes(q)
+        (j.rollNo || "").toLowerCase().includes(q) || 
+        (j.companyRollNo || "").toLowerCase().includes(q) ||
+        (j.productName || "").toLowerCase().includes(q)
       );
     }
 
@@ -219,6 +219,7 @@ export default function GRNPage() {
     setTypeFilter("all")
     setSortField('receivedDate')
     setSortOrder('desc')
+    toast({ title: "Filters Reset", description: "Showing all raw material stock." })
   }
 
   const handlePrintBarcode = (jumbo: any) => {
@@ -280,7 +281,7 @@ export default function GRNPage() {
               </Select>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={resetFilters}>
+              <Button variant="outline" className="flex-1" onClick={resetFilters} title="Clear Filters">
                 <FilterX className="mr-2 h-4 w-4" /> Clear
               </Button>
               <Button variant="secondary" className="flex-1" onClick={() => toast({ title: "Export", description: "CSV download starting..." })}>

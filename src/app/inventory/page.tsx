@@ -93,9 +93,9 @@ export default function InventoryPage() {
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(item => 
-        item.name?.toLowerCase().includes(q) ||
-        item.barcode?.toLowerCase().includes(q) ||
-        item.assigned_job_id?.toLowerCase().includes(q)
+        (item.name || "").toLowerCase().includes(q) ||
+        (item.barcode || "").toLowerCase().includes(q) ||
+        (item.assigned_job_id || "").toLowerCase().includes(q)
       );
     }
 
@@ -211,7 +211,7 @@ export default function InventoryPage() {
                   <SelectItem value="Finished Good">Finished Goods</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" onClick={resetFilters}><FilterX className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" onClick={resetFilters} title="Clear Filters"><FilterX className="h-4 w-4" /></Button>
             </div>
           </div>
         </CardHeader>
