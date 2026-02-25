@@ -19,8 +19,8 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { collection, doc } from "firebase/firestore"
+import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function QCPage() {
@@ -52,6 +52,7 @@ export default function QCPage() {
     const status = formData.get("status") as string
     
     const selectedJob = jobCards?.find(j => j.id === jobCardId)
+    const passedQty = Number(formData.get("passedQuantity")) || 0
 
     const qcData = {
       jobCardId,
@@ -62,7 +63,7 @@ export default function QCPage() {
       status, // Passed, Failed, Rework Required
       checkDate: new Date().toISOString(),
       checkedQuantity: Number(formData.get("checkedQuantity")) || 0,
-      passedQuantity: Number(formData.get("passedQuantity")) || 0,
+      passedQuantity: passedQty,
       defectiveQuantity: Number(formData.get("defectiveQuantity")) || 0,
       notes: formData.get("notes") as string || "",
       createdAt: new Date().toISOString()
@@ -70,10 +71,34 @@ export default function QCPage() {
 
     addDocumentNonBlocking(collection(firestore, 'qualityChecks'), qcData)
 
+    // AUTOMATIC STOCK FLOW: If QC passes, move quantity to Finished Goods Inventory
+    if (status === 'Passed' && passedQty > 0) {
+      const fgData = {
+        barcode: `FG-${selectedJob?.jobCardNumber || 'JOB'}-${Date.now().toString().slice(-4)}`,
+        name: `Finished: ${selectedJob?.label || 'Labels'}`,
+        itemType: "Finished Good",
+        currentQuantity: passedQty,
+        unitOfMeasure: "labels",
+        location: "Finished Goods Store",
+        status: "In Stock",
+        jobCardId: jobCardId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdById: user.uid
+      }
+      addDocumentNonBlocking(collection(firestore, 'inventoryItems'), fgData)
+      
+      // Update Job status to completed
+      updateDocumentNonBlocking(doc(firestore, 'jobCards', jobCardId), {
+        status: 'Completed',
+        progress: 100
+      })
+    }
+
     setIsDialogOpen(false)
     toast({
       title: "Inspection Recorded",
-      description: `Report for ${qcData.jobCardNumber} has been saved.`
+      description: status === 'Passed' ? `Job ${qcData.jobCardNumber} passed. FG stock automatically created.` : `Report for ${qcData.jobCardNumber} saved.`
     })
   }
 
@@ -85,7 +110,7 @@ export default function QCPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Quality Control</h2>
-          <p className="text-muted-foreground">In-process and final inspection reports for label production.</p>
+          <p className="text-muted-foreground">In-process inspection. Passing a report automatically creates Finished Goods stock.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
           <FileCheck className="mr-2 h-4 w-4" /> New Inspection
@@ -97,7 +122,7 @@ export default function QCPage() {
           <form onSubmit={handleCreateInspection}>
             <DialogHeader>
               <DialogTitle>New Quality Inspection</DialogTitle>
-              <DialogDescription>Verify production quality against job specifications.</DialogDescription>
+              <DialogDescription>Verify production quality. Passing creates FG inventory.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -107,7 +132,7 @@ export default function QCPage() {
                     <SelectValue placeholder="Select Job Card" />
                   </SelectTrigger>
                   <SelectContent>
-                    {jobCards?.map((jc) => (
+                    {jobCards?.filter(j => j.status === 'Running').map((jc) => (
                       <SelectItem key={jc.id} value={jc.id}>
                         {jc.jobCardNumber} - {jc.label}
                       </SelectItem>
@@ -140,7 +165,7 @@ export default function QCPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="passedQuantity">Passed Qty</Label>
-                  <Input id="passedQuantity" name="passedQuantity" type="number" placeholder="0" />
+                  <Input id="passedQuantity" name="passedQuantity" type="number" placeholder="0" required />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="defectiveQuantity">Defects Found</Label>
@@ -172,7 +197,7 @@ export default function QCPage() {
                 <TableRow>
                   <TableHead>Job Card</TableHead>
                   <TableHead>Date</TableHead>
-                  <TableHead>Inspector</TableHead>
+                  <TableHead>Qty Passed</TableHead>
                   <TableHead className="text-right">Result</TableHead>
                 </TableRow>
               </TableHeader>
@@ -187,7 +212,7 @@ export default function QCPage() {
                   <TableRow key={report.id}>
                     <TableCell className="font-bold">{report.jobCardNumber}</TableCell>
                     <TableCell className="text-xs">{new Date(report.checkDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-xs">{report.inspectorName}</TableCell>
+                    <TableCell className="text-xs font-bold text-emerald-600">{report.passedQuantity?.toLocaleString()}</TableCell>
                     <TableCell className="text-right"><Badge className="bg-emerald-500">PASSED</Badge></TableCell>
                   </TableRow>
                 ))}

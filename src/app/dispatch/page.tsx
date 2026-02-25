@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Truck, Package, MapPin, Plus, Loader2, FileText } from "lucide-react"
+import { Truck, Package, MapPin, Plus, Loader2, FileText, CheckCircle2 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function DispatchPage() {
@@ -48,8 +48,14 @@ export default function DispatchPage() {
     return collection(firestore, 'jobCards');
   }, [firestore, user, adminData])
 
+  const inventoryQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return collection(firestore, 'inventoryItems');
+  }, [firestore, user, adminData])
+
   const { data: dispatchChallans, isLoading: dispatchLoading } = useCollection(dispatchQuery)
   const { data: jobCards } = useCollection(jobCardsQuery)
+  const { data: inventory } = useCollection(inventoryQuery)
 
   const handleCreateDispatch = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -70,6 +76,7 @@ export default function DispatchPage() {
       customerId: selectedJob.customerId || "N/A",
       customerName: selectedJob.client || "Unknown Customer",
       jobCardNumber: selectedJob.jobCardNumber,
+      jobCardId: selectedJob.id,
       dispatchDate: formData.get("dispatchDate") as string || new Date().toISOString(),
       shippingAddress: formData.get("shippingAddress") as string,
       status: "Pending",
@@ -82,8 +89,33 @@ export default function DispatchPage() {
 
     setIsDialogOpen(false)
     toast({
-      title: "Dispatch Created",
-      description: `Note ${dispatchData.challanNumber} has been recorded for ${dispatchData.customerName}.`
+      title: "Dispatch Note Created",
+      description: `Pending delivery for ${dispatchData.customerName}. Ready for confirmation.`
+    })
+  }
+
+  const handleConfirmDispatch = (dispatch: any) => {
+    if (!firestore) return
+
+    // 1. Update Dispatch Status
+    updateDocumentNonBlocking(doc(firestore, 'dispatchChallans', dispatch.id), {
+      status: 'Dispatched',
+      actualDispatchDate: new Date().toISOString()
+    })
+
+    // 2. AUTOMATIC STOCK FLOW: Reduce Finished Goods stock for this Job Card
+    const matchingFG = inventory?.find(item => item.itemType === 'Finished Good' && item.jobCardId === dispatch.jobCardId && item.status === 'In Stock')
+    
+    if (matchingFG) {
+      updateDocumentNonBlocking(doc(firestore, 'inventoryItems', matchingFG.id), {
+        status: 'Dispatched',
+        updatedAt: new Date().toISOString()
+      })
+    }
+
+    toast({
+      title: "Shipment Confirmed",
+      description: `Goods marked as Dispatched. FG inventory automatically updated.`
     })
   }
 
@@ -95,7 +127,7 @@ export default function DispatchPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Dispatch & Logistics</h2>
-          <p className="text-muted-foreground">Managing deliveries, packing lists, and transport tracking.</p>
+          <p className="text-muted-foreground">Managing deliveries. Confirming dispatch automatically reduces Finished Goods stock.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)}><Truck className="mr-2 h-4 w-4" /> Create Dispatch Note</Button>
       </div>
@@ -115,13 +147,13 @@ export default function DispatchPage() {
                     <SelectValue placeholder="Select Finished Job" />
                   </SelectTrigger>
                   <SelectContent>
-                    {jobCards?.map((jc) => (
+                    {jobCards?.filter(j => j.status === 'Completed').map((jc) => (
                       <SelectItem key={jc.id} value={jc.id}>
                         {jc.jobCardNumber} - {jc.client}
                       </SelectItem>
                     ))}
                     {(!jobCards || jobCards.length === 0) && (
-                      <div className="p-2 text-xs text-muted-foreground text-center">No active job cards found</div>
+                      <div className="p-2 text-xs text-muted-foreground text-center">No completed job cards found</div>
                     )}
                   </SelectContent>
                 </Select>
@@ -177,8 +209,8 @@ export default function DispatchPage() {
                     <Button size="sm" variant="outline" className="flex-1 text-[10px] h-7" onClick={() => toast({ title: "Print Queue", description: "Generating packing slip PDF..." })}>
                       <FileText className="h-3 w-3 mr-1" /> Slip
                     </Button>
-                    <Button size="sm" className="flex-1 text-[10px] h-7" onClick={() => toast({ title: "Shipment Updated", description: "Status changed to In Transit." })}>
-                      Confirm Dispatch
+                    <Button size="sm" className="flex-1 text-[10px] h-7" onClick={() => handleConfirmDispatch(dispatch)}>
+                      <CheckCircle2 className="h-3 w-3 mr-1" /> Confirm Dispatch
                     </Button>
                   </div>
                 </div>
@@ -211,7 +243,7 @@ export default function DispatchPage() {
                     <Badge className="bg-emerald-500 text-[10px]">Shifting</Badge>
                   </div>
                   <p className="text-sm font-semibold">{dispatch.customerName}</p>
-                  <p className="text-[10px] text-muted-foreground italic">Dispatched on {new Date(dispatch.dispatchDate).toLocaleDateString()}</p>
+                  <p className="text-[10px] text-muted-foreground italic">Dispatched on {new Date(dispatch.actualDispatchDate || dispatch.dispatchDate).toLocaleDateString()}</p>
                   <Button variant="ghost" size="sm" className="w-full text-[10px] h-7 mt-2" onClick={() => toast({ title: "Track Logistics", description: "Connecting to GPS provider..." })}>Track Vehicle</Button>
                 </div>
               ))

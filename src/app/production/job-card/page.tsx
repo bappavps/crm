@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function ProductionJobCardPage() {
@@ -46,8 +46,16 @@ export default function ProductionJobCardPage() {
     return collection(firestore, 'salesOrders');
   }, [firestore, user, adminData])
 
+  const inventoryQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return collection(firestore, 'inventoryItems');
+  }, [firestore, user, adminData])
+
   const { data: jobCards, isLoading: jobsLoading } = useCollection(jobCardsQuery)
   const { data: salesOrders } = useCollection(salesOrdersQuery)
+  const { data: inventory } = useCollection(inventoryQuery)
+
+  const slittedRolls = inventory?.filter(item => item.itemType === 'Slitted Roll' && item.status === 'In Stock') || []
 
   const handleCreateJob = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -55,6 +63,7 @@ export default function ProductionJobCardPage() {
 
     const formData = new FormData(e.currentTarget)
     const salesOrderId = formData.get("salesOrderId") as string
+    const slittedRollId = formData.get("slittedRollId") as string
     const selectedOrder = salesOrders?.find(so => so.id === salesOrderId)
 
     if (!selectedOrder) {
@@ -69,6 +78,7 @@ export default function ProductionJobCardPage() {
       client: selectedOrder.customerName || "Internal",
       label: selectedOrder.productCode || "Custom Label",
       productionQuantity: selectedOrder.qty || 0,
+      slittedRollId,
       startDate: formData.get("startDate") as string,
       dueDate: formData.get("dueDate") as string,
       status: "Setup",
@@ -82,7 +92,30 @@ export default function ProductionJobCardPage() {
     setIsDialogOpen(false)
     toast({
       title: "Job Card Created",
-      description: `New Job ${jobData.jobCardNumber} has been queued for production.`
+      description: `New Job ${jobData.jobCardNumber} has been queued. Material roll assigned.`
+    })
+  }
+
+  const handleStartShift = (job: any) => {
+    if (!firestore) return
+
+    // 1. Update Job Status
+    updateDocumentNonBlocking(doc(firestore, 'jobCards', job.id), {
+      status: 'Running',
+      progress: 5
+    })
+
+    // 2. Automatically reduce/consume Slitted Stock
+    if (job.slittedRollId) {
+      updateDocumentNonBlocking(doc(firestore, 'inventoryItems', job.slittedRollId), {
+        status: 'In Production',
+        updatedAt: new Date().toISOString()
+      })
+    }
+
+    toast({
+      title: "Press Started",
+      description: `Job ${job.jobCardNumber} is now running. Slitted roll consumed.`
     })
   }
 
@@ -91,7 +124,7 @@ export default function ProductionJobCardPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Job Cards (Printing)</h2>
-          <p className="text-muted-foreground">Manage printing press instructions and batch status.</p>
+          <p className="text-muted-foreground">Manage printing press instructions and automated stock consumption.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90">
           <FilePlus className="mr-2 h-4 w-4" /> Create New Job
@@ -103,7 +136,7 @@ export default function ProductionJobCardPage() {
           <form onSubmit={handleCreateJob}>
             <DialogHeader>
               <DialogTitle>Initialize Production Job</DialogTitle>
-              <DialogDescription>Convert a sales order into floor printing instructions.</DialogDescription>
+              <DialogDescription>Convert a sales order and assign a slitted roll.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
@@ -118,6 +151,24 @@ export default function ProductionJobCardPage() {
                         {so.orderNumber} - {so.customerName}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="slittedRollId">Assign Slitted Roll</Label>
+                <Select name="slittedRollId" required>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select material stock" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {slittedRolls.map((roll) => (
+                      <SelectItem key={roll.id} value={roll.id}>
+                        {roll.barcode} ({roll.dimensions})
+                      </SelectItem>
+                    ))}
+                    {slittedRolls.length === 0 && (
+                      <SelectItem value="none" disabled>No slitted rolls in stock</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -163,8 +214,8 @@ export default function ProductionJobCardPage() {
               <div className="grid grid-cols-2 gap-2 text-[10px] uppercase font-bold text-muted-foreground">
                 <div>Quantity:</div>
                 <div className="text-right text-foreground">{job.productionQuantity?.toLocaleString()}</div>
-                <div>Deadline:</div>
-                <div className="text-right text-foreground">{new Date(job.dueDate).toLocaleDateString()}</div>
+                <div>Roll ID:</div>
+                <div className="text-right text-primary truncate">{job.slittedRollId?.slice(-6) || 'None'}</div>
               </div>
               
               <div className="space-y-1">
@@ -186,7 +237,7 @@ export default function ProductionJobCardPage() {
                 ) : job.status === 'Completed' ? (
                   <Button variant="ghost" size="sm" className="w-full text-emerald-600 font-bold h-8"><CheckCircle2 className="mr-2 h-3 w-3" /> QA Report</Button>
                 ) : (
-                  <Button size="sm" className="w-full h-8"><Play className="mr-2 h-3 w-3" /> Start printing</Button>
+                  <Button size="sm" className="w-full h-8" onClick={() => handleStartShift(job)}><Play className="mr-2 h-3 w-3" /> Start printing</Button>
                 )}
               </div>
             </CardContent>
