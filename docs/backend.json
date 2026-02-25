@@ -1,3 +1,4 @@
+
 {
   "entities": {
     "User": {
@@ -110,6 +111,14 @@
         "separator": { "type": "string" },
         "barcodePrefix": { "type": "string" }
       }
+    },
+    "CoreSize": {
+      "title": "CoreSize",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
     }
   },
   "auth": {
@@ -168,6 +177,10 @@
       {
         "path": "/suppliers/{id}",
         "definition": { "entityName": "Supplier", "schema": { "$ref": "#/backend/entities/Supplier" }, "description": "Material vendors." }
+      },
+      {
+        "path": "/core_sizes/{id}",
+        "definition": { "entityName": "CoreSize", "schema": { "$ref": "#/backend/entities/CoreSize" }, "description": "Managed core sizes." }
       }
     ]
   }

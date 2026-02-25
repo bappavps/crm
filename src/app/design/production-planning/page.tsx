@@ -18,10 +18,10 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download } from "lucide-react"
+import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2 } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 export default function JobPlanningPage() {
@@ -29,6 +29,8 @@ export default function JobPlanningPage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isCoreManageOpen, setIsCoreManageOpen] = useState(false)
+  const [newCoreName, setNewCoreName] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
 
   // Authorization check
@@ -44,7 +46,13 @@ export default function JobPlanningPage() {
     return collection(firestore, 'job_planning');
   }, [firestore, user, adminData])
 
+  const coreSizesQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return collection(firestore, 'core_sizes');
+  }, [firestore, user, adminData])
+
   const { data: jobs, isLoading } = useCollection(planningQuery)
+  const { data: coreSizes, isLoading: coreLoading } = useCollection(coreSizesQuery)
 
   const handleCreateJob = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -82,6 +90,25 @@ export default function JobPlanningPage() {
       title: "Job Planned",
       description: `${jobData.job_name} has been added to the master planning board.`
     })
+  }
+
+  const handleAddCoreSize = () => {
+    if (!firestore || !newCoreName.trim()) return
+    
+    const id = crypto.randomUUID()
+    addDocumentNonBlocking(collection(firestore, 'core_sizes'), {
+      id,
+      name: newCoreName.trim()
+    })
+    
+    setNewCoreName("")
+    toast({ title: "Core Size Added", description: `Added ${newCoreName} to the master list.` })
+  }
+
+  const handleDeleteCoreSize = (id: string, name: string) => {
+    if (!firestore) return
+    deleteDocumentNonBlocking(doc(firestore, 'core_sizes', id))
+    toast({ title: "Core Size Removed", description: `${name} has been deleted.` })
   }
 
   const filteredJobs = jobs?.filter(job => 
@@ -182,12 +209,27 @@ export default function JobPlanningPage() {
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="core_size">Core Size</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="core_size">Core Size</Label>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-4 w-4 text-primary" 
+                      onClick={() => setIsCoreManageOpen(true)}
+                    >
+                      <Settings2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                   <Select name="core_size" defaultValue="3 Inch">
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="1 Inch">1 Inch</SelectItem>
-                      <SelectItem value="3 Inch">3 Inch</SelectItem>
+                      {coreSizes?.map(core => (
+                        <SelectItem key={core.id} value={core.name}>{core.name}</SelectItem>
+                      ))}
+                      {(!coreSizes || coreSizes.length === 0) && (
+                        <SelectItem value="3 Inch">3 Inch (Default)</SelectItem>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
@@ -218,6 +260,55 @@ export default function JobPlanningPage() {
               <Button type="submit" className="w-full h-12 text-lg">Release Master Plan</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Core Size Management Dialog */}
+      <Dialog open={isCoreManageOpen} onOpenChange={setIsCoreManageOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Manage Core Sizes</DialogTitle>
+            <DialogDescription>Add or remove standard core sizes for selection.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex gap-2">
+              <Input 
+                placeholder="e.g. 1.5 Inch" 
+                value={newCoreName} 
+                onChange={(e) => setNewCoreName(e.target.value)}
+              />
+              <Button onClick={handleAddCoreSize} size="icon"><Plus className="h-4 w-4" /></Button>
+            </div>
+            <div className="border rounded-md max-h-[200px] overflow-y-auto">
+              <Table>
+                <TableBody>
+                  {coreSizes?.map((core) => (
+                    <TableRow key={core.id}>
+                      <TableCell className="font-medium">{core.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="text-destructive h-8 w-8"
+                          onClick={() => handleDeleteCoreSize(core.id, core.name)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {(!coreSizes || coreSizes.length === 0) && (
+                    <TableRow>
+                      <TableCell className="text-center py-4 text-muted-foreground">No custom core sizes found.</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsCoreManageOpen(false)} className="w-full">Done</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

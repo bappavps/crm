@@ -142,6 +142,19 @@ async function seedSampleData(db: any, userId: string) {
     await batch.commit();
   }
 
+  // --- SAMPLE CORE SIZES ---
+  if (await checkEmpty('core_sizes')) {
+    const batch = writeBatch(db);
+    [
+      { id: 'core-1', name: '1 Inch' },
+      { id: 'core-3', name: '3 Inch' }
+    ].forEach(item => {
+      const ref = doc(collection(db, 'core_sizes'), item.id);
+      batch.set(ref, { ...item });
+    });
+    await batch.commit();
+  }
+
   // --- SAMPLE ESTIMATES & WORKFLOW ---
   if (await checkEmpty('estimates')) {
     const batch = writeBatch(db);
