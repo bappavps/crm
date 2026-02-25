@@ -100,7 +100,6 @@ export default function JobPlanningPage() {
     if (editingJob) {
       // Logic for Audit Log
       const auditLogRef = collection(firestore, 'job_audit_log');
-      const changedFields: string[] = [];
       
       Object.keys(jobData).forEach(key => {
         if (jobData[key] !== editingJob[key] && key !== 'updated_at') {
@@ -141,6 +140,17 @@ export default function JobPlanningPage() {
 
     setIsDialogOpen(false)
     setEditingJob(null)
+  }
+
+  const handleDeleteJob = (id: string, plateNo: string) => {
+    if (!firestore) return
+    if (window.confirm(`Are you sure you want to delete Job Plan ${plateNo}? This action cannot be undone.`)) {
+      deleteDocumentNonBlocking(doc(firestore, 'job_planning', id));
+      toast({
+        title: "Job Plan Deleted",
+        description: `Plan ${plateNo} has been removed from the registry.`
+      });
+    }
   }
 
   const handleAddCoreSize = () => {
@@ -446,7 +456,7 @@ export default function JobPlanningPage() {
                               <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => { setEditingJob(j); setIsDialogOpen(true); }}>
                                 <Pencil className="h-3 w-3" />
                               </Button>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => { if(confirm("Delete this plan?")) deleteDocumentNonBlocking(doc(firestore, 'job_planning', j.id)); }}>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => handleDeleteJob(j.id, j.plate_no)}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </div>
