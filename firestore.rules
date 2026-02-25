@@ -146,7 +146,7 @@ service cloud.firestore {
     match /workOrders/{id} {
       allow read: if isInternalStaff();
       allow create: if isInternalStaff() && isCreatingWithOwner('createdById');
-      allow update: if isExistingOwner('createdById') || isManager() || isAdmin();
+      allow update: if isExistingOwner('createdById) || isManager() || isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -166,6 +166,7 @@ service cloud.firestore {
 
     match /inventoryItems/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
     match /jumboRolls/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
+    match /jumbo_stock/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
     match /slittedRolls/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
     match /wipItems/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
     match /finishedGoods/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
