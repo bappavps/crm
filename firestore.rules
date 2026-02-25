@@ -62,7 +62,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get, list: if isInternalStaff() || isOwner(userId);
-      allow create: if isOwner(userId);
+      allow create: if isOwner(userId) || isAdmin();
       allow update: if (resource != null && isOwner(userId)) || isAdmin();
       allow delete: if isAdmin();
     }
