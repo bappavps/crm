@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Layers, FileDown, Plus, Loader2, Info, Ruler, Zap, Box } from "lucide-react"
+import { Layers, FileDown, Plus, Loader2, Info, Ruler, Zap, Box, Printer } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -92,6 +92,21 @@ export default function BOMPage() {
   const openDetails = (bom: any) => {
     setSelectedBom(bom)
     setIsDetailsOpen(true)
+  }
+
+  const handlePrintFloorSheet = () => {
+    if (!selectedBom) return
+
+    toast({
+      title: "Preparing Floor Sheet",
+      description: `Formatting technical specifications for ${selectedBom.bomNumber}...`
+    })
+
+    // In a prototype environment, we trigger window.print() 
+    // to simulate the generation of a physical production document
+    setTimeout(() => {
+      window.print()
+    }, 1000)
   }
 
   const linkedEstimate = selectedBom ? estimates?.find(e => e.id === selectedBom.estimateId) : null
@@ -227,7 +242,9 @@ export default function BOMPage() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Close Sheet</Button>
-            <Button onClick={() => toast({ title: "Printer Ready", description: "Generating floor copy..." })}>Print Floor Sheet</Button>
+            <Button onClick={handlePrintFloorSheet} className="gap-2">
+              <Printer className="h-4 w-4" /> Print Floor Sheet
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
