@@ -17,16 +17,16 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
     }
 
-    function isManager() {
-      return isSignedIn() && exists(/databases/$(database)/documents/managerUsers/$(request.auth.uid));
+    function isDesign() {
+      return isSignedIn() && (exists(/databases/$(database)/documents/designUsers/$(request.auth.uid)) || isAdmin());
     }
 
-    function isOperator() {
-      return isSignedIn() && exists(/databases/$(database)/documents/operatorUsers/$(request.auth.uid));
+    function isProduction() {
+      return isSignedIn() && (exists(/databases/$(database)/documents/productionUsers/$(request.auth.uid)) || isAdmin());
     }
 
     function isInternalStaff() {
-      return isAdmin() || isManager() || isOperator();
+      return isAdmin() || isDesign() || isProduction() || exists(/databases/$(database)/documents/managerUsers/$(request.auth.uid)) || exists(/databases/$(database)/documents/operatorUsers/$(request.auth.uid));
     }
 
     function isOwner(userId) {
@@ -38,6 +38,14 @@ service cloud.firestore {
     match /adminUsers/{userId} {
       allow read: if isInternalStaff() || isOwner(userId);
       allow write: if isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId)));
+    }
+    match /designUsers/{userId} {
+      allow read: if isInternalStaff() || isOwner(userId);
+      allow write: if isAdmin();
+    }
+    match /productionUsers/{userId} {
+      allow read: if isInternalStaff() || isOwner(userId);
+      allow write: if isAdmin();
     }
     match /managerUsers/{userId} {
       allow read: if isInternalStaff() || isOwner(userId);
@@ -71,6 +79,10 @@ service cloud.firestore {
     
     match /jumbo_stock/{id} { allow read, write: if isInternalStaff(); }
     match /inventoryItems/{id} { allow read, write: if isInternalStaff(); }
+    match /jobs/{id} { 
+      allow read: if isInternalStaff(); 
+      allow create, update, delete: if isDesign(); 
+    }
 
     // --- TRANSACTIONAL ---
 

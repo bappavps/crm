@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Search, Filter, QrCode, Loader2, Package, Info, Boxes, FilterX, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react"
+import { Search, Filter, QrCode, Loader2, Package, Info, Boxes, FilterX, ArrowUpDown, ArrowUp, ArrowDown, Briefcase } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -78,7 +78,6 @@ export default function InventoryPage() {
     }
   };
 
-  // Combine and format for display
   const combinedStock = useMemo(() => {
     const jumboItems = jumbos?.map(j => ({ 
       ...j, 
@@ -91,25 +90,22 @@ export default function InventoryPage() {
     
     let result = [...jumboItems, ...(inventory || [])];
 
-    // Filter by search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(item => 
         item.name?.toLowerCase().includes(q) ||
-        item.barcode?.toLowerCase().includes(q)
+        item.barcode?.toLowerCase().includes(q) ||
+        item.assigned_job_id?.toLowerCase().includes(q)
       );
     }
 
-    // Filter by category
     if (categoryFilter !== "all") {
       result = result.filter(item => item.itemType === categoryFilter);
     }
 
-    // Sorting
     result.sort((a, b) => {
       let valA = a[sortField]?.toString().toLowerCase() || "";
       let valB = b[sortField]?.toString().toLowerCase() || "";
-
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -125,7 +121,7 @@ export default function InventoryPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Stock Registry</h2>
-          <p className="text-muted-foreground">Unified view of Jumbo Rolls, Slitted Rolls, and Consumables.</p>
+          <p className="text-muted-foreground">Full traceability of assigned jobs and material hierarchy.</p>
         </div>
         <Button variant="outline" onClick={() => toast({ title: "Scanner Active", description: "Ready to scan barcode..." })}>
           <QrCode className="mr-2 h-4 w-4" /> Scan Barcode
@@ -139,7 +135,7 @@ export default function InventoryPage() {
               <Info className="h-5 w-5 text-primary" /> Stock Detail: {selectedItem?.barcode}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-4">
+          <div className="space-y-4 py-4 text-sm">
             <div className="flex justify-between border-b pb-2">
               <span className="text-muted-foreground font-medium">Material Name</span>
               <span className="font-bold">{selectedItem?.name}</span>
@@ -149,25 +145,40 @@ export default function InventoryPage() {
               <Badge variant="secondary">{selectedItem?.itemType}</Badge>
             </div>
             <div className="flex justify-between border-b pb-2">
+              <span className="text-muted-foreground font-medium">Status</span>
+              <Badge className={selectedItem?.status === 'ASSIGNED' ? 'bg-blue-500' : selectedItem?.status === 'In Stock' ? 'bg-emerald-500' : 'bg-primary'}>
+                {selectedItem?.status}
+              </Badge>
+            </div>
+            
+            {selectedItem?.assigned_job_id && (
+              <div className="bg-primary/5 p-4 rounded-lg space-y-3">
+                <div className="flex items-center gap-2 text-primary font-bold">
+                  <Briefcase className="h-4 w-4" /> Assignment Details
+                </div>
+                <div className="grid grid-cols-2 gap-y-2 text-xs">
+                  <span className="text-muted-foreground">Job ID</span>
+                  <span className="font-bold">{selectedItem.assigned_job_id}</span>
+                  <span className="text-muted-foreground">Job Name</span>
+                  <span className="font-medium">{selectedItem.assigned_job_name}</span>
+                  <span className="text-muted-foreground">Assigned Date</span>
+                  <span>{new Date(selectedItem.assigned_date).toLocaleDateString()}</span>
+                  <span className="text-muted-foreground">Assigned By</span>
+                  <span>{selectedItem.assigned_user}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-between border-b pb-2">
               <span className="text-muted-foreground font-medium">Dimensions</span>
               <span className="font-mono">{selectedItem?.dimensions || 'N/A'}</span>
             </div>
-            {selectedItem?.itemType === 'Jumbo Roll' && (
-              <>
-                <div className="flex justify-between border-b pb-2">
-                  <span className="text-muted-foreground font-medium">Weight</span>
-                  <span>{selectedItem?.weightKg} kg</span>
-                </div>
-                <div className="flex justify-between border-b pb-2">
-                  <span className="text-muted-foreground font-medium">Lot No</span>
-                  <span className="font-mono">{selectedItem?.lotNumber}</span>
-                </div>
-              </>
+            {selectedItem?.parentRollNo && (
+              <div className="flex justify-between border-b pb-2">
+                <span className="text-muted-foreground font-medium">Parent Roll</span>
+                <span className="font-mono text-xs">{selectedItem.parentRollNo}</span>
+              </div>
             )}
-            <div className="flex justify-between border-b pb-2">
-              <span className="text-muted-foreground font-medium">Status</span>
-              <Badge className={selectedItem?.status === 'In Stock' ? 'bg-emerald-500' : 'bg-primary'}>{selectedItem?.status}</Badge>
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" className="w-full" onClick={() => setIsDetailsOpen(false)}>Close Record</Button>
@@ -179,33 +190,28 @@ export default function InventoryPage() {
         <CardHeader>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Boxes className="h-5 w-5 text-primary" /> Total Inventory Balance
+              <Boxes className="h-5 w-5 text-primary" /> Inventory Assignment Registry
             </CardTitle>
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input 
-                  placeholder="Search stock..." 
+                  placeholder="Search barcode or job..." 
                   className="pl-8 w-[200px] lg:w-[300px]" 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Category" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Items</SelectItem>
                   <SelectItem value="Jumbo Roll">Jumbo Rolls</SelectItem>
                   <SelectItem value="Slitted Roll">Slitted Rolls</SelectItem>
                   <SelectItem value="Finished Good">Finished Goods</SelectItem>
-                  <SelectItem value="Ink">Inks</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" onClick={resetFilters} title="Reset Filters">
-                <FilterX className="h-4 w-4" />
-              </Button>
+              <Button variant="outline" size="icon" onClick={resetFilters}><FilterX className="h-4 w-4" /></Button>
             </div>
           </div>
         </CardHeader>
@@ -213,46 +219,41 @@ export default function InventoryPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('barcode')}>
-                  <div className="flex items-center gap-1">Barcode {sortField === 'barcode' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                </TableHead>
-                <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('name')}>
-                  <div className="flex items-center gap-1">Material {sortField === 'name' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                </TableHead>
-                <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('itemType')}>
-                  <div className="flex items-center gap-1">Category {sortField === 'itemType' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                </TableHead>
-                <TableHead>Dimensions</TableHead>
-                <TableHead className="cursor-pointer hover:bg-muted/50" onClick={() => toggleSort('status')}>
-                  <div className="flex items-center gap-1">Status {sortField === 'status' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                </TableHead>
+                <TableHead onClick={() => toggleSort('barcode')} className="cursor-pointer">Roll ID</TableHead>
+                <TableHead>Parent Roll</TableHead>
+                <TableHead>Job Assignment</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell>
-                </TableRow>
+                <TableRow><TableCell colSpan={5} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
               ) : combinedStock.map((item) => (
                 <TableRow key={item.id} className="group">
                   <TableCell className="font-mono text-xs font-bold">{item.barcode}</TableCell>
-                  <TableCell className="font-medium">{item.name}</TableCell>
-                  <TableCell><Badge variant="outline">{item.itemType}</Badge></TableCell>
-                  <TableCell className="text-xs font-mono">{item.dimensions}</TableCell>
+                  <TableCell className="font-mono text-[10px] text-muted-foreground">{item.parentRollNo || '-'}</TableCell>
                   <TableCell>
-                    <Badge className={item.status === 'In Stock' ? 'bg-emerald-500' : 'bg-primary'}>{item.status}</Badge>
+                    {item.assigned_job_id ? (
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-primary">{item.assigned_job_id}</span>
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[150px]">{item.assigned_job_name}</span>
+                      </div>
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={
+                      item.status === 'ASSIGNED' ? 'bg-blue-500' : 
+                      item.status === 'In Stock' ? 'bg-emerald-500' : 'bg-primary'
+                    }>
+                      {item.status}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Button variant="ghost" size="sm" onClick={() => openDetails(item)}>Details</Button>
                   </TableCell>
                 </TableRow>
               ))}
-              {combinedStock.length === 0 && !isLoading && (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No stock matching your search.</TableCell>
-                </TableRow>
-              )}
             </TableBody>
           </Table>
         </CardContent>

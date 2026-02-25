@@ -22,7 +22,8 @@ import {
   Scissors,
   Box,
   ClipboardCheck,
-  Hash
+  Hash,
+  Briefcase
 } from "lucide-react"
 import {
   Sidebar,
@@ -46,8 +47,9 @@ const navGroups = [
     ]
   },
   {
-    label: "Pre-Press",
+    label: "Design",
     items: [
+      { name: 'Jobs', icon: Briefcase, href: '/design/jobs' },
       { name: 'Artwork', icon: Palette, href: '/artwork' },
     ]
   },
