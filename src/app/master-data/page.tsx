@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { Settings, Users, Database, Box, Plus, TrendingUp } from "lucide-react"
 
@@ -116,15 +117,7 @@ export default function MasterDataPage() {
                     <TableHead>GST No.</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead className="text-right">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="font-medium">PharmaTech India</TableCell>
-                    <TableCell>27AAACP0001A1Z</TableCell>
-                    <TableCell>Rajesh V.</TableCell>
-                    <TableCell className="text-right"><Button variant="ghost" size="sm">Edit</Button></TableCell>
-                  </TableRow>
+                  </TableHeader>
                 </TableBody>
               </Table>
             </CardContent>
