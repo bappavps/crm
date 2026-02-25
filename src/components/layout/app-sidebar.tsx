@@ -1,3 +1,4 @@
+
 "use client"
 
 import { 
@@ -17,7 +18,10 @@ import {
   Settings, 
   Users,
   Layers,
-  Wrench
+  Wrench,
+  Scissors,
+  Box,
+  ClipboardCheck
 } from "lucide-react"
 import {
   Sidebar,
@@ -32,22 +36,59 @@ import {
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
-const navigation = [
-  { name: 'Dashboard', icon: LayoutDashboard, href: '/' },
-  { name: 'Estimates', icon: Calculator, href: '/estimate' },
-  { name: 'BOM', icon: Layers, href: '/bom' },
-  { name: 'Sales Order', icon: ShoppingCart, href: '/sales-order' },
-  { name: 'Artwork Management', icon: Palette, href: '/artwork' },
-  { name: 'Job Card', icon: IdCard, href: '/job-card' },
-  { name: 'Work Order', icon: ClipboardList, href: '/work-order' },
-  { name: 'Production', icon: Factory, href: '/production' },
-  { name: 'Inventory', icon: Package, href: '/inventory' },
-  { name: 'Purchase', icon: ShoppingCart, href: '/purchase' },
-  { name: 'Die Management', icon: Wrench, href: '/die' },
-  { name: 'Quality Control', icon: ShieldCheck, href: '/qc' },
-  { name: 'Billing', icon: Receipt, href: '/billing' },
-  { name: 'Dispatch', icon: Truck, href: '/dispatch' },
-  { name: 'Reports', icon: BarChart, href: '/reports' },
+const navGroups = [
+  {
+    label: "Sales & Estimating",
+    items: [
+      { name: 'Estimates', icon: Calculator, href: '/estimate' },
+      { name: 'Sales Orders', icon: ShoppingCart, href: '/sales-order' },
+    ]
+  },
+  {
+    label: "Pre-Press",
+    items: [
+      { name: 'Artwork', icon: Palette, href: '/artwork' },
+    ]
+  },
+  {
+    label: "Purchase",
+    items: [
+      { name: 'Purchase Orders', icon: ShoppingCart, href: '/purchase' },
+      { name: 'GRN (Jumbo Entry)', icon: ClipboardCheck, href: '/purchase/grn' },
+    ]
+  },
+  {
+    label: "Inventory",
+    items: [
+      { name: 'Stock Registry', icon: Package, href: '/inventory' },
+      { name: 'Slitting (Conversion)', icon: Scissors, href: '/inventory/slitting' },
+      { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods' },
+      { name: 'Die Management', icon: Wrench, href: '/die' },
+    ]
+  },
+  {
+    label: "Production",
+    items: [
+      { name: 'Job Cards', icon: IdCard, href: '/production/job-card' },
+      { name: 'BOM', icon: Layers, href: '/bom' },
+      { name: 'Work Orders', icon: ClipboardList, href: '/work-order' },
+      { name: 'Live Floor', icon: Factory, href: '/production' },
+    ]
+  },
+  {
+    label: "Quality & Logistics",
+    items: [
+      { name: 'Quality Control', icon: ShieldCheck, href: '/qc' },
+      { name: 'Dispatch', icon: Truck, href: '/dispatch' },
+      { name: 'Billing', icon: Receipt, href: '/billing' },
+    ]
+  },
+  {
+    label: "Analytics",
+    items: [
+      { name: 'Reports', icon: BarChart, href: '/reports' },
+    ]
+  }
 ]
 
 const adminNavigation = [
@@ -73,38 +114,55 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="px-4 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider mb-2">Main Menu</SidebarGroupLabel>
           <SidebarMenu>
-            {navigation.map((item) => (
-              <SidebarMenuItem key={item.name}>
-                <SidebarMenuButton 
-                  asChild 
-                  isActive={pathname === item.href}
-                  className="px-4 py-2 transition-all duration-200"
-                >
-                  <Link href={item.href}>
-                    <item.icon className="mr-3" />
-                    <span>{item.name}</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={pathname === '/'}>
+                <Link href="/">
+                  <LayoutDashboard className="mr-3" />
+                  <span>Dashboard</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
+
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label} className="mt-2">
+            <SidebarGroupLabel className="px-4 text-[10px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-1">
+              {group.label}
+            </SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) => (
+                <SidebarMenuItem key={item.name}>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={pathname === item.href}
+                    className="px-4 py-1.5 transition-all duration-200 h-9"
+                  >
+                    <Link href={item.href}>
+                      <item.icon className="mr-3 h-4 w-4" />
+                      <span className="text-sm">{item.name}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
         
-        <SidebarGroup className="mt-4">
-          <SidebarGroupLabel className="px-4 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider mb-2">Administration</SidebarGroupLabel>
+        <SidebarGroup className="mt-4 border-t border-sidebar-border pt-4">
+          <SidebarGroupLabel className="px-4 text-[10px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-1">Administration</SidebarGroupLabel>
           <SidebarMenu>
             {adminNavigation.map((item) => (
               <SidebarMenuItem key={item.name}>
                 <SidebarMenuButton 
                   asChild 
                   isActive={pathname === item.href}
-                  className="px-4 py-2 transition-all duration-200"
+                  className="px-4 py-1.5 transition-all duration-200 h-9"
                 >
                   <Link href={item.href}>
-                    <item.icon className="mr-3" />
-                    <span>{item.name}</span>
+                    <item.icon className="mr-3 h-4 w-4" />
+                    <span className="text-sm">{item.name}</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
