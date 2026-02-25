@@ -56,6 +56,7 @@
       "type": "object",
       "properties": {
         "id": { "type": "string" },
+        "master_job_id": { "type": "string" },
         "serial_no": { "type": "string" },
         "order_date": { "type": "string", "format": "date" },
         "planning_status": { "type": "string" },
@@ -78,6 +79,31 @@
         "created_by_name": { "type": "string" }
       }
     },
+    "Job": {
+      "title": "Job",
+      "description": "Master Sales Job entry.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "job_id": { "type": "string" },
+        "customer": { "type": "string" },
+        "product": { "type": "string" },
+        "status": { "type": "string" },
+        "created_date": { "type": "string", "format": "date-time" },
+        "created_by": { "type": "string" }
+      }
+    },
+    "JobSettings": {
+      "title": "JobSettings",
+      "type": "object",
+      "properties": {
+        "jobPrefix": { "type": "string" },
+        "yearFormat": { "type": "string" },
+        "numberLength": { "type": "number" },
+        "separator": { "type": "string" },
+        "currentSequence": { "type": "number" }
+      }
+    },
     "Customer": {
       "title": "Customer",
       "type": "object",
@@ -98,26 +124,6 @@
         "contactPerson": { "type": "string" },
         "email": { "type": "string" },
         "phone": { "type": "string" }
-      }
-    },
-    "RollSettings": {
-      "title": "RollSettings",
-      "type": "object",
-      "properties": {
-        "parentRollPrefix": { "type": "string" },
-        "rollStartNumber": { "type": "number" },
-        "childRollPrefixType": { "type": "string" },
-        "subChildPrefixType": { "type": "string" },
-        "separator": { "type": "string" },
-        "barcodePrefix": { "type": "string" }
-      }
-    },
-    "CoreSize": {
-      "title": "CoreSize",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" }
       }
     }
   },
@@ -145,9 +151,17 @@
       {
         "path": "/jobs/{id}",
         "definition": {
-          "entityName": "User",
-          "schema": { "type": "object" },
-          "description": "General job info."
+          "entityName": "Job",
+          "schema": { "$ref": "#/backend/entities/Job" },
+          "description": "Master jobs created by Sales."
+        }
+      },
+      {
+        "path": "/job_settings/{id}",
+        "definition": {
+          "entityName": "JobSettings",
+          "schema": { "$ref": "#/backend/entities/JobSettings" },
+          "description": "Configuration for unique job numbers."
         }
       },
       {
@@ -157,30 +171,6 @@
           "schema": { "$ref": "#/backend/entities/User" },
           "description": "User profiles."
         }
-      },
-      {
-        "path": "/adminUsers/{userId}",
-        "definition": { "entityName": "User", "schema": { "$ref": "#/backend/entities/User" }, "description": "Admin markers." }
-      },
-      {
-        "path": "/designUsers/{userId}",
-        "definition": { "entityName": "User", "schema": { "$ref": "#/backend/entities/User" }, "description": "Design markers." }
-      },
-      {
-        "path": "/productionUsers/{userId}",
-        "definition": { "entityName": "User", "schema": { "$ref": "#/backend/entities/User" }, "description": "Production markers." }
-      },
-      {
-        "path": "/settings/{id}",
-        "definition": { "entityName": "RollSettings", "schema": { "$ref": "#/backend/entities/RollSettings" }, "description": "App settings." }
-      },
-      {
-        "path": "/suppliers/{id}",
-        "definition": { "entityName": "Supplier", "schema": { "$ref": "#/backend/entities/Supplier" }, "description": "Material vendors." }
-      },
-      {
-        "path": "/core_sizes/{id}",
-        "definition": { "entityName": "CoreSize", "schema": { "$ref": "#/backend/entities/CoreSize" }, "description": "Managed core sizes." }
       }
     ]
   }

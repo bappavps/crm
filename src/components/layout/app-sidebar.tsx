@@ -24,7 +24,9 @@ import {
   ClipboardCheck,
   Hash,
   Briefcase,
-  ListTodo
+  ListTodo,
+  FilePlus,
+  Binary
 } from "lucide-react"
 import {
   Sidebar,
@@ -46,6 +48,7 @@ const navGroups = [
     items: [
       { name: 'Estimates', icon: Calculator, href: '/estimate' },
       { name: 'Sales Orders', icon: ShoppingCart, href: '/sales-order' },
+      { name: 'Create Job', icon: FilePlus, href: '/sales/create-job' },
     ]
   },
   {
@@ -99,6 +102,7 @@ const navGroups = [
 const adminNavigation = [
   { name: 'Master Data', icon: Settings, href: '/master-data' },
   { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings' },
+  { name: 'Job Settings', icon: Binary, href: '/master-data/job-settings' },
   { name: 'User Management', icon: Users, href: '/users' },
 ]
 

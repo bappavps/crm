@@ -18,7 +18,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2, Filter } from "lucide-react"
+import { ListTodo, Plus, Loader2, Calendar, User, Search, FilterX, Download, Settings2, Trash2, Briefcase } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -52,21 +52,30 @@ export default function JobPlanningPage() {
     return collection(firestore, 'core_sizes');
   }, [firestore, user, adminData])
 
+  const masterJobsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'jobs');
+  }, [firestore])
+
   const { data: jobs, isLoading } = useCollection(planningQuery)
-  const { data: coreSizes, isLoading: coreLoading } = useCollection(coreSizesQuery)
+  const { data: coreSizes } = useCollection(coreSizesQuery)
+  const { data: masterJobs } = useCollection(masterJobsQuery)
 
   const handleCreateJob = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
 
     const formData = new FormData(e.currentTarget)
+    const masterJobId = formData.get("master_job_id") as string
+    const selectedMaster = masterJobs?.find(j => j.job_id === masterJobId)
     
     const jobData = {
+      master_job_id: masterJobId,
       serial_no: formData.get("serial_no") as string,
       order_date: formData.get("order_date") as string,
       planning_status: formData.get("planning_status") as string,
       plate_no: formData.get("plate_no") as string,
-      job_name: formData.get("job_name") as string,
+      job_name: selectedMaster?.product || formData.get("job_name") as string,
       label_size: formData.get("label_size") as string,
       repeat_length: Number(formData.get("repeat_length")),
       material: formData.get("material") as string,
@@ -95,13 +104,8 @@ export default function JobPlanningPage() {
 
   const handleAddCoreSize = () => {
     if (!firestore || !newCoreName.trim()) return
-    
     const id = crypto.randomUUID()
-    addDocumentNonBlocking(collection(firestore, 'core_sizes'), {
-      id,
-      name: newCoreName.trim()
-    })
-    
+    addDocumentNonBlocking(collection(firestore, 'core_sizes'), { id, name: newCoreName.trim() })
     setNewCoreName("")
     toast({ title: "Core Size Added", description: `Added ${newCoreName} to the master list.` })
   }
@@ -123,6 +127,7 @@ export default function JobPlanningPage() {
     const matchesSearch = 
       (job.job_name || "").toLowerCase().includes(q) ||
       (job.plate_no || "").toLowerCase().includes(q) ||
+      (job.master_job_id || "").toLowerCase().includes(q) ||
       (job.serial_no || "").toLowerCase().includes(q);
     
     const matchesStatus = statusFilter === "all" || job.planning_status === statusFilter;
@@ -135,7 +140,7 @@ export default function JobPlanningPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Job Planning Board</h2>
-          <p className="text-muted-foreground">Technical master source for Narrow Web operations (Design Desk).</p>
+          <p className="text-muted-foreground">Technical master source linked to unique sales Job IDs.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => toast({ title: "Export", description: "Downloading master plan..." })}><Download className="mr-2 h-4 w-4" /> Export Board</Button>
@@ -150,17 +155,35 @@ export default function JobPlanningPage() {
           <form onSubmit={handleCreateJob}>
             <DialogHeader>
               <DialogTitle>Create Master Job Plan</DialogTitle>
-              <DialogDescription>Input technical parameters that will drive production and slitting modules.</DialogDescription>
+              <DialogDescription>Input technical parameters linked to a master Job ID.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="master_job_id" className="font-bold text-primary">Select Unique Job ID</Label>
+                  <Select name="master_job_id" required>
+                    <SelectTrigger><SelectValue placeholder="Choose Sales Job" /></SelectTrigger>
+                    <SelectContent>
+                      {masterJobs?.map(j => (
+                        <SelectItem key={j.id} value={j.job_id}>{j.job_id} - {j.customer}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="order_date">Order Date</Label>
+                  <Input id="order_date" name="order_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="serial_no">Serial No</Label>
                   <Input id="serial_no" name="serial_no" placeholder="e.g. 001" required />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="order_date">Order Date</Label>
-                  <Input id="order_date" name="order_date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} />
+                  <Label htmlFor="plate_no">Plate No</Label>
+                  <Input id="plate_no" name="plate_no" placeholder="PL-4501" required />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="planning_status">Planning Status</Label>
@@ -175,14 +198,10 @@ export default function JobPlanningPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="plate_no">Plate No</Label>
-                  <Input id="plate_no" name="plate_no" placeholder="PL-4501" required />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="job_name">Job Name</Label>
-                  <Input id="job_name" name="job_name" placeholder="Product Description" required />
+                  <Label htmlFor="job_name">Internal Job Name</Label>
+                  <Input id="job_name" name="job_name" placeholder="Leave empty to use Sales product name" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="material">Substrate</Label>
@@ -205,7 +224,7 @@ export default function JobPlanningPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 bg-muted/20 p-4 rounded-lg border border-dashed border-primary/30">
+              <div className="grid grid-cols-3 gap-4 bg-primary/5 p-4 rounded-lg border border-dashed border-primary/30">
                 <div className="grid gap-2">
                   <Label htmlFor="paper_width" className="text-primary font-bold">Paper Width (mm)</Label>
                   <Input id="paper_width" name="paper_width" type="number" required />
@@ -224,13 +243,7 @@ export default function JobPlanningPage() {
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="core_size">Core Size</Label>
-                    <Button 
-                      type="button" 
-                      variant="ghost" 
-                      size="icon" 
-                      className="h-4 w-4 text-primary" 
-                      onClick={() => setIsCoreManageOpen(true)}
-                    >
+                    <Button type="button" variant="ghost" size="icon" className="h-4 w-4 text-primary" onClick={() => setIsCoreManageOpen(true)}>
                       <Settings2 className="h-3 w-3" />
                     </Button>
                   </div>
@@ -240,9 +253,7 @@ export default function JobPlanningPage() {
                       {coreSizes?.map(core => (
                         <SelectItem key={core.id} value={core.name}>{core.name}</SelectItem>
                       ))}
-                      {(!coreSizes || coreSizes.length === 0) && (
-                        <SelectItem value="3 Inch">3 Inch (Default)</SelectItem>
-                      )}
+                      {(!coreSizes || coreSizes.length === 0) && <SelectItem value="3 Inch">3 Inch</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -281,15 +292,10 @@ export default function JobPlanningPage() {
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
             <DialogTitle>Manage Core Sizes</DialogTitle>
-            <DialogDescription>Add or remove standard core sizes for selection.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex gap-2">
-              <Input 
-                placeholder="e.g. 1.5 Inch" 
-                value={newCoreName} 
-                onChange={(e) => setNewCoreName(e.target.value)}
-              />
+              <Input placeholder="e.g. 1.5 Inch" value={newCoreName} onChange={(e) => setNewCoreName(e.target.value)} />
               <Button onClick={handleAddCoreSize} size="icon"><Plus className="h-4 w-4" /></Button>
             </div>
             <div className="border rounded-md max-h-[200px] overflow-y-auto">
@@ -299,29 +305,17 @@ export default function JobPlanningPage() {
                     <TableRow key={core.id}>
                       <TableCell className="font-medium">{core.name}</TableCell>
                       <TableCell className="text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="text-destructive h-8 w-8"
-                          onClick={() => handleDeleteCoreSize(core.id, core.name)}
-                        >
+                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteCoreSize(core.id, core.name)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!coreSizes || coreSizes.length === 0) && (
-                    <TableRow>
-                      <TableCell className="text-center py-4 text-muted-foreground">No custom core sizes found.</TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCoreManageOpen(false)} className="w-full">Done</Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setIsCoreManageOpen(false)} className="w-full">Done</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -334,14 +328,14 @@ export default function JobPlanningPage() {
             <div className="relative w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input 
-                placeholder="Search Plate or Job..." 
-                className="pl-8" 
+                placeholder="Search Job ID or Plate..." 
+                className="pl-8 text-xs" 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
+              <SelectTrigger className="w-[150px] text-xs">
                 <SelectValue placeholder="All Status" />
               </SelectTrigger>
               <SelectContent>
@@ -359,25 +353,25 @@ export default function JobPlanningPage() {
             <Table className="min-w-[2800px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="w-[100px] text-xs font-bold border-r">SERIAL NO</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">ORDER DATE</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold border-r">PLANNING STATUS</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">PLATE NO</TableHead>
-                  <TableHead className="w-[200px] text-xs font-bold border-r">JOB NAME</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">LABEL SIZE</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">REPEAT LENGTH</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold border-r">MATERIAL</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">PAPER WIDTH</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">DIE TYPE</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold border-r">ALLOCATE METERS</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">LABEL QTY</TableHead>
-                  <TableHead className="w-[100px] text-xs font-bold border-r">CORE SIZE</TableHead>
-                  <TableHead className="w-[120px] text-xs font-bold border-r">QTY PER ROLL</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold border-r">ROLL DIRECTION</TableHead>
-                  <TableHead className="w-[250px] text-xs font-bold border-r">REMARKS</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold border-r">STATUS</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold border-r">CREATED DATE</TableHead>
-                  <TableHead className="w-[150px] text-xs font-bold">CREATED BY</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-black border-r">UNIQUE JOB ID</TableHead>
+                  <TableHead className="w-[100px] text-[10px] font-bold border-r">SERIAL NO</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">ORDER DATE</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">PLAN STATUS</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">PLATE NO</TableHead>
+                  <TableHead className="w-[200px] text-[10px] font-bold border-r">PRODUCT NAME</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">SIZE</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">REPEAT</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">SUBSTRATE</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">WIDTH (MM)</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">DIE TYPE</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">ALLOC. METERS</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">LABEL QTY</TableHead>
+                  <TableHead className="w-[100px] text-[10px] font-bold border-r">CORE</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">QTY/ROLL</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">DIRECTION</TableHead>
+                  <TableHead className="w-[250px] text-[10px] font-bold border-r">REMARKS</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">STATUS</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold">CREATED BY</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -385,10 +379,11 @@ export default function JobPlanningPage() {
                   <TableRow><TableCell colSpan={19} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : filteredJobs.map((j) => (
                   <TableRow key={j.id} className="hover:bg-muted/30">
+                    <TableCell className="text-xs font-black text-primary border-r">{j.master_job_id}</TableCell>
                     <TableCell className="text-xs border-r">{j.serial_no}</TableCell>
                     <TableCell className="text-xs border-r">{j.order_date}</TableCell>
                     <TableCell className="border-r"><Badge variant="secondary" className="text-[9px] px-1 h-5">{j.planning_status}</Badge></TableCell>
-                    <TableCell className="text-xs font-bold text-primary border-r">{j.plate_no}</TableCell>
+                    <TableCell className="text-xs font-bold border-r">{j.plate_no}</TableCell>
                     <TableCell className="text-xs border-r">{j.job_name}</TableCell>
                     <TableCell className="text-xs border-r">{j.label_size}</TableCell>
                     <TableCell className="text-xs font-mono border-r">{j.repeat_length}mm</TableCell>
@@ -402,20 +397,13 @@ export default function JobPlanningPage() {
                     <TableCell className="text-xs border-r">{j.roll_direction}</TableCell>
                     <TableCell className="text-xs italic text-muted-foreground truncate max-w-[200px] border-r">{j.remarks || '-'}</TableCell>
                     <TableCell className="border-r">
-                      <Badge className={
-                        j.status === 'READY FOR PRODUCTION' ? 'bg-emerald-500' : 
-                        j.status === 'MATERIAL ASSIGNED' ? 'bg-primary' : 'bg-slate-500'
-                      } style={{ fontSize: '9px' }}>
+                      <Badge className={j.status === 'READY FOR PRODUCTION' ? 'bg-emerald-500' : 'bg-primary'} style={{ fontSize: '9px' }}>
                         {j.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-[10px] border-r">{new Date(j.created_date).toLocaleDateString()}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{j.created_by_name}</TableCell>
                   </TableRow>
                 ))}
-                {filteredJobs.length === 0 && !isLoading && (
-                  <TableRow><TableCell colSpan={19} className="text-center py-20 text-muted-foreground italic">No master plans found matching filters.</TableCell></TableRow>
-                )}
               </TableBody>
             </Table>
           </div>

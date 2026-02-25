@@ -11,47 +11,27 @@ service cloud.firestore {
       return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
     }
 
-    function isDesign() {
-      return isSignedIn() && (exists(/databases/$(database)/documents/designUsers/$(request.auth.uid)) || isAdmin());
-    }
-
-    function isProduction() {
-      return isSignedIn() && (exists(/databases/$(database)/documents/productionUsers/$(request.auth.uid)) || isAdmin());
-    }
-
     function isInternalStaff() {
-      return isAdmin() || isDesign() || isProduction() || exists(/databases/$(database)/documents/managerUsers/$(request.auth.uid)) || exists(/databases/$(database)/documents/operatorUsers/$(request.auth.uid));
+      return isSignedIn();
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    match /adminUsers/{userId} { allow read: if isInternalStaff() || isOwner(userId); allow write: if isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId))); }
-    match /designUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
-    match /productionUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
-    match /managerUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
-    match /operatorUsers/{userId} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
-
+    match /adminUsers/{userId} { allow read: if isInternalStaff() || isOwner(userId); allow write: if isAdmin(); }
     match /users/{userId} {
       allow get, list: if isInternalStaff() || isOwner(userId);
-      allow create: if isOwner(userId) || isAdmin() || (isSignedIn() && !exists(/databases/$(database)/documents/adminUsers/$(userId)));
+      allow create: if isOwner(userId) || isAdmin();
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
     }
 
     match /jumbo_stock/{id} { allow read, write: if isInternalStaff(); }
     match /inventoryItems/{id} { allow read, write: if isInternalStaff(); }
-    
-    match /jobs/{id} {
-      allow read: if isInternalStaff();
-      allow create, update, delete: if isDesign();
-    }
-
-    match /job_planning/{id} { 
-      allow read: if isInternalStaff(); 
-      allow create, update, delete: if isDesign(); 
-    }
+    match /job_planning/{id} { allow read, write: if isInternalStaff(); }
+    match /jobs/{id} { allow read, write: if isInternalStaff(); }
+    match /job_settings/{id} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
     
     match /settings/{id} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
     match /customers/{id} { allow read, write: if isInternalStaff(); }
