@@ -30,9 +30,10 @@ import { useToast } from "@/hooks/use-toast";
 
 /**
  * Metadata for permission grouping.
- * If a key exists in Firestore but not here, it will appear in "Other Capabilities".
+ * Maps technical keys to logical operational groups and icons.
  */
 const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
+  dashboard: { group: "System & Admin", icon: Settings },
   estimates: { group: "Sales & CRM", icon: ShoppingCart },
   salesOrders: { group: "Sales & CRM", icon: ShoppingCart },
   createJob: { group: "Sales & CRM", icon: ShoppingCart },
@@ -52,9 +53,8 @@ const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
   qualityControl: { group: "Quality & Logistics", icon: CheckCircle2 },
   dispatch: { group: "Quality & Logistics", icon: CheckCircle2 },
   billing: { group: "Quality & Logistics", icon: CheckCircle2 },
-  dashboard: { group: "System & Admin", icon: Settings },
-  reports: { group: "System & Admin", icon: Settings },
-  admin: { group: "System & Admin", icon: Settings },
+  reports: { group: "Analytics", icon: Settings },
+  admin: { group: "System & Admin", icon: Lock },
 };
 
 const GROUP_ORDER = [
@@ -64,16 +64,13 @@ const GROUP_ORDER = [
   "Inventory & Materials",
   "Production Floor",
   "Quality & Logistics",
+  "Analytics",
   "System & Admin",
   "Other Capabilities"
 ];
 
-/**
- * Formats keys (camelCase or snake_case) into readable labels.
- * Handles common industry acronyms.
- */
 const formatPermissionLabel = (key: string) => {
-  const acronyms = ["GRN", "BOM", "CRM", "ERP", "QC", "ID"];
+  const acronyms = ["GRN", "BOM", "CRM", "ERP", "QC", "ID", "FG"];
   const words = key
     .replace(/_/g, ' ')
     .replace(/([A-Z])/g, ' $1')
@@ -128,23 +125,25 @@ export default function PermissionManagementPage() {
     }
   };
 
+  /**
+   * Correctly categorizes permissions into iterable arrays to avoid destructuring errors.
+   */
   const getCategorizedPermissions = (permissions: Record<string, boolean> = {}) => {
-    const grouped: Record<string, { key: string; val: boolean }[]> = {};
+    const grouped: Record<string, [string, boolean][]> = {};
     
     Object.entries(permissions).forEach(([key, val]) => {
       const meta = PERMISSION_METADATA[key];
       const groupName = meta ? meta.group : "Other Capabilities";
       if (!grouped[groupName]) grouped[groupName] = [];
-      grouped[groupName].push({ key, val });
+      grouped[groupName].push([key, val]);
     });
 
     return GROUP_ORDER.map(label => {
       const items = grouped[label] || [];
       if (items.length === 0) return null;
       
-      const icon = items.length > 0 && PERMISSION_METADATA[items[0].key] 
-        ? PERMISSION_METADATA[items[0].key].icon 
-        : (label === "Other Capabilities" ? Key : Settings);
+      const firstItemKey = items[0][0];
+      const icon = PERMISSION_METADATA[firstItemKey]?.icon || (label === "Other Capabilities" ? Key : Settings);
 
       return { label, icon, items };
     }).filter(Boolean);
@@ -215,7 +214,7 @@ export default function PermissionManagementPage() {
               </Card>
             ))}
             
-            <Button variant="outline" className="border-dashed h-16 text-lg font-bold text-muted-foreground hover:text-primary">
+            <Button variant="outline" className="border-dashed h-16 text-lg font-bold text-muted-foreground hover:text-primary" onClick={() => toast({ title: "Development", description: "Custom role creation is coming soon." })}>
               <Plus className="mr-2 h-5 w-5" /> Create New Custom Role
             </Button>
           </div>
@@ -252,7 +251,7 @@ export default function PermissionManagementPage() {
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {Object.keys(u.customPermissions || {}).map(k => (
-                            <Badge key={k} className={u.customPermissions[k] ? "bg-emerald-500" : "bg-destructive"}>
+                            <Badge key={k} variant={u.customPermissions[k] ? "default" : "destructive"} className="text-[9px]">
                               {formatPermissionLabel(k)}: {u.customPermissions[k] ? "ON" : "OFF"}
                             </Badge>
                           ))}
