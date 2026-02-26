@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Plus, Loader2, ClipboardCheck, Printer, Search, ArrowUpDown, FilterX, ArrowUp, ArrowDown } from "lucide-react"
+import { Plus, Loader2, ClipboardCheck, Printer, Search, ArrowUpDown, FilterX, ArrowUp, ArrowDown, Settings2, Trash2 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
 type SortField = 'rollNo' | 'receivedDate' | 'weightKg' | 'sqm' | 'paperCompany' | 'paperType';
@@ -31,7 +31,14 @@ export default function GRNPage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isSupplierManageOpen, setIsSupplierManageOpen] = useState(false)
+  const [isMaterialManageOpen, setIsMaterialManageOpen] = useState(false)
   
+  // Management States
+  const [newSupplierName, setNewSupplierName] = useState("")
+  const [newMaterialName, setNewMaterialName] = useState("")
+  const [newMaterialGsm, setNewMaterialGsm] = useState("")
+
   // Filtering & Sorting State
   const [searchQuery, setSearchQuery] = useState("")
   const [companyFilter, setCompanyFilter] = useState("all")
@@ -213,6 +220,47 @@ export default function GRNPage() {
     })
   }
 
+  const handleAddSupplier = () => {
+    if (!firestore || !newSupplierName.trim()) return
+    const id = crypto.randomUUID()
+    addDocumentNonBlocking(collection(firestore, 'suppliers'), { 
+      id, 
+      name: newSupplierName.trim(),
+      gstNumber: "N/A",
+      email: "N/A",
+      createdAt: new Date().toISOString()
+    })
+    setNewSupplierName("")
+    toast({ title: "Supplier Added", description: `${newSupplierName} is now available in GRN.` })
+  }
+
+  const handleDeleteSupplier = (id: string, name: string) => {
+    if (!firestore) return
+    deleteDocumentNonBlocking(doc(firestore, 'suppliers', id))
+    toast({ title: "Supplier Removed", description: `${name} deleted from master list.` })
+  }
+
+  const handleAddMaterial = () => {
+    if (!firestore || !newMaterialName.trim()) return
+    const id = crypto.randomUUID()
+    addDocumentNonBlocking(collection(firestore, 'materials'), { 
+      id, 
+      name: newMaterialName.trim(), 
+      gsm: Number(newMaterialGsm) || 0,
+      ratePerSqMeter: 0,
+      createdAt: new Date().toISOString()
+    })
+    setNewMaterialName("")
+    setNewMaterialGsm("")
+    toast({ title: "Substrate Added", description: `${newMaterialName} is now available in GRN.` })
+  }
+
+  const handleDeleteMaterial = (id: string, name: string) => {
+    if (!firestore) return
+    deleteDocumentNonBlocking(doc(firestore, 'materials', id))
+    toast({ title: "Substrate Removed", description: `${name} deleted from master list.` })
+  }
+
   const resetFilters = () => {
     setSearchQuery("")
     setCompanyFilter("all")
@@ -302,22 +350,32 @@ export default function GRNPage() {
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="paperCompany">Paper Company</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="paperCompany">Paper Company</Label>
+                    <Button type="button" variant="ghost" size="icon" className="h-4 w-4 text-primary" onClick={() => setIsSupplierManageOpen(true)}>
+                      <Settings2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                   <Select name="paperCompany" required>
                     <SelectTrigger><SelectValue placeholder="Select Vendor" /></SelectTrigger>
                     <SelectContent>
                       {suppliers?.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                      <SelectItem value="Direct Import">Direct Import</SelectItem>
+                      {(!suppliers || suppliers.length === 0) && <SelectItem value="Generic Supplier">Generic Supplier</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="paperType">Paper Type</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="paperType">Paper Type</Label>
+                    <Button type="button" variant="ghost" size="icon" className="h-4 w-4 text-primary" onClick={() => setIsMaterialManageOpen(true)}>
+                      <Settings2 className="h-3 w-3" />
+                    </Button>
+                  </div>
                   <Select name="paperType" required>
                     <SelectTrigger><SelectValue placeholder="Select Substrate" /></SelectTrigger>
                     <SelectContent>
                       {materials?.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
-                      <SelectItem value="Generic Semi-Gloss">Generic Semi-Gloss</SelectItem>
+                      {(!materials || materials.length === 0) && <SelectItem value="Generic Substrate">Generic Substrate</SelectItem>}
                     </SelectContent>
                   </Select>
                 </div>
@@ -386,6 +444,73 @@ export default function GRNPage() {
               <Button type="submit" className="w-full h-12 text-lg">Save Jumbo Entry</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Supplier Management Dialog */}
+      <Dialog open={isSupplierManageOpen} onOpenChange={setIsSupplierManageOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Manage Paper Companies</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex gap-2">
+              <Input placeholder="e.g. Avery Dennison" value={newSupplierName} onChange={(e) => setNewSupplierName(e.target.value)} />
+              <Button onClick={handleAddSupplier} size="icon"><Plus className="h-4 w-4" /></Button>
+            </div>
+            <div className="border rounded-md max-h-[250px] overflow-y-auto">
+              <Table>
+                <TableBody>
+                  {suppliers?.map((s) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium text-xs">{s.name}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteSupplier(s.id, s.name)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setIsSupplierManageOpen(false)} className="w-full">Done</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Material Management Dialog */}
+      <Dialog open={isMaterialManageOpen} onOpenChange={setIsMaterialManageOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Manage Substrates</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Input placeholder="Material Name (e.g. Chromo)" value={newMaterialName} onChange={(e) => setNewMaterialName(e.target.value)} />
+              <div className="flex gap-2">
+                <Input placeholder="GSM (e.g. 80)" type="number" value={newMaterialGsm} onChange={(e) => setNewMaterialGsm(e.target.value)} />
+                <Button onClick={handleAddMaterial} size="icon" className="shrink-0"><Plus className="h-4 w-4" /></Button>
+              </div>
+            </div>
+            <div className="border rounded-md max-h-[250px] overflow-y-auto">
+              <Table>
+                <TableBody>
+                  {materials?.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium text-xs">{m.name} ({m.gsm} GSM)</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleDeleteMaterial(m.id, m.name)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setIsMaterialManageOpen(false)} className="w-full">Done</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
