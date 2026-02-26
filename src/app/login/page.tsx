@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect } from "react"
@@ -69,7 +68,7 @@ export default function LoginPage() {
           <FileText className="text-white w-7 h-7" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">SLC ERP</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Shree Label CRM</h1>
           <p className="text-xs text-muted-foreground uppercase tracking-widest">Shree Label Creation</p>
         </div>
       </div>

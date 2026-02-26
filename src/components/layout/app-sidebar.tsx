@@ -1,4 +1,3 @@
-
 "use client"
 
 import { 
@@ -131,7 +130,7 @@ export function AppSidebar() {
             <FileText className="text-white w-6 h-6" />
           </div>
           <div>
-            <span className="block font-bold text-white text-lg">SLC ERP</span>
+            <span className="block font-bold text-white text-lg">Shree Label CRM</span>
           </div>
         </div>
       </SidebarHeader>
@@ -146,7 +145,7 @@ export function AppSidebar() {
             <FileText className="text-white w-6 h-6" />
           </div>
           <div>
-            <span className="block font-bold text-white text-lg">SLC ERP</span>
+            <span className="block font-bold text-white text-lg">Shree Label CRM</span>
             <span className="block text-[10px] text-muted-foreground uppercase tracking-widest">Shree Label Creation</span>
           </div>
         </div>
