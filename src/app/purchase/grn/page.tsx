@@ -63,10 +63,10 @@ export default function GRNPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Roll Settings
+  // Roll Settings - Updated Path
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
-    return doc(firestore, 'settings', 'roll-numbering');
+    return doc(firestore, 'roll_settings', 'global_config');
   }, [firestore]);
   const { data: settings } = useDoc(settingsDocRef);
 
@@ -185,15 +185,15 @@ export default function GRNPage() {
     try {
       await runTransaction(firestore, async (transaction) => {
         // 1. Fetch numbering settings and counter
-        const settingsRef = doc(firestore, 'settings', 'roll-numbering');
+        const settingsRef = doc(firestore, 'roll_settings', 'global_config');
         const counterRef = doc(firestore, 'counters', 'jumbo_roll');
         
         const settingsSnap = await transaction.get(settingsRef);
         const counterSnap = await transaction.get(counterRef);
 
         const currentSettings = settingsSnap.exists() ? settingsSnap.data() : {
-          parentRollPrefix: "TLC-",
-          rollStartNumber: 1000
+          parentPrefix: "TLC-",
+          startNumber: 1000
         };
 
         let currentNumber = 1;
@@ -207,8 +207,8 @@ export default function GRNPage() {
           }
         }
 
-        const prefix = currentSettings.parentRollPrefix || "TLC-";
-        const startNum = Number(currentSettings.rollStartNumber) || 1000;
+        const prefix = currentSettings.parentPrefix || "TLC-";
+        const startNum = Number(currentSettings.startNumber) || 1000;
         const generatedRollNo = `${prefix}${startNum + currentNumber}`;
 
         // 2. Uniqueness check

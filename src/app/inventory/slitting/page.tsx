@@ -21,7 +21,7 @@ import {
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, query, where, getDocs, deleteDoc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
-import { useToast } from "@/hooks/use-toast"
+import { useToast } from "@/toast"
 import { cn } from "@/lib/utils"
 
 export default function SlittingPage() {
@@ -39,10 +39,10 @@ export default function SlittingPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Roll Settings
+  // Roll Settings - Updated Path and fields
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
-    return doc(firestore, 'settings', 'roll-numbering');
+    return doc(firestore, 'roll_settings', 'global_config');
   }, [firestore]);
   const { data: settings } = useDoc(settingsDocRef);
 
@@ -141,11 +141,11 @@ export default function SlittingPage() {
 
     // 4. Create Slitted Child Rolls
     const sep = settings?.separator || "-"
-    const prefixType = settings?.childRollPrefixType || "Alphabet"
+    const prefixType = settings?.childType || "alphabet"
 
     for (let i = 0; i < numRolls; i++) {
       let childId = ""
-      if (prefixType === "Alphabet") {
+      if (prefixType === "alphabet") {
         childId = String.fromCharCode(65 + i)
       } else {
         childId = (i + 1).toString()

@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,17 @@ export default function RollSettingsPage() {
   const firestore = useFirestore()
   const [isMounted, setIsMounted] = useState(false)
 
+  // Local state for instant preview updates
+  const [formValues, setFormValues] = useState({
+    parentPrefix: "TLC-",
+    startNumber: 1000,
+    childType: "alphabet",
+    subChildType: "number",
+    separator: "-",
+    barcodePrefix: "BC-",
+    trackingYear: new Date().getFullYear()
+  })
+
   useEffect(() => {
     setIsMounted(true)
   }, [])
@@ -30,14 +41,29 @@ export default function RollSettingsPage() {
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 
-  // Settings Query
+  // Settings Query - Updated to new path
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
-    return doc(firestore, 'settings', 'roll-numbering');
+    return doc(firestore, 'roll_settings', 'global_config');
   }, [firestore]);
   const { data: settings, isLoading: settingsLoading } = useDoc(settingsDocRef);
 
-  // Counter Query
+  // Sync state with Firestore data when loaded
+  useEffect(() => {
+    if (settings) {
+      setFormValues({
+        parentPrefix: settings.parentPrefix || "TLC-",
+        startNumber: Number(settings.startNumber) || 1000,
+        childType: settings.childType || "alphabet",
+        subChildType: settings.subChildType || "number",
+        separator: settings.separator || "-",
+        barcodePrefix: settings.barcodePrefix || "BC-",
+        trackingYear: Number(settings.trackingYear) || new Date().getFullYear()
+      })
+    }
+  }, [settings])
+
+  // Counter Query for tracking status
   const counterDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'counters', 'jumbo_roll');
@@ -48,25 +74,43 @@ export default function RollSettingsPage() {
     e.preventDefault()
     if (!firestore || !user || !adminData) return
 
-    const formData = new FormData(e.currentTarget)
-    const data = {
-      parentRollPrefix: formData.get("parentRollPrefix") as string,
-      rollStartNumber: Number(formData.get("rollStartNumber")),
-      childRollPrefixType: formData.get("childRollPrefixType") as string,
-      subChildPrefixType: formData.get("subChildPrefixType") as string,
-      separator: formData.get("separator") as string,
-      barcodePrefix: formData.get("barcodePrefix") as string,
-      updatedAt: new Date().toISOString(),
-      updatedById: user.uid
-    }
-
-    setDocumentNonBlocking(doc(firestore, 'settings', 'roll-numbering'), data, { merge: true })
+    setDocumentNonBlocking(doc(firestore, 'roll_settings', 'global_config'), formValues, { merge: true })
     
     toast({
       title: "Settings Saved",
       description: "Roll numbering configuration has been updated across the system."
     })
   }
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setFormValues(prev => ({
+      ...prev,
+      [name]: name === 'startNumber' || name === 'trackingYear' ? Number(value) : value
+    }))
+  }
+
+  const handleSelectChange = (name: string, value: string) => {
+    setFormValues(prev => ({
+      ...prev,
+      [name]: value
+    }))
+  }
+
+  // Dynamic Preview Logic
+  const previewData = useMemo(() => {
+    const parentNumber = (formValues.startNumber || 1000) + 1
+    const parentCode = `${formValues.parentPrefix}${parentNumber}`
+    
+    const childValue = formValues.childType === "alphabet" ? "A" : "1"
+    const subChildValue = formValues.subChildType === "alphabet" ? "A" : "1"
+    
+    const parentPreview = parentCode
+    const childPreview = `${parentCode}${formValues.separator}${childValue}`
+    const subChildPreview = `${childPreview}${formValues.separator}${subChildValue}`
+
+    return { parentPreview, childPreview, subChildPreview }
+  }, [formValues])
 
   if (authLoading) {
     return (
@@ -88,11 +132,6 @@ export default function RollSettingsPage() {
       </div>
     )
   }
-
-  const currentYear = isMounted ? new Date().getFullYear().toString() : 'YYYY'
-  const nextNum = (counter?.current_number || 0) + 1
-  const previewPrefix = settings?.parentRollPrefix || "TLC-"
-  const previewStart = Number(settings?.rollStartNumber ?? 1000)
 
   return (
     <div className="space-y-6">
@@ -116,33 +155,33 @@ export default function RollSettingsPage() {
               <form onSubmit={handleSave} className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="parentRollPrefix">Parent Roll Prefix</Label>
-                    <Input id="parentRollPrefix" name="parentRollPrefix" defaultValue={settings?.parentRollPrefix || "TLC-"} placeholder="e.g. TLC-" required />
+                    <Label htmlFor="parentPrefix">Parent Roll Prefix</Label>
+                    <Input id="parentPrefix" name="parentPrefix" value={formValues.parentPrefix} onChange={handleInputChange} placeholder="e.g. TLC-" required />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="rollStartNumber">Roll Start Number</Label>
-                    <Input id="rollStartNumber" name="rollStartNumber" type="number" defaultValue={settings?.rollStartNumber || 1000} required />
+                    <Label htmlFor="startNumber">Roll Start Number</Label>
+                    <Input id="startNumber" name="startNumber" type="number" value={formValues.startNumber} onChange={handleInputChange} required />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="childRollPrefixType">Child Roll Type</Label>
-                    <Select name="childRollPrefixType" defaultValue={settings?.childRollPrefixType || "Alphabet"}>
+                    <Label htmlFor="childType">Child Roll Type</Label>
+                    <Select value={formValues.childType} onValueChange={(val) => handleSelectChange('childType', val)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Alphabet">Alphabet (A, B, C...)</SelectItem>
-                        <SelectItem value="Number">Number (1, 2, 3...)</SelectItem>
+                        <SelectItem value="alphabet">Alphabet (A, B, C...)</SelectItem>
+                        <SelectItem value="number">Number (1, 2, 3...)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="subChildPrefixType">Sub Child Type</Label>
-                    <Select name="subChildPrefixType" defaultValue={settings?.subChildPrefixType || "Number"}>
+                    <Label htmlFor="subChildType">Sub Child Type</Label>
+                    <Select value={formValues.subChildType} onValueChange={(val) => handleSelectChange('subChildType', val)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Number">Number (1, 2, 3...)</SelectItem>
-                        <SelectItem value="Alphabet">Alphabet (A, B, C...)</SelectItem>
+                        <SelectItem value="alphabet">Alphabet (A, B, C...)</SelectItem>
+                        <SelectItem value="number">Number (1, 2, 3...)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -151,12 +190,17 @@ export default function RollSettingsPage() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="separator">Separator</Label>
-                    <Input id="separator" name="separator" defaultValue={settings?.separator || "-"} placeholder="e.g. -" required />
+                    <Input id="separator" name="separator" value={formValues.separator} onChange={handleInputChange} placeholder="e.g. -" required />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="barcodePrefix">Barcode Prefix</Label>
-                    <Input id="barcodePrefix" name="barcodePrefix" defaultValue={settings?.barcodePrefix || "BC-"} placeholder="e.g. BC-" />
+                    <Input id="barcodePrefix" name="barcodePrefix" value={formValues.barcodePrefix} onChange={handleInputChange} placeholder="e.g. BC-" />
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="trackingYear">Current Tracking Year</Label>
+                  <Input id="trackingYear" name="trackingYear" type="number" value={formValues.trackingYear} onChange={handleInputChange} required />
                 </div>
 
                 <Button type="submit" className="w-full">
@@ -170,34 +214,34 @@ export default function RollSettingsPage() {
         <div className="space-y-6">
           <Card className="bg-primary/5 border-primary/20">
             <CardHeader>
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-primary">Preview Generation Logic</CardTitle>
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-primary">Dynamic Logic Preview</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-4">
                 <div className="p-4 bg-background rounded-lg border shadow-sm">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Jumbo Roll (Parent)</p>
                   <code className="text-xl font-black text-primary">
-                    {previewPrefix}{previewStart + nextNum}
+                    {previewData.parentPreview}
                   </code>
                 </div>
 
                 <div className="p-4 bg-background rounded-lg border shadow-sm">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Slitted Roll (Child)</p>
                   <code className="text-xl font-black text-foreground">
-                    {previewPrefix}{previewStart + nextNum}{settings?.separator || "-"}{settings?.childRollPrefixType === 'Alphabet' ? 'A' : '1'}
+                    {previewData.childPreview}
                   </code>
                 </div>
 
                 <div className="p-4 bg-background rounded-lg border shadow-sm">
                   <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Job FG (Sub Child)</p>
                   <code className="text-xl font-black text-accent">
-                    {previewPrefix}{previewStart + nextNum}{settings?.separator || "-"}A{settings?.separator || "-"}{settings?.subChildPrefixType === 'Number' ? '1' : 'A'}
+                    {previewData.subChildPreview}
                   </code>
                 </div>
               </div>
 
               <div className="text-xs text-muted-foreground italic leading-relaxed">
-                * The numbering is now atomic. It respects your configured start number ({previewStart}) and automatically increments based on the global database sequence.
+                * Previews update instantly. The numbering system respects your start number ({formValues.startNumber}) and handles separators and prefix types dynamically.
               </div>
             </CardContent>
           </Card>
@@ -205,7 +249,7 @@ export default function RollSettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-bold flex items-center gap-2">
-                <Hash className="h-4 w-4 text-primary" /> Current Stock Counter
+                <Hash className="h-4 w-4 text-primary" /> Database Sequence Status
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -215,8 +259,8 @@ export default function RollSettingsPage() {
                   <p className="text-lg font-bold">{counter?.current_number || 0}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground font-medium">Tracking Year:</p>
-                  <p className="text-lg font-bold">{counter?.year || currentYear}</p>
+                  <p className="text-muted-foreground font-medium">Active Year:</p>
+                  <p className="text-lg font-bold">{counter?.year || (isMounted ? new Date().getFullYear() : '...')}</p>
                 </div>
               </div>
             </CardContent>
