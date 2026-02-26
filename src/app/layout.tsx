@@ -3,7 +3,7 @@ import type {Metadata} from 'next';
 import { Inter } from "next/font/google";
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import { FirebaseClientProvider } from "@/firebase";
+import { FirebaseClientProvider } from "@/firebase/client-provider";
 import { AuthInitializer } from "@/components/auth-initializer";
 import { AppShell } from "@/components/layout/shell";
 import { cn } from "@/lib/utils";

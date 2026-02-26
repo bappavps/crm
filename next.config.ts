@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
     if (!isServer) {
       config.output = {
         ...config.output,
-        chunkLoadTimeout: 30000, // 30 seconds
+        chunkLoadTimeout: 60000, // 60 seconds
       };
     }
     return config;
