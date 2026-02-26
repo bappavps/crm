@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V3)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V4)
      * 
      * Core Philosophy:
      * Implements Role-Based Access Control (RBAC) and Database-Backed Access Control (DBAC).
@@ -21,20 +21,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    /** 
-     * Checks if the authenticated user is a designated system administrator.
-     * Uses the exists() check on the marker collection.
-     */
-    function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
-    }
-
-    /** Checks if the authenticated user's account status is currently 'active'. */
-    function isUserActive() {
-      // Fetch the user's document to check status
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
-    }
-
     /** Checks if the provided ID matches the authenticated user's UID. */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
@@ -45,6 +31,21 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email == 'gm.shreelabel@gmail.com';
     }
 
+    /** 
+     * Checks if the authenticated user is a designated system administrator.
+     * Uses the exists() check on the marker collection.
+     */
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+
+    /** Checks if the authenticated user's account status is currently 'active'. */
+    function isUserActive() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      // Ensure the document exists before checking data to avoid evaluation errors
+      return exists(userPath) && get(userPath).data.isActive == true;
+    }
+
     // --- Collection Rules ---
 
     /**
@@ -53,7 +54,7 @@ service cloud.firestore {
     match /users/{userId} {
       allow get: if isOwner(userId) || isAdmin();
       allow list: if isAdmin() || isTargetAdmin();
-      allow create: if isAdmin() || isTargetAdmin();
+      allow create: if isTargetAdmin() || isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && isUserActive());
       allow delete: if isAdmin();
     }
@@ -68,12 +69,12 @@ service cloud.firestore {
 
     /**
      * Admin Markers: DBAC marker documents.
-     * CRITICAL: The 'get' rule here MUST NOT call isAdmin() to avoid infinite recursion.
      */
     match /adminUsers/{adminUid} {
       allow get: if isOwner(adminUid) || isTargetAdmin();
       allow list: if isAdmin() || isTargetAdmin();
-      allow write: if isAdmin() || isTargetAdmin();
+      // Allow target admin to bootstrap their own record, and admins to manage others
+      allow write: if (isOwner(adminUid) && isTargetAdmin()) || isAdmin() || isTargetAdmin();
     }
 
     /**
