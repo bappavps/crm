@@ -416,7 +416,7 @@ export default function EstimatePage() {
                   <Label className="text-[10px] font-bold uppercase">Photo / Logo</Label>
                   <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors">
                     <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold">Upload Simulation</span>
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold">not working upload photo</span>
                   </div>
                 </div>
               </div>
