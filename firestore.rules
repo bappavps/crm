@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -7,10 +6,6 @@ service cloud.firestore {
 
     function isSignedIn() {
       return request.auth != null;
-    }
-
-    function getAdminData() {
-      return get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data;
     }
 
     function isAdmin() {
@@ -22,7 +17,6 @@ service cloud.firestore {
     }
 
     function isMigrationLocked() {
-      // Global safety lock managed by Admin in system_settings/pricing_config
       let settings = get(/databases/$(database)/documents/system_settings/pricing_config).data;
       return settings.migration_lock == true;
     }
@@ -31,43 +25,33 @@ service cloud.firestore {
 
     match /jobs/{jobId} {
       allow read: if isSignedIn();
-      
-      // Allow creation if signed in and not locked
       allow create: if isSignedIn() && !isMigrationLocked();
-      
-      // Sales can update only if not yet approved
       allow update: if isAdmin() || (
         isSignedIn() && 
         !isMigrationLocked() &&
         resource.data.status != 'Approved' && 
         (resource.data.salesUserId == request.auth.uid || hasRole('Sales'))
       );
-      
       allow delete: if isAdmin();
 
-      // Technical Sub-collection: 30-minute Edit Lock
       match /technical/details {
         allow read: if isSignedIn();
         allow create: if isSignedIn() && !isMigrationLocked();
         allow update: if isAdmin() || (
           isSignedIn() && 
           !isMigrationLocked() &&
-          // Enforce 30-minute window from the stored lock time
           request.time < timestamp(resource.data.edit_lock_time)
         );
         allow delete: if isAdmin();
       }
 
-      // Financial Sub-collection: Admin Only
       match /financial/summary {
         allow read: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/jobs/$(jobId)).data.salesUserId == request.auth.uid);
         allow write: if isAdmin();
       }
 
-      // Project Files: Role-based Uploads
       match /files/{fileId} {
         allow read: if isSignedIn();
-        // Allow creation if Job is not yet fully completed
         allow create: if isSignedIn() && !isMigrationLocked() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'Completed';
         allow update, delete: if isAdmin();
       }
@@ -99,29 +83,25 @@ service cloud.firestore {
 
     match /counters/{id} {
       allow read: if isSignedIn();
-      // Allow signed-in users to update counters during Job/Roll creation transactions
       allow write: if isSignedIn() && !isMigrationLocked();
+    }
+
+    // --- LOGS ---
+
+    match /system_logs/{document=**} {
+      allow read, write: if isAdmin();
     }
 
     // --- USERS & ROLES ---
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      // Only Admin can change roles or metadata
       allow write: if isAdmin();
     }
 
     match /adminUsers/{userId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
-    }
-
-    // --- AUDIT LOGS (Append Only) ---
-
-    match /job_audit_log/{logId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && !isMigrationLocked();
-      allow update, delete: if false; // Audit logs must be immutable
     }
 
     // --- OTHER COLLECTIONS (Fallback) ---

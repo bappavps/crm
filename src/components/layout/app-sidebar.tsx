@@ -1,4 +1,3 @@
-
 "use client"
 
 import { 
@@ -28,7 +27,8 @@ import {
   FilePlus,
   Binary,
   ShieldAlert,
-  Database
+  Database,
+  FileUp
 } from "lucide-react"
 import {
   Sidebar,
@@ -103,6 +103,7 @@ const navGroups = [
 
 const adminNavigation = [
   { name: 'Master Data', icon: Settings, href: '/master-data' },
+  { name: 'Stock Import', icon: FileUp, href: '/admin/stock-import' },
   { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval' },
   { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings' },
   { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings' },
