@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Plus, Trash2, FilePlus, Loader2, Image as ImageIcon } from "lucide-react"
-import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useDoc, useMemoFirebase, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, runTransaction } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
@@ -115,7 +115,7 @@ export default function CreateJobPage() {
     setItems(prev => prev.filter(i => i.id !== id))
   }
 
-  const handleCreateJob = async () => {
+  const handleCreateJob = () => {
     if (!firestore || !user) return
     if (!clientName) {
       toast({ variant: "destructive", title: "Error", description: "Client Name is required." })
@@ -124,98 +124,100 @@ export default function CreateJobPage() {
 
     setIsSubmitting(true)
 
-    try {
-      await runTransaction(firestore, async (transaction) => {
-        const counterRef = doc(firestore, 'counters', 'job_counter');
-        const counterSnap = await transaction.get(counterRef);
+    runTransaction(firestore, async (transaction) => {
+      const counterRef = doc(firestore, 'counters', 'job_counter');
+      const counterSnap = await transaction.get(counterRef);
 
-        const now = new Date();
-        const year = now.getFullYear().toString();
-        let currentNumber = 1;
-        
-        if (counterSnap.exists()) {
-          const data = counterSnap.data();
-          if (data.year === year) {
-            currentNumber = data.current_number + 1;
-          }
+      const now = new Date();
+      const year = now.getFullYear().toString();
+      let currentNumber = 1;
+      
+      if (counterSnap.exists()) {
+        const data = counterSnap.data();
+        if (data.year === year) {
+          currentNumber = data.current_number + 1;
         }
+      }
 
-        const paddedNum = currentNumber.toString().padStart(4, "0");
-        const jobNumber = `JOB-${year}-${paddedNum}`;
-        const jobRef = doc(collection(firestore, 'jobs'));
-        const jobId = jobRef.id;
+      const paddedNum = currentNumber.toString().padStart(4, "0");
+      const jobNumber = `JOB-${year}-${paddedNum}`;
+      const jobRef = doc(collection(firestore, 'jobs'));
+      const jobId = jobRef.id;
 
-        // 1. Master Document (Lightweight)
-        const masterData = {
-          id: jobId,
-          jobNumber,
-          jobType,
-          clientName,
-          salesUserId: user.uid,
-          salesUserName: user.displayName || user.email?.split('@')[0] || "Sales",
-          status: "Pending Approval",
-          adminApproved: false,
-          currentStage: "Sales",
-          itemNameSummary: items[0].itemName, // For quick listing
-          createdAt: now.toISOString(),
-          updatedAt: now.toISOString()
-        };
+      // 1. Master Document (Lightweight)
+      const masterData = {
+        id: jobId,
+        jobNumber,
+        jobType,
+        clientName,
+        salesUserId: user.uid,
+        salesUserName: user.displayName || user.email?.split('@')[0] || "Sales",
+        status: "Pending Approval",
+        adminApproved: false,
+        currentStage: "Sales",
+        itemNameSummary: items[0].itemName, // For quick listing
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString()
+      };
 
-        // 2. Technical Sub-doc
-        const techRef = doc(firestore, `jobs/${jobId}/technical/details`);
-        const techData = {
-          items: items.map(i => ({
-            itemName: i.itemName,
-            material: i.material,
-            widthMM: i.widthMM,
-            heightMM: i.heightMM,
-            quantity: i.quantity,
-            core: i.core,
-            rollDirection: i.rollDirection
-          })),
-          edit_lock_time: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 365).toISOString() // Placeholder until approved
-        };
+      // 2. Technical Sub-doc
+      const techRef = doc(firestore, `jobs/${jobId}/technical/details`);
+      const techData = {
+        items: items.map(i => ({
+          itemName: i.itemName,
+          material: i.material,
+          widthMM: i.widthMM,
+          heightMM: i.heightMM,
+          quantity: i.quantity,
+          core: i.core,
+          rollDirection: i.rollDirection
+        })),
+        edit_lock_time: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 365).toISOString() // Placeholder until approved
+      };
 
-        // 3. Financial Sub-doc
-        const finRef = doc(firestore, `jobs/${jobId}/financial/summary`);
-        const finData = {
-          sqInchDivider: divider,
-          totalJobValue: items.reduce((acc, i) => acc + i.totalJobValue, 0),
-          itemPricing: items.map(i => ({
-            itemName: i.itemName,
-            pricePerSqInch: i.pricePerSqInch,
-            totalJobValue: i.totalJobValue
-          }))
-        };
+      // 3. Financial Sub-doc
+      const finRef = doc(firestore, `jobs/${jobId}/financial/summary`);
+      const finData = {
+        sqInchDivider: divider,
+        totalJobValue: items.reduce((acc, i) => acc + i.totalJobValue, 0),
+        itemPricing: items.map(i => ({
+          itemName: i.itemName,
+          pricePerSqInch: i.pricePerSqInch,
+          totalJobValue: i.totalJobValue
+        }))
+      };
 
-        // 4. File Sub-docs (for Artworks)
-        items.forEach((item, idx) => {
-          if (item.artworkUrl) {
-            const fileRef = doc(collection(firestore, `jobs/${jobId}/files`));
-            transaction.set(fileRef, {
-              fileType: 'artwork',
-              fileName: `Artwork - ${item.itemName}`,
-              fileUrl: item.artworkUrl,
-              uploadedBy: user.uid,
-              uploadedAt: now.toISOString()
-            });
-          }
-        });
-
-        transaction.set(counterRef, { year, current_number: currentNumber }, { merge: true });
-        transaction.set(jobRef, masterData);
-        transaction.set(techRef, techData);
-        transaction.set(finRef, finData);
+      // 4. File Sub-docs (for Artworks)
+      items.forEach((item, idx) => {
+        if (item.artworkUrl) {
+          const fileRef = doc(collection(firestore, `jobs/${jobId}/files`));
+          transaction.set(fileRef, {
+            fileType: 'artwork',
+            fileName: `Artwork - ${item.itemName}`,
+            fileUrl: item.artworkUrl,
+            uploadedBy: user.uid,
+            uploadedAt: now.toISOString()
+          });
+        }
       });
 
+      transaction.set(counterRef, { year, current_number: currentNumber }, { merge: true });
+      transaction.set(jobRef, masterData);
+      transaction.set(techRef, techData);
+      transaction.set(finRef, finData);
+    }).then(() => {
+      setIsSubmitting(false)
       toast({ title: "Job Posted", description: "Modular job structure initialized." })
       setItems([{ id: crypto.randomUUID(), material: "", brand: "", itemName: "", widthMM: 0, heightMM: 0, core: "3 Inch", od: "", rollDirection: "Head Out", quantity: 0, pricePerSqInch: 0, totalSqInch: 0, costPerLabel: 0, totalJobValue: 0, artworkUrl: "", remarks: "" }])
       setClientName("")
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Failed", description: error.message })
-    } finally {
+    }).catch(async (serverError) => {
       setIsSubmitting(false)
-    }
+      const permissionError = new FirestorePermissionError({
+        path: 'jobs',
+        operation: 'create',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    })
   }
 
   const simulateUpload = (id: string) => {

@@ -3,8 +3,8 @@
 
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth, useUser, useFirestore } from '@/firebase';
-import { doc, getDoc, setDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { useAuth, useUser, useFirestore, setDocumentNonBlocking } from '@/firebase';
+import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 /**
  * Handles authentication state changes, role initialization, and sample data seeding.
@@ -33,7 +33,7 @@ export function AuthInitializer() {
       const adminRef = doc(firestore, 'adminUsers', user.uid);
       const userRef = doc(firestore, 'users', user.uid);
 
-      getDoc(userRef).then(async (snap) => {
+      getDoc(userRef).then((snap) => {
         // Initialize or update user profile if it doesn't exist or is the target admin
         if (!snap.exists() || isTargetAdmin) {
           const userData = {
@@ -48,12 +48,12 @@ export function AuthInitializer() {
             updatedAt: serverTimestamp()
           };
 
-          // 1. Create main User document
-          await setDoc(userRef, userData, { merge: true });
+          // 1. Create main User document (Non-blocking)
+          setDocumentNonBlocking(userRef, userData, { merge: true });
           
-          // 2. Create Security Marker in adminUsers collection
+          // 2. Create Security Marker in adminUsers collection (Non-blocking)
           // This allows isAdmin() helper in firestore.rules to return true
-          await setDoc(adminRef, { 
+          setDocumentNonBlocking(adminRef, { 
             id: user.uid, 
             email: userData.email,
             roleId: 'Admin',
@@ -74,12 +74,10 @@ export function AuthInitializer() {
 /**
  * Ensures system constants exist in Firestore for the ERP logic to function correctly.
  */
-async function seedCleanDemoData(db: any, userId: string) {
-  const batch = writeBatch(db);
-
-  // --- SYSTEM SETTINGS ---
+function seedCleanDemoData(db: any, userId: string) {
+  // Use non-blocking writes for system seeding
   const pricingRef = doc(db, 'system_settings', 'pricing_config');
-  batch.set(pricingRef, {
+  setDocumentNonBlocking(pricingRef, {
     sqInchDivider: 625,
     decimalPrecision: 4,
     currencySymbol: "₹",
@@ -87,9 +85,8 @@ async function seedCleanDemoData(db: any, userId: string) {
     lastUpdatedAt: serverTimestamp()
   }, { merge: true });
 
-  // --- ROLL SETTINGS ---
   const rollSettingsRef = doc(db, 'roll_settings', 'global_config');
-  batch.set(rollSettingsRef, {
+  setDocumentNonBlocking(rollSettingsRef, {
     parentPrefix: "TLC-",
     startNumber: 1000,
     childType: "alphabet",
@@ -99,17 +96,15 @@ async function seedCleanDemoData(db: any, userId: string) {
     trackingYear: 2026
   }, { merge: true });
 
-  // --- COUNTERS ---
   const jobCounterRef = doc(db, 'counters', 'job_counter');
-  batch.set(jobCounterRef, {
+  setDocumentNonBlocking(jobCounterRef, {
     prefix: "JOB-",
     year: 2026,
     current_number: 1
   }, { merge: true });
 
-  // --- CLIENTS (Stored in 'customers' for UI compatibility) ---
   const clientRef = doc(db, 'customers', 'alexa-demo-id');
-  batch.set(clientRef, {
+  setDocumentNonBlocking(clientRef, {
     id: 'alexa-demo-id',
     name: "Alexa Lifesciences",
     address: "Kolkata",
@@ -121,12 +116,9 @@ async function seedCleanDemoData(db: any, userId: string) {
     createdById: userId
   }, { merge: true });
 
-  // --- MASTER DATA FALLBACKS ---
   const matRef = doc(db, 'materials', 'chromo-demo');
-  batch.set(matRef, { id: 'chromo-demo', name: 'CHROMO', gsm: 80, ratePerSqMeter: 22.50 }, { merge: true });
+  setDocumentNonBlocking(matRef, { id: 'chromo-demo', name: 'CHROMO', gsm: 80, ratePerSqMeter: 22.50 }, { merge: true });
 
   const machRef = doc(db, 'machines', 'flexo-demo');
-  batch.set(machRef, { id: 'flexo-demo', name: 'UV Flexo 8-Color', maxPrintingWidthMm: 250, costPerHour: 1500 }, { merge: true });
-
-  await batch.commit();
+  setDocumentNonBlocking(machRef, { id: 'flexo-demo', name: 'UV Flexo 8-Color', maxPrintingWidthMm: 250, costPerHour: 1500 }, { merge: true });
 }

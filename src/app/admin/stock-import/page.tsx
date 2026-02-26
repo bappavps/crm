@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect } from "react"
@@ -15,7 +16,7 @@ import {
   Database,
   History
 } from "lucide-react"
-import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
+import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -99,8 +100,7 @@ export default function StockImportPage() {
   const exportCurrentStock = async () => {
     if (!firestore) return;
     setIsProcessing(true);
-    try {
-      const snapshot = await getDocs(query(collection(firestore, 'jumbo_stock'), orderBy('rollNo', 'asc')));
+    getDocs(query(collection(firestore, 'jumbo_stock'), orderBy('rollNo', 'asc'))).then(snapshot => {
       const data = snapshot.docs.map(d => {
         const item = d.data();
         return {
@@ -132,11 +132,15 @@ export default function StockImportPage() {
       const date = new Date().toISOString().split('T')[0].replace(/-/g, '_');
       XLSX.writeFile(wb, `jumbo_stock_export_${date}.xlsx`);
       toast({ title: "Export Complete", description: `Exported ${data.length} records.` });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Export Failed", description: e.message });
-    } finally {
       setIsProcessing(false);
-    }
+    }).catch(async (serverError) => {
+      setIsProcessing(false);
+      const permissionError = new FirestorePermissionError({
+        path: 'jumbo_stock',
+        operation: 'list',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    })
   }
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -220,7 +224,7 @@ export default function StockImportPage() {
             inserted++;
           });
 
-          await batch.commit();
+          await batch.commit().catch(e => { throw e; });
           setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
         }
 
@@ -250,7 +254,11 @@ export default function StockImportPage() {
         setSummary({ totalRows, inserted, skipped, maxSerial });
         toast({ title: "Import Successful", description: `Added ${inserted} rolls. ${skipped} duplicates skipped.` });
       } catch (err: any) {
-        toast({ variant: "destructive", title: "Import Failed", description: err.message });
+        const permissionError = new FirestorePermissionError({
+          path: 'jumbo_stock',
+          operation: 'write',
+        });
+        errorEmitter.emit('permission-error', permissionError);
       } finally {
         setIsProcessing(false);
       }

@@ -36,7 +36,7 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, runTransaction, query, where, getDocs } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -238,7 +238,7 @@ export default function GRNPage() {
     })
   }
 
-  const handleAddJumbo = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddJumbo = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
 
@@ -246,58 +246,57 @@ export default function GRNPage() {
     const submissionData = new FormData(e.currentTarget)
     const manualRollNo = submissionData.get("manualRollNo") as string;
     
-    try {
-      await runTransaction(firestore, async (transaction) => {
-        let finalRollNo = "";
-        if (isManualId) {
-          if (!manualRollNo) throw new Error("RELL NO is required.");
-          finalRollNo = manualRollNo;
-        } else {
-          const counterRef = doc(firestore, 'counters', 'jumbo_roll');
-          const counterSnap = await transaction.get(counterRef);
-          const currentYear = new Date().getFullYear().toString();
-          let currentNumber = 1;
-          if (counterSnap.exists()) {
-            const data = counterSnap.data();
-            if (data.year === currentYear) currentNumber = data.current_number + 1;
-          }
-          const prefix = settings?.parentPrefix || "TLC-";
-          const startNum = Number(settings?.startNumber) || 1000;
-          finalRollNo = `${prefix}${startNum + currentNumber}`;
-          transaction.set(counterRef, { year: currentYear, current_number: currentNumber }, { merge: true });
+    runTransaction(firestore, async (transaction) => {
+      let finalRollNo = "";
+      if (isManualId) {
+        if (!manualRollNo) throw new Error("RELL NO is required.");
+        finalRollNo = manualRollNo;
+      } else {
+        const counterRef = doc(firestore, 'counters', 'jumbo_roll');
+        const counterSnap = await transaction.get(counterRef);
+        const currentYear = new Date().getFullYear().toString();
+        let currentNumber = 1;
+        if (counterSnap.exists()) {
+          const data = counterSnap.data();
+          if (data.year === currentYear) currentNumber = data.current_number + 1;
         }
+        const prefix = settings?.parentPrefix || "TLC-";
+        const startNum = Number(settings?.startNumber) || 1000;
+        finalRollNo = `${prefix}${startNum + currentNumber}`;
+        transaction.set(counterRef, { year: currentYear, current_number: currentNumber }, { merge: true });
+      }
 
-        const dupQuery = query(collection(firestore, 'jumbo_stock'), where("rollNo", "==", finalRollNo));
-        const dupSnap = await getDocs(dupQuery);
-        if (!dupSnap.empty) throw new Error(`RELL NO ${finalRollNo} already exists.`);
+      const dupQuery = query(collection(firestore, 'jumbo_stock'), where("rollNo", "==", finalRollNo));
+      const dupSnap = await getDocs(dupQuery);
+      if (!dupSnap.empty) throw new Error(`RELL NO ${finalRollNo} already exists.`);
 
-        const jumboRef = doc(collection(firestore, 'jumbo_stock'));
-        transaction.set(jumboRef, {
-          rollNo: finalRollNo,
-          paperCompany: submissionData.get("paperCompany") as string,
-          paperType: submissionData.get("paperType") as string,
-          widthMm: formData.widthMm,
-          lengthMeters: formData.lengthMeters,
-          sqm: formData.sqm,
-          gsm: formData.gsm,
-          weightKg: formData.weightKg,
-          purchaseRate: formData.purchaseRate,
-          wastage: formData.wastage,
-          jobNo: formData.jobNo,
-          size: formData.size,
-          productName: formData.productName,
-          code: formData.code,
-          lotNo: formData.lotNo,
-          companyRollNo: formData.companyRollNo,
-          dateOfUse: formData.dateOfUse,
-          date: formData.date,
-          receivedDate: submissionData.get("receivedDate") || new Date().toISOString(),
-          status: "In Stock",
-          createdAt: new Date().toISOString(),
-          createdById: user.uid
-        });
+      const jumboRef = doc(collection(firestore, 'jumbo_stock'));
+      transaction.set(jumboRef, {
+        rollNo: finalRollNo,
+        paperCompany: submissionData.get("paperCompany") as string,
+        paperType: submissionData.get("paperType") as string,
+        widthMm: formData.widthMm,
+        lengthMeters: formData.lengthMeters,
+        sqm: formData.sqm,
+        gsm: formData.gsm,
+        weightKg: formData.weightKg,
+        purchaseRate: formData.purchaseRate,
+        wastage: formData.wastage,
+        jobNo: formData.jobNo,
+        size: formData.size,
+        productName: formData.productName,
+        code: formData.code,
+        lotNo: formData.lotNo,
+        companyRollNo: formData.companyRollNo,
+        dateOfUse: formData.dateOfUse,
+        date: formData.date,
+        receivedDate: submissionData.get("receivedDate") || new Date().toISOString(),
+        status: "In Stock",
+        createdAt: new Date().toISOString(),
+        createdById: user.uid
       });
-
+    }).then(() => {
+      setIsGenerating(false);
       setIsDialogOpen(false);
       setFormData({ 
         widthMm: 1020, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0, purchaseRate: 0, wastage: 0, 
@@ -305,11 +304,14 @@ export default function GRNPage() {
         dateOfUse: "", date: new Date().toISOString().split('T')[0]
       });
       toast({ title: "GRN Recorded", description: "Technical stock entry successful." });
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Error", description: error.message });
-    } finally {
+    }).catch(async (serverError) => {
       setIsGenerating(false);
-    }
+      const permissionError = new FirestorePermissionError({
+        path: 'jumbo_stock',
+        operation: 'create',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    })
   }
 
   if (!isMounted) {
@@ -356,7 +358,6 @@ export default function GRNPage() {
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Weight (KG)</span>
             <span className="text-2xl font-black text-primary">{stats.totalWeight.toLocaleString()}</span>
           </CardContent>
-        </Card>
         <Card className="bg-primary/5 border-primary/10">
           <CardContent className="p-4 flex flex-col">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Inventory Value</span>

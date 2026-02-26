@@ -18,7 +18,7 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, query, where, getDocs, deleteDoc, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -112,7 +112,7 @@ export default function SlittingPage() {
     setSelectedJumboId(null)
   }
 
-  const handleSlittingConversion = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSlittingConversion = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user || !selectedJobData || !selectedJumboId) return
 
@@ -129,75 +129,77 @@ export default function SlittingPage() {
     const slitWidth = Number(formData.get("slitWidth"))
     const numRolls = Number(formData.get("numRolls"))
 
-    try {
-      await runTransaction(firestore, async (transaction) => {
-        const jumboRef = doc(firestore, 'jumbo_stock', selectedJumboId)
-        const jobRef = doc(firestore, 'jobs', selectedJobData.id)
-        
-        // 1. Mark Jumbo as Consumed
-        transaction.update(jumboRef, {
-          status: "Consumed",
-          consumedAt: new Date().toISOString(),
-          consumedBy: user.uid,
-          updatedAt: serverTimestamp()
-        })
-
-        // 2. Update Job Status
-        transaction.update(jobRef, {
-          planning_status: "Converted",
-          currentStage: "Production",
-          updatedAt: serverTimestamp()
-        })
-
-        // 3. Create Slitted Child Rolls
-        const sep = settings?.separator || "-"
-        const prefixType = settings?.childType || "alphabet"
-
-        for (let i = 0; i < numRolls; i++) {
-          let childId = ""
-          if (prefixType === "alphabet") {
-            childId = String.fromCharCode(65 + i)
-          } else {
-            childId = (i + 1).toString()
-          }
-
-          const generatedBarcode = `${selectedJumbo.rollNo}${sep}${childId}`
-          const slitRef = doc(collection(firestore, 'inventoryItems'))
-
-          transaction.set(slitRef, {
-            barcode: generatedBarcode,
-            name: `Slitted: ${selectedJumbo.paperType}`,
-            parentJumboId: selectedJumboId,
-            parentRollNo: selectedJumbo.rollNo,
-            itemType: "Slitted Roll",
-            dimensions: `${slitWidth}mm x ${selectedJumbo.lengthMeters}m`,
-            currentQuantity: 1,
-            unitOfMeasure: "roll",
-            location: "Production Floor",
-            status: "ASSIGNED",
-            assigned_job_id: selectedJobData.jobNumber,
-            assigned_job_internal_id: selectedJobData.id,
-            assigned_date: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            createdById: user.uid
-          })
-        }
-
-        // 4. Remove associated notifications if any
-        const nq = query(collection(firestore, 'notifications'), where("jobId", "==", selectedJobData.id))
-        const nSnap = await getDocs(nq)
-        nSnap.docs.forEach(d => transaction.delete(d.ref))
+    runTransaction(firestore, async (transaction) => {
+      const jumboRef = doc(firestore, 'jumbo_stock', selectedJumboId)
+      const jobRef = doc(firestore, 'jobs', selectedJobData.id)
+      
+      // 1. Mark Jumbo as Consumed
+      transaction.update(jumboRef, {
+        status: "Consumed",
+        consumedAt: new Date().toISOString(),
+        consumedBy: user.uid,
+        updatedAt: serverTimestamp()
       })
 
+      // 2. Update Job Status
+      transaction.update(jobRef, {
+        planning_status: "Converted",
+        currentStage: "Production",
+        updatedAt: serverTimestamp()
+      })
+
+      // 3. Create Slitted Child Rolls
+      const sep = settings?.separator || "-"
+      const prefixType = settings?.childType || "alphabet"
+
+      for (let i = 0; i < numRolls; i++) {
+        let childId = ""
+        if (prefixType === "alphabet") {
+          childId = String.fromCharCode(65 + i)
+        } else {
+          childId = (i + 1).toString()
+        }
+
+        const generatedBarcode = `${selectedJumbo.rollNo}${sep}${childId}`
+        const slitRef = doc(collection(firestore, 'inventoryItems'))
+
+        transaction.set(slitRef, {
+          barcode: generatedBarcode,
+          name: `Slitted: ${selectedJumbo.paperType}`,
+          parentJumboId: selectedJumboId,
+          parentRollNo: selectedJumbo.rollNo,
+          itemType: "Slitted Roll",
+          dimensions: `${slitWidth}mm x ${selectedJumbo.lengthMeters}m`,
+          currentQuantity: 1,
+          unitOfMeasure: "roll",
+          location: "Production Floor",
+          status: "ASSIGNED",
+          assigned_job_id: selectedJobData.jobNumber,
+          assigned_job_internal_id: selectedJobData.id,
+          assigned_date: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          createdById: user.uid
+        })
+      }
+
+      // 4. Remove associated notifications if any
+      const nq = query(collection(firestore, 'notifications'), where("jobId", "==", selectedJobData.id))
+      const nSnap = await getDocs(nq)
+      nSnap.docs.forEach(d => transaction.delete(d.ref))
+    }).then(() => {
+      setIsProcessing(false)
       toast({ title: "Slitting Completed", description: `Parent ${selectedJumbo.rollNo} converted to ${numRolls} rolls for ${selectedJobData.jobNumber}.` })
       setIsDialogOpen(false)
       setSelectedJobId(null)
       setSelectedJumboId(null)
-    } catch (error: any) {
-      toast({ variant: "destructive", title: "Transaction Failed", description: error.message })
-    } finally {
+    }).catch(async (serverError) => {
       setIsProcessing(false)
-    }
+      const permissionError = new FirestorePermissionError({
+        path: 'inventoryItems',
+        operation: 'create',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    })
   }
 
   if (!isMounted) return null

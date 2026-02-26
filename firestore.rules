@@ -10,11 +10,17 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) ||
+        request.auth.token.email == 'gm.shreelabel@gmail.com'
+      );
     }
 
     function hasRole(role) {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleId == role;
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleId == role ||
+        isAdmin()
+      );
     }
 
     function isMigrationLocked() {
@@ -102,12 +108,12 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
     }
 
     match /adminUsers/{userId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || (isSignedIn() && request.auth.token.email == 'gm.shreelabel@gmail.com' && request.auth.uid == userId);
     }
 
     // --- OTHER COLLECTIONS (Fallback) ---

@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, Eye, Loader2, ShieldCheck } from "lucide-react"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, runTransaction } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 
@@ -30,37 +30,39 @@ export default function AdminApprovalPage() {
   const { data: jobs, isLoading: jobsLoading } = useCollection(jobsQuery)
   const pendingJobs = jobs?.filter(j => j.status === 'Pending Approval') || []
 
-  const handleApprove = async (jobId: string) => {
+  const handleApprove = (jobId: string) => {
     if (!firestore || !user) return
     
-    try {
-      await runTransaction(firestore, async (transaction) => {
-        const masterRef = doc(firestore, 'jobs', jobId);
-        const techRef = doc(firestore, `jobs/${jobId}/technical/details`);
-        
-        const now = new Date();
-        // Technical lock starts 30 mins after approval
-        const lockTime = new Date(now.getTime() + 30 * 60000).toISOString();
+    runTransaction(firestore, async (transaction) => {
+      const masterRef = doc(firestore, 'jobs', jobId);
+      const techRef = doc(firestore, `jobs/${jobId}/technical/details`);
+      
+      const now = new Date();
+      // Technical lock starts 30 mins after approval
+      const lockTime = new Date(now.getTime() + 30 * 60000).toISOString();
 
-        transaction.update(masterRef, {
-          status: 'Approved',
-          adminApproved: true,
-          approvedAt: now.toISOString(),
-          approvedBy: user.uid,
-          currentStage: 'Planning'
-        });
-
-        // Initialize technical doc with lock if it doesn't exist, otherwise update lock
-        transaction.set(techRef, {
-          edit_lock_time: lockTime,
-          approval_timestamp: now.toISOString()
-        }, { merge: true });
+      transaction.update(masterRef, {
+        status: 'Approved',
+        adminApproved: true,
+        approvedAt: now.toISOString(),
+        approvedBy: user.uid,
+        currentStage: 'Planning'
       });
 
+      // Initialize technical doc with lock if it doesn't exist, otherwise update lock
+      transaction.set(techRef, {
+        edit_lock_time: lockTime,
+        approval_timestamp: now.toISOString()
+      }, { merge: true });
+    }).then(() => {
       toast({ title: "Job Approved", description: "Master status updated and technical lock set to 30 mins." })
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Approval Failed", description: e.message })
-    }
+    }).catch(async (serverError) => {
+      const permissionError = new FirestorePermissionError({
+        path: `jobs/${jobId}`,
+        operation: 'update',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    });
   }
 
   if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>

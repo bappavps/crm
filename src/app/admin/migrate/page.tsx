@@ -25,7 +25,7 @@ import {
   DialogDescription,
   DialogTrigger
 } from "@/components/ui/dialog"
-import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useDoc, useMemoFirebase, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -35,7 +35,6 @@ import {
   limit, 
   getDocs, 
   writeBatch,
-  deleteDoc,
   setDoc,
   serverTimestamp
 } from "firebase/firestore"
@@ -76,14 +75,13 @@ export default function MigrationPage() {
     setIsProcessing(true)
     addLog("Starting migration scan...")
 
-    try {
-      const jobsQuery = query(
-        collection(firestore, 'jobs'),
-        where("migrated_v2", "!=", true),
-        limit(20)
-      )
-      
-      const snapshot = await getDocs(jobsQuery)
+    const jobsQuery = query(
+      collection(firestore, 'jobs'),
+      where("migrated_v2", "!=", true),
+      limit(20)
+    )
+    
+    getDocs(jobsQuery).then(async (snapshot) => {
       if (snapshot.empty) {
         addLog("All jobs are already on V2 architecture.")
         setIsProcessing(false)
@@ -129,6 +127,8 @@ export default function MigrationPage() {
             totalJobValue: null,
             updatedAt: serverTimestamp()
           })
+        }).catch((err) => {
+          throw err;
         })
 
         count++
@@ -138,12 +138,16 @@ export default function MigrationPage() {
 
       addLog(`Success! Processed ${count} records.`)
       toast({ title: "Migration Complete", description: `Restructured ${count} jobs.` })
-    } catch (error: any) {
-      addLog(`FATAL ERROR: ${error.message}`)
-      toast({ variant: "destructive", title: "Migration Failed", description: error.message })
-    } finally {
       setIsProcessing(false)
-    }
+    }).catch(async (serverError) => {
+      setIsProcessing(false)
+      addLog(`FATAL ERROR: ${serverError.message}`)
+      const permissionError = new FirestorePermissionError({
+        path: 'jobs',
+        operation: 'list',
+      });
+      errorEmitter.emit('permission-error', permissionError);
+    })
   }
 
   /**
@@ -175,7 +179,7 @@ export default function MigrationPage() {
       for (const colName of collectionsToWipe) {
         addLog(`Wiping collection: ${colName}...`)
         const q = query(collection(firestore, colName))
-        const snapshot = await getDocs(q)
+        const snapshot = await getDocs(q).catch((e) => { throw e; })
         
         if (snapshot.empty) {
           addLog(`Collection ${colName} is already empty.`);
@@ -218,7 +222,11 @@ export default function MigrationPage() {
       toast({ title: "Database Reset", description: "Transactional data has been cleared." })
     } catch (error: any) {
       addLog(`WIPE ERROR: ${error.message}`)
-      toast({ variant: "destructive", title: "Wipe Failed", description: error.message })
+      const permissionError = new FirestorePermissionError({
+        path: 'multiple',
+        operation: 'delete',
+      });
+      errorEmitter.emit('permission-error', permissionError);
     } finally {
       setIsProcessing(false)
       setIsWipeConfirmOpen(false)
@@ -287,29 +295,31 @@ export default function MigrationPage() {
                     <Trash2 className="mr-2 h-4 w-4" /> Reset Transactional Database
                   </Button>
                 </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle className="text-destructive flex items-center gap-2">
-                      <AlertTriangle className="h-6 w-6" /> Destructive Action Confirmation
-                    </DialogTitle>
-                    <DialogDescription asChild>
-                      <div className="pt-4 space-y-3">
-                        <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
-                        <ul className="list-disc pl-5 text-xs space-y-1">
-                          <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
-                          <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
-                          <li><strong>Counters</strong> will reset to sequence #1.</li>
-                          <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
-                        </ul>
-                      </div>
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter className="gap-2 sm:gap-0">
-                    <Button variant="ghost" onClick={() => setIsWipeConfirmOpen(false)}>Cancel</Button>
-                    <Button variant="destructive" onClick={runFullReset} disabled={isProcessing}>
-                      {isProcessing ? <Loader2 className="animate-spin mr-2" /> : "Yes, Wipe All Data"}
-                    </Button>
-                  </DialogFooter>
+                <DialogContent asChild>
+                  <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg">
+                    <DialogHeader>
+                      <DialogTitle className="text-destructive flex items-center gap-2">
+                        <AlertTriangle className="h-6 w-6" /> Destructive Action Confirmation
+                      </DialogTitle>
+                      <DialogDescription asChild>
+                        <div className="pt-4 space-y-3">
+                          <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
+                          <ul className="list-disc pl-5 text-xs space-y-1">
+                            <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
+                            <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
+                            <li><strong>Counters</strong> will reset to sequence #1.</li>
+                            <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
+                          </ul>
+                        </div>
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                      <Button variant="ghost" onClick={() => setIsWipeConfirmOpen(false)}>Cancel</Button>
+                      <Button variant="destructive" onClick={runFullReset} disabled={isProcessing}>
+                        {isProcessing ? <Loader2 className="animate-spin mr-2" /> : "Yes, Wipe All Data"}
+                      </Button>
+                    </DialogFooter>
+                  </div>
                 </DialogContent>
               </Dialog>
             </CardContent>
