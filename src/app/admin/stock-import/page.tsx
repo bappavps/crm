@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,6 +45,12 @@ export default function StockImportPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [importSummary, setSummary] = useState<any>(null)
+  const [isMounted, setIsMounted] = useState(false)
+
+  // Prevent hydration mismatch by deferring rendering of dynamic/client-only content
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -218,7 +224,6 @@ export default function StockImportPage() {
           setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
         }
 
-        // Update sequence counter intelligently based on startNumber setting
         if (maxSerial > 0) {
           const settingsRef = doc(firestore, 'roll_settings', 'global_config');
           const settingsSnap = await getDoc(settingsRef);
@@ -257,8 +262,19 @@ export default function StockImportPage() {
     reader.readAsArrayBuffer(file);
   }
 
-  if (authLoading) return <div className="p-20 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
-  if (!adminData) return <div className="p-20 text-center text-muted-foreground">Admin Access Required.</div>
+  // Handle server-side loading and hydration safety
+  if (!isMounted || authLoading) {
+    return (
+      <div className="max-w-5xl mx-auto p-20 text-center">
+        <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+        <p className="text-xs text-muted-foreground mt-4 uppercase tracking-widest font-bold">Syncing Administrative Session...</p>
+      </div>
+    )
+  }
+
+  if (!adminData) {
+    return <div className="p-20 text-center text-muted-foreground">Admin Access Required.</div>
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -351,7 +367,9 @@ export default function StockImportPage() {
                       </div>
                       <div>
                         <p className="text-sm font-bold truncate max-w-[200px]">{log.fileName}</p>
-                        <p className="text-[10px] text-muted-foreground">{new Date(log.timestamp?.toDate()).toLocaleString()}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {log.timestamp ? new Date(log.timestamp.toDate()).toLocaleString() : 'Processing...'}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right">
