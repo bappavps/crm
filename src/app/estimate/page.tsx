@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo } from "react"
@@ -11,24 +10,24 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, Printer, Calculator as CalcIcon, Loader2 } from "lucide-react"
+import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, runTransaction } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { useRouter } from "next/navigation"
 
 export default function EstimatePage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const router = useRouter()
 
-  // Authorization check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { isLoading: authLoading } = useDoc(adminDocRef);
 
-  // Master Data Queries - Open to all signed-in users for estimation purposes
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return collection(firestore, 'customers');
@@ -117,45 +116,40 @@ export default function EstimatePage() {
 
     toast({
       title: "Estimate Saved",
-      description: `Estimate for ${metadata.productCode} has been stored in technical registry.`,
+      description: `Estimate for ${metadata.productCode} has been stored.`,
     })
   }
 
-  const handleConvertToSO = () => {
+  const handleGenerateQuotation = () => {
     if (!firestore || !user) return
-    
     if (!metadata.customerId || !metadata.productCode) {
-      toast({
-        variant: "destructive",
-        title: "Selection Required",
-        description: "Please select a Customer and enter a Product Code to generate a Sales Order.",
-      })
+      toast({ variant: "destructive", title: "Validation Error", description: "Customer and Product Code required for Quotation." })
       return
     }
 
-    const orderNumber = `SO-${Date.now().toString().slice(-6)}`;
-    const orderData = {
-      orderNumber,
+    const customer = customers?.find(c => c.id === metadata.customerId)
+    const year = new Date().getFullYear().toString()
+    const quoteNum = `QT-${year}-${Math.floor(1000 + Math.random() * 9000)}`
+
+    const quotationData = {
+      quotationNumber: quoteNum,
       customerId: metadata.customerId,
-      customerName: customers?.find(c => c.id === metadata.customerId)?.name || "Direct Customer",
-      estimateId: "converted",
+      customerName: customer?.name || "Unknown Client",
+      customerEmail: customer?.email || "",
       productCode: metadata.productCode,
-      poNumber: "AUTO-CONV",
-      orderDate: new Date().toISOString(),
-      deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "Confirmed",
-      totalAmount: results.totalSellingPrice,
-      qty: inputs.orderQuantity,
+      ...inputs,
+      ...results,
+      status: "Draft",
+      quoteDate: new Date().toISOString(),
+      validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       createdById: user.uid,
       createdAt: new Date().toISOString()
     }
 
-    addDocumentNonBlocking(collection(firestore, 'salesOrders'), orderData)
+    addDocumentNonBlocking(collection(firestore, 'quotations'), quotationData)
     
-    toast({
-      title: "Order Generated",
-      description: `Sales Order ${orderNumber} created successfully.`,
-    })
+    toast({ title: "Quotation Generated", description: `${quoteNum} created in draft mode.` })
+    router.push('/sales/quotations')
   }
 
   if (authLoading) {
@@ -311,7 +305,9 @@ export default function EstimatePage() {
               </div>
             </CardContent>
             <CardFooter className="bg-muted/50 border-t p-4 flex justify-between">
-              <Button size="sm" variant="outline" onClick={handleConvertToSO}>Create Sales Order</Button>
+              <Button size="sm" variant="outline" onClick={handleGenerateQuotation} className="gap-2">
+                <FileText className="h-4 w-4" /> Generate Quotation
+              </Button>
               <p className="text-[10px] italic text-muted-foreground">*Calculated at {inputs.machineSpeed}m/min with {inputs.wastagePercent}% wastage.</p>
             </CardFooter>
           </Card>

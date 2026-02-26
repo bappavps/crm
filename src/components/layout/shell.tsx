@@ -12,6 +12,7 @@ import { PermissionKey } from "@/components/auth/permission-context"
 const routePermissionMap: Record<string, PermissionKey> = {
   "/": "dashboard",
   "/estimate": "estimates",
+  "/sales/quotations": "quotations",
   "/sales-order": "salesOrders",
   "/sales/create-job": "createJob",
   "/design/production-planning": "jobPlanning",
@@ -51,7 +52,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>
   }
 
-  // Determine required permission based on route
   const matchedRoute = Object.keys(routePermissionMap).find(route => 
     pathname === route || (route !== "/" && pathname.startsWith(route))
   );
@@ -70,10 +70,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <UserNav />
           </header>
           
-          {/* 
-            This main container is the ONLY scrollable area for content.
-            It ensures the header stays sticky while the rest of the page flows.
-          */}
           <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
             <div className="max-w-7xl mx-auto w-full min-h-full pb-20">
               {isUnauthorizedPage ? (

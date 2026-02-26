@@ -5,7 +5,7 @@ import { useUser, useFirestore, useCollection, useMemoFirebase, useDoc } from '@
 import { collection, doc } from 'firebase/firestore';
 
 export type PermissionKey = 
-  | 'dashboard' | 'estimates' | 'salesOrders' | 'createJob' 
+  | 'dashboard' | 'estimates' | 'quotations' | 'salesOrders' | 'createJob' 
   | 'jobPlanning' | 'artwork' | 'purchaseOrders' | 'grn' 
   | 'stockDashboard' | 'stockRegistry' | 'slitting' | 'finishedGoods' | 'dieManagement'
   | 'jobCards' | 'bom' | 'workOrders' | 'liveFloor'
@@ -28,22 +28,12 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const { user, isUserLoading: isAuthLoading } = useUser();
   const firestore = useFirestore();
 
-  // 1. Fetch User Profile (contains roles[] and customPermissions)
-  /**
-   * CRITICAL: Only query the profile if the auth state is fully resolved and we have a user.
-   * This prevents "Missing or insufficient permissions" errors during initial load.
-   */
   const userRef = useMemoFirebase(() => {
     if (!firestore || !user || isAuthLoading) return null;
     return doc(firestore, 'users', user.uid);
   }, [firestore, user, isAuthLoading]);
   const { data: profile, isLoading: isProfileLoading } = useDoc(userRef);
 
-  // 2. Fetch All Roles
-  /**
-   * CRITICAL: Only query roles if the user is fully authenticated and auth state is resolved.
-   * The rules for the 'roles' collection require an authenticated session.
-   */
   const rolesQuery = useMemoFirebase(() => {
     if (!firestore || !user || isAuthLoading) return null;
     return collection(firestore, 'roles');
@@ -56,7 +46,6 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
     const userRoleIds = profile.roles || (profile.roleId ? [profile.roleId] : []);
     const mergedPermissions: PermissionsMap = {};
 
-    // 1. Merge all assigned roles (if any is true, result is true)
     if (allRoles) {
       userRoleIds.forEach((roleId: string) => {
         const roleData = allRoles.find(r => r.id === roleId);
@@ -68,7 +57,6 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
       });
     }
     
-    // 2. Override with User Custom Permissions (Highest Priority)
     const customOverrides = profile?.customPermissions || {};
     Object.entries(customOverrides).forEach(([key, val]) => {
       mergedPermissions[key] = !!val;
@@ -78,12 +66,8 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   }, [allRoles, profile]);
 
   const hasPermission = (key: PermissionKey): boolean => {
-    // Admin override: target email always has full access
     if (user?.email === 'gm.shreelabel@gmail.com') return true;
-    
-    // Check if user has explicit 'admin' permission
     if (permissions['admin'] === true) return true;
-    
     return !!permissions[key];
   };
 

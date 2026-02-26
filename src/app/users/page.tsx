@@ -30,7 +30,8 @@ import {
   LayoutDashboard,
   ShieldAlert,
   History,
-  RotateCcw
+  RotateCcw,
+  FileText
 } from "lucide-react"
 import { 
   Dialog, 
@@ -78,6 +79,7 @@ import { useToast } from "@/hooks/use-toast"
 const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
   dashboard: { group: "Core Access", icon: LayoutDashboard },
   estimates: { group: "Sales & CRM", icon: ShoppingCart },
+  quotations: { group: "Sales & CRM", icon: FileText },
   salesOrders: { group: "Sales & CRM", icon: ShoppingCart },
   createJob: { group: "Sales & CRM", icon: ShoppingCart },
   jobPlanning: { group: "Design & Planning", icon: Palette },
@@ -128,7 +130,6 @@ export default function UserManagementPage() {
   const { user: currentUser } = useUser()
   const firestore = useFirestore()
   
-  // States
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false)
   const [isRoleDialogOpen, setIsRoleDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
@@ -139,14 +140,12 @@ export default function UserManagementPage() {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({})
 
-  // Authorization check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !currentUser) return null;
     return doc(firestore, 'adminUsers', currentUser.uid);
   }, [firestore, currentUser]);
   const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
 
-  // Queries
   const usersQuery = useMemoFirebase(() => {
     if (!firestore || !currentUser || !adminData) return null;
     return collection(firestore, 'users');
@@ -159,8 +158,6 @@ export default function UserManagementPage() {
 
   const { data: users, isLoading: usersLoading } = useCollection(usersQuery)
   const { data: roles, isLoading: rolesLoading } = useCollection(rolesQuery)
-
-  // --- USER LOGIC ---
 
   const handleOpenUserDialog = (user?: any) => {
     setEditingUser(user || null)
@@ -177,8 +174,6 @@ export default function UserManagementPage() {
     const firstName = formData.get("firstName") as string
     const lastName = formData.get("lastName") as string
     
-    // Prototype workflow: If adding a new user, use email as the ID for pre-provisioning
-    // AuthInitializer will migrate this to UID upon their first login.
     const userId = editingUser?.id || email;
     
     const userData = {
@@ -195,7 +190,6 @@ export default function UserManagementPage() {
 
     setDocumentNonBlocking(doc(firestore, 'users', userId), userData, { merge: true })
 
-    // Marker collections for security rules
     const isNowAdmin = selectedRoles.includes('Admin')
     if (isNowAdmin) {
       setDocumentNonBlocking(doc(firestore, 'adminUsers', userId), { id: userId, email, roles: selectedRoles }, { merge: true })
@@ -204,7 +198,7 @@ export default function UserManagementPage() {
     }
 
     setIsUserDialogOpen(false)
-    toast({ title: editingUser ? "User Updated" : "User Pre-Provisioned", description: `${firstName} saved successfully. Access keyed to email.` })
+    toast({ title: editingUser ? "User Updated" : "User Pre-Provisioned", description: `${firstName} saved successfully.` })
   }
 
   const handleToggleUserStatus = (user: any) => {
@@ -240,8 +234,6 @@ export default function UserManagementPage() {
     toast({ title: "User Deleted", description: "Account removed." })
   }
 
-  // --- ROLE LOGIC ---
-
   const handleOpenRoleDialog = (role?: any) => {
     setEditingRole(role || null)
     setRolePermissions(role?.permissions || {})
@@ -275,7 +267,6 @@ export default function UserManagementPage() {
       return
     }
 
-    // Check usage
     const q = query(collection(firestore, 'users'), where("roles", "array-contains", role.id))
     const snapshot = await getDocs(q)
     setRoleUsageCount(snapshot.size)

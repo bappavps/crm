@@ -3,96 +3,54 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V6)
-     * 
-     * Core Philosophy:
-     * Implements Role-Based Access Control (RBAC) and Database-Backed Access Control (DBAC).
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V7)
      */
-
-    // --- Global Helper Functions ---
 
     function isSignedIn() {
       return request.auth != null;
     }
 
-    /** Checks if the provided ID matches the authenticated user's UID. */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    /** Special override for prototype seeding/initial setup */
     function isTargetAdmin() {
       return isSignedIn() && (request.auth.token.email == 'gm.shreelabel@gmail.com');
     }
 
-    /** 
-     * Checks if the authenticated user is a designated system administrator.
-     * Uses the exists() check on the marker collection.
-     * Supports both UID and Email keys during transition.
-     */
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) ||
-        exists(/databases/$(database)/documents/adminUsers/$(request.auth.token.email))
+        isTargetAdmin()
       );
     }
 
-    /** Checks if the authenticated user's account status is currently 'active'. */
     function isUserActive() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      // Fallback check for email path during provisioning transition
-      let emailPath = /databases/$(database)/documents/users/$(request.auth.token.email);
-      
-      return (exists(userPath) && get(userPath).data.isActive == true) ||
-             (exists(emailPath) && get(emailPath).data.isActive == true) ||
-             isTargetAdmin();
+      return (exists(userPath) && get(userPath).data.isActive == true) || isTargetAdmin();
     }
 
-    // --- Collection Rules ---
-
-    /**
-     * User Profiles: Unified management.
-     */
     match /users/{userId} {
-      // Allow user to get their own doc by UID OR by email (during provisioning)
       allow get: if isOwner(userId) || userId == request.auth.token.email || isAdmin();
-      allow list: if isAdmin() || isTargetAdmin();
-      // Allow self-creation for onboarding, or admin actions
-      allow create: if isOwner(userId) || isTargetAdmin() || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId) || isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && isUserActive());
-      // Allow admins to delete, or users to delete their email-keyed placeholder during migration
-      allow delete: if isAdmin() || userId == request.auth.token.email;
+      allow delete: if isAdmin();
     }
 
-    /**
-     * Roles: Define permissions.
-     */
     match /roles/{roleId} {
       allow get, list: if isSignedIn();
-      allow write: if isAdmin() || isTargetAdmin();
+      allow write: if isAdmin();
     }
 
-    /**
-     * Admin Markers: DBAC marker documents.
-     */
     match /adminUsers/{adminUid} {
-      allow get: if isOwner(adminUid) || adminUid == request.auth.token.email || isTargetAdmin();
-      allow list: if isAdmin() || isTargetAdmin();
-      allow write: if isOwner(adminUid) || isAdmin() || isTargetAdmin();
-      allow delete: if isAdmin() || adminUid == request.auth.token.email;
+      allow get: if isOwner(adminUid) || isTargetAdmin();
+      allow list: if isAdmin();
+      allow write: if isTargetAdmin() || (isAdmin() && adminUid == request.auth.uid);
+      allow delete: if isAdmin();
     }
 
-    /**
-     * ERP Operational Modules
-     */
-    match /jobs/{jobId} {
-      allow read, write: if isSignedIn() && isUserActive();
-      
-      match /technical/{docId} { allow read, write: if isSignedIn() && isUserActive(); }
-      match /financial/{docId} { allow read, write: if isSignedIn() && isUserActive(); }
-      match /files/{docId} { allow read, write: if isSignedIn() && isUserActive(); }
-    }
-
+    match /quotations/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /estimates/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /salesOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /customers/{id} { allow read, write: if isSignedIn() && isUserActive(); }
@@ -120,7 +78,6 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // --- Catch-all Default ---
     match /{path=**} {
       allow read, write: if false;
     }

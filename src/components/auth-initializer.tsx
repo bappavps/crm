@@ -16,14 +16,12 @@ export function AuthInitializer() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Handle Redirection
   useEffect(() => {
     if (!isUserLoading && !user && pathname !== '/login') {
       router.push('/login');
     }
   }, [user, isUserLoading, pathname, router]);
 
-  // Data Seeding & Profile Provisioning
   useEffect(() => {
     if (user && firestore) {
       const isTargetAdmin = user.email === 'gm.shreelabel@gmail.com';
@@ -32,11 +30,9 @@ export function AuthInitializer() {
       const emailRef = emailPath ? doc(firestore, 'users', emailPath) : null;
 
       getDoc(userRef).then(async (snap) => {
-        // Provision profile if it doesn't exist
         if (!snap.exists()) {
           let preProvisionedData: any = null;
 
-          // Check if there is a pre-provisioned doc by email (Admin added them first)
           if (emailRef) {
             const emailSnap = await getDoc(emailRef);
             if (emailSnap.exists()) {
@@ -45,7 +41,6 @@ export function AuthInitializer() {
           }
 
           if (preProvisionedData) {
-            // MIGRATION: Move data from email-key to uid-key
             const migratedData = {
               ...preProvisionedData,
               id: user.uid,
@@ -53,7 +48,6 @@ export function AuthInitializer() {
             };
             setDocumentNonBlocking(userRef, migratedData, { merge: true });
             
-            // Sync Admin Markers
             if (preProvisionedData.roles?.includes('Admin')) {
               setDocumentNonBlocking(doc(firestore, 'adminUsers', user.uid), { 
                 id: user.uid, 
@@ -63,10 +57,8 @@ export function AuthInitializer() {
               deleteDocumentNonBlocking(doc(firestore, 'adminUsers', emailPath));
             }
 
-            // Cleanup the email-keyed placeholder
             deleteDocumentNonBlocking(emailRef!);
           } else {
-            // DEFAULT PROVISIONING: New user with no pre-existing record
             const userData = {
               id: user.uid,
               email: user.email || 'guest@shreelabel.com',
@@ -90,9 +82,6 @@ export function AuthInitializer() {
           }
         }
         
-        /**
-         * CRITICAL: Only the target admin should attempt to seed system-wide roles.
-         */
         if (isTargetAdmin) {
           seedSystemRoles(firestore);
           seedCleanDemoData(firestore, user.uid);
@@ -104,16 +93,13 @@ export function AuthInitializer() {
   return null;
 }
 
-/**
- * Seeds initial role definitions if they don't exist.
- */
 async function seedSystemRoles(db: any) {
   const roles = [
     {
       id: 'Admin',
       name: 'System Administrator',
       permissions: {
-        dashboard: true, estimates: true, salesOrders: true, createJob: true,
+        dashboard: true, estimates: true, quotations: true, salesOrders: true, createJob: true,
         jobPlanning: true, artwork: true, purchaseOrders: true, grn: true,
         stockDashboard: true, stockRegistry: true, slitting: true, finishedGoods: true,
         dieManagement: true, jobCards: true, bom: true, workOrders: true, liveFloor: true,
@@ -124,7 +110,7 @@ async function seedSystemRoles(db: any) {
       id: 'Sales',
       name: 'Sales Executive',
       permissions: {
-        dashboard: true, estimates: true, salesOrders: true, createJob: true,
+        dashboard: true, estimates: true, quotations: true, salesOrders: true, createJob: true,
         artwork: true, reports: true
       }
     },
