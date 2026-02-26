@@ -3,12 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * ERP SYSTEM SECURITY RULES - PROTOTYPING PHASE
-     */
-
-    // --- GLOBAL HELPER FUNCTIONS ---
-
     function isSignedIn() {
       return request.auth != null;
     }
@@ -21,94 +15,26 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isExistingOwner(userId) {
-      return resource != null && isOwner(userId);
-    }
-
-    // --- COLLECTION RULES ---
-
     match /_system_roles/admins/{userId} {
-      allow get, list: if isAdmin();
-      allow create, update, delete: if isAdmin();
+      allow get, list: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /users/{userId} {
       allow get, list: if isSignedIn();
-      allow create: if isOwner(userId);
-      allow update: if (isOwner(userId) || isAdmin()) && resource != null;
-      allow delete: if isAdmin() && resource != null;
+      allow write: if isAdmin() || isOwner(userId);
     }
 
-    match /{collectionName}/{docId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isAdmin() && collectionName in [
-        'customers', 'suppliers', 'unitsOfMeasure', 'machines', 
-        'dies', 'plates', 'rawMaterials', 'finishedGoodDefinitions', 'defects',
-        'roll_settings', 'job_settings', 'materials', 'cylinders'
-      ];
-    }
-
-    match /inventoryLots/{inventoryLotId} {
-      allow get, list: if isSignedIn();
+    match /jobs/{jobId} {
+      allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && resource != null;
+      allow update: if isAdmin() || (isSignedIn() && resource.data.salesUserId == request.auth.uid && resource.data.status == 'Pending Approval');
+      allow delete: if isAdmin();
     }
 
-    match /jumbo_stock/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
-    }
-
-    match /inventoryItems/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
-    }
-
-    match /artworks/{artworkId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.uploadedByUserId == request.auth.uid;
-      allow update, delete: if (isExistingOwner(resource.data.uploadedByUserId) || isAdmin());
-    }
-
-    match /estimates/{estimateId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.createdByUserId == request.auth.uid;
-      allow update, delete: if (isExistingOwner(resource.data.createdByUserId) || isAdmin());
-    }
-
-    match /billsOfMaterial/{billOfMaterialId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.createdByUserId));
-
-      match /{sub}/{subId} {
-        allow get, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if (isAdmin() || isExistingOwner(resource.data.billOfMaterialCreatedByUserId));
-      }
-    }
-
-    match /salesOrders/{salesOrderId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.createdByUserId == request.auth.uid;
-      allow update, delete: if (isExistingOwner(resource.data.createdByUserId) || isAdmin());
-
-      match /items/{itemId} {
-        allow get, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if (isAdmin() || isExistingOwner(resource.data.salesOrderCreatedByUserId));
-      }
-    }
-
-    match /job_planning/{id} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin() || (isSignedIn() && !resource.data.is_locked);
-    }
-
-    match /jobs/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
+    match /system_settings/pricing_config {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /counters/{id} {
@@ -116,50 +42,10 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    match /notifications/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn();
-    }
-
-    match /jobCards/{jobCardId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if (isAdmin() || isOwner(resource.data.assignedOperatorId) || isOwner(resource.data.jobCardCreatedByUserId));
-
-      match /{sub}/{subId} {
-        allow get, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if (isAdmin() || isOwner(resource.data.jobCardAssignedOperatorId) || isOwner(resource.data.jobCardCreatedByUserId));
-      }
-    }
-
-    match /invoices/{invoiceId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.generatedByUserId == request.auth.uid;
-      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.generatedByUserId));
-    }
-
-    match /dispatches/{dispatchId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.generatedByUserId == request.auth.uid;
-      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.generatedByUserId));
-
-      match /packingLists/{packingListId} {
-        allow get, list: if isSignedIn();
-        allow create: if isSignedIn();
-        allow update, delete: if (isAdmin() || isOwner(resource.data.dispatchGeneratedByUserId));
-      }
-    }
-
-    match /purchaseOrders/{purchaseOrderId} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && request.resource.data.createdByUserId == request.auth.uid;
-      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.createdByUserId));
-    }
-
-    match /finishedGoodInventory/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && resource != null;
+    // Generic fallback for master data
+    match /{collectionName}/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }

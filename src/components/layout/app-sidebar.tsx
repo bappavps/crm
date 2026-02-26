@@ -26,7 +26,8 @@ import {
   Briefcase,
   ListTodo,
   FilePlus,
-  Binary
+  Binary,
+  ShieldAlert
 } from "lucide-react"
 import {
   Sidebar,
@@ -101,6 +102,8 @@ const navGroups = [
 
 const adminNavigation = [
   { name: 'Master Data', icon: Settings, href: '/master-data' },
+  { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval' },
+  { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings' },
   { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings' },
   { name: 'Job Settings', icon: Binary, href: '/master-data/job-settings' },
   { name: 'User Management', icon: Users, href: '/users' },
