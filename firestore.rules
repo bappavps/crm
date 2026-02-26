@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V5)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V6)
      * 
      * Core Philosophy:
      * Implements Role-Based Access Control (RBAC) and Database-Backed Access Control (DBAC).
@@ -57,9 +57,11 @@ service cloud.firestore {
       // Allow user to get their own doc by UID OR by email (during provisioning)
       allow get: if isOwner(userId) || userId == request.auth.token.email || isAdmin();
       allow list: if isAdmin() || isTargetAdmin();
-      allow create: if isTargetAdmin() || isAdmin();
+      // Allow self-creation for onboarding, or admin actions
+      allow create: if isOwner(userId) || isTargetAdmin() || isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && isUserActive());
-      allow delete: if isAdmin();
+      // Allow admins to delete, or users to delete their email-keyed placeholder during migration
+      allow delete: if isAdmin() || userId == request.auth.token.email;
     }
 
     /**
@@ -77,6 +79,7 @@ service cloud.firestore {
       allow get: if isOwner(adminUid) || adminUid == request.auth.token.email || isTargetAdmin();
       allow list: if isAdmin() || isTargetAdmin();
       allow write: if isOwner(adminUid) || isAdmin() || isTargetAdmin();
+      allow delete: if isAdmin() || adminUid == request.auth.token.email;
     }
 
     /**
