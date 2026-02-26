@@ -44,6 +44,7 @@ import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlo
 import { usePermissions } from "@/components/auth/permission-context"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
 
 export default function MasterDataPage() {
