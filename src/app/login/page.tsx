@@ -96,7 +96,7 @@ export default function LoginPage() {
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input id="password" name="password" type="password" className="pl-10" required />
+                <Input id="password" name="password" type="password" className="pl-10" defaultValue="admin@123" required />
               </div>
             </div>
             <Button className="w-full bg-primary hover:bg-primary/90" type="submit" disabled={isLoading}>
