@@ -17,6 +17,11 @@ export default function RollSettingsPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -31,6 +36,13 @@ export default function RollSettingsPage() {
     return doc(firestore, 'settings', 'roll-numbering');
   }, [firestore]);
   const { data: settings, isLoading: settingsLoading } = useDoc(settingsDocRef);
+
+  // Counter Query
+  const counterDocRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'counters', 'jumbo_roll');
+  }, [firestore]);
+  const { data: counter } = useDoc(counterDocRef);
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -77,6 +89,11 @@ export default function RollSettingsPage() {
     )
   }
 
+  const currentYear = isMounted ? new Date().getFullYear().toString() : 'YYYY'
+  const nextNum = (counter?.current_number || 0) + 1
+  const previewPrefix = settings?.parentRollPrefix || "TLC-"
+  const previewStart = Number(settings?.rollStartNumber ?? 1000)
+
   return (
     <div className="space-y-6">
       <div>
@@ -93,7 +110,7 @@ export default function RollSettingsPage() {
             <CardDescription>Define prefixes and sequences for inventory traceability.</CardDescription>
           </CardHeader>
           <CardContent>
-            {settingsLoading ? (
+            {settingsLoading || !isMounted ? (
               <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : (
               <form onSubmit={handleSave} className="space-y-6">
@@ -150,39 +167,61 @@ export default function RollSettingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-primary/5 border-primary/20">
-          <CardHeader>
-            <CardTitle className="text-sm font-bold uppercase tracking-wider text-primary">Preview Generation Logic</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-4">
-              <div className="p-4 bg-background rounded-lg border shadow-sm">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Jumbo Roll (Parent)</p>
-                <code className="text-xl font-black text-primary">
-                  {settings?.parentRollPrefix || "TLC-"}{settings?.rollStartNumber ? Number(settings.rollStartNumber) + 1 : 1001}
-                </code>
+        <div className="space-y-6">
+          <Card className="bg-primary/5 border-primary/20">
+            <CardHeader>
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-primary">Preview Generation Logic</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="p-4 bg-background rounded-lg border shadow-sm">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Jumbo Roll (Parent)</p>
+                  <code className="text-xl font-black text-primary">
+                    {previewPrefix}{previewStart + nextNum}
+                  </code>
+                </div>
+
+                <div className="p-4 bg-background rounded-lg border shadow-sm">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Slitted Roll (Child)</p>
+                  <code className="text-xl font-black text-foreground">
+                    {previewPrefix}{previewStart + nextNum}{settings?.separator || "-"}{settings?.childRollPrefixType === 'Alphabet' ? 'A' : '1'}
+                  </code>
+                </div>
+
+                <div className="p-4 bg-background rounded-lg border shadow-sm">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Job FG (Sub Child)</p>
+                  <code className="text-xl font-black text-accent">
+                    {previewPrefix}{previewStart + nextNum}{settings?.separator || "-"}A{settings?.separator || "-"}{settings?.subChildPrefixType === 'Number' ? '1' : 'A'}
+                  </code>
+                </div>
               </div>
 
-              <div className="p-4 bg-background rounded-lg border shadow-sm">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Slitted Roll (Child)</p>
-                <code className="text-xl font-black text-foreground">
-                  {settings?.parentRollPrefix || "TLC-"}{settings?.rollStartNumber ? Number(settings.rollStartNumber) + 1 : 1001}{settings?.separator || "-"}{settings?.childRollPrefixType === 'Alphabet' ? 'A' : '1'}
-                </code>
+              <div className="text-xs text-muted-foreground italic leading-relaxed">
+                * The numbering is now atomic. It respects your configured start number ({previewStart}) and automatically increments based on the global database sequence.
               </div>
+            </CardContent>
+          </Card>
 
-              <div className="p-4 bg-background rounded-lg border shadow-sm">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Job FG (Sub Child)</p>
-                <code className="text-xl font-black text-accent">
-                  {settings?.parentRollPrefix || "TLC-"}{settings?.rollStartNumber ? Number(settings.rollStartNumber) + 1 : 1001}{settings?.separator || "-"}A{settings?.separator || "-"}{settings?.subChildPrefixType === 'Number' ? '1' : 'A'}
-                </code>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">
+                <Hash className="h-4 w-4 text-primary" /> Current Stock Counter
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground font-medium">Last Sequence Used:</p>
+                  <p className="text-lg font-bold">{counter?.current_number || 0}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground font-medium">Tracking Year:</p>
+                  <p className="text-lg font-bold">{counter?.year || currentYear}</p>
+                </div>
               </div>
-            </div>
-
-            <div className="text-xs text-muted-foreground italic leading-relaxed">
-              * The logic uses your configured starting sequence and automatically increments for each new entry in the registry. Traceability is maintained via hierarchical naming.
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

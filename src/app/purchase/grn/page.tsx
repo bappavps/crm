@@ -19,7 +19,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, runTransaction, query, where, getDocs } from "firebase/firestore"
 import { addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -33,6 +33,7 @@ export default function GRNPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isSupplierManageOpen, setIsSupplierManageOpen] = useState(false)
   const [isMaterialManageOpen, setIsMaterialManageOpen] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
   
   // Management States
   const [newSupplierName, setNewSupplierName] = useState("")
@@ -174,50 +175,101 @@ export default function GRNPage() {
     }))
   }
 
-  const handleAddJumbo = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleAddJumbo = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
 
+    setIsGenerating(true)
     const submissionData = new FormData(e.currentTarget)
     
-    // Generate Roll No using Settings
-    const count = (jumbos?.length || 0) + 1
-    const prefix = settings?.parentRollPrefix || "JMB-"
-    const startNum = Number(settings?.rollStartNumber) || 0
-    const generatedRollNo = `${prefix}${startNum + count}`
+    try {
+      await runTransaction(firestore, async (transaction) => {
+        // 1. Fetch numbering settings and counter
+        const settingsRef = doc(firestore, 'settings', 'roll-numbering');
+        const counterRef = doc(firestore, 'counters', 'jumbo_roll');
+        
+        const settingsSnap = await transaction.get(settingsRef);
+        const counterSnap = await transaction.get(counterRef);
 
-    const jumboData = {
-      rollNo: generatedRollNo,
-      barcode: generatedRollNo,
-      companyRollNo: submissionData.get("companyRollNo") as string,
-      paperCompany: submissionData.get("paperCompany") as string,
-      paperType: submissionData.get("paperType") as string,
-      widthMm: formData.widthMm,
-      lengthMeters: formData.lengthMeters,
-      sqm: formData.sqm,
-      gsm: formData.gsm,
-      weightKg: formData.weightKg,
-      purchaseRate: Number(submissionData.get("purchaseRate")),
-      wastage: 0,
-      jobNo: submissionData.get("jobNo") as string || "",
-      productName: submissionData.get("productName") as string || "",
-      code: submissionData.get("code") as string || "",
-      lotNumber: submissionData.get("lotNumber") as string,
-      receivedDate: submissionData.get("receivedDate") as string || new Date().toISOString(),
-      date: new Date().toISOString(),
-      status: "In Stock",
-      createdAt: new Date().toISOString(),
-      createdById: user.uid
+        const currentSettings = settingsSnap.exists() ? settingsSnap.data() : {
+          parentRollPrefix: "TLC-",
+          rollStartNumber: 1000
+        };
+
+        let currentNumber = 1;
+        const now = new Date();
+        const currentYear = now.getFullYear().toString();
+
+        if (counterSnap.exists()) {
+          const counterData = counterSnap.data();
+          if (counterData.year === currentYear) {
+            currentNumber = counterData.current_number + 1;
+          }
+        }
+
+        const prefix = currentSettings.parentRollPrefix || "TLC-";
+        const startNum = Number(currentSettings.rollStartNumber) || 1000;
+        const generatedRollNo = `${prefix}${startNum + currentNumber}`;
+
+        // 2. Uniqueness check
+        const dupQuery = query(collection(firestore, 'jumbo_stock'), where("rollNo", "==", generatedRollNo));
+        const dupSnap = await getDocs(dupQuery);
+        if (!dupSnap.empty) {
+          throw new Error(`Roll Number ${generatedRollNo} already exists in registry.`);
+        }
+
+        // 3. Prepare data
+        const jumboRef = doc(collection(firestore, 'jumbo_stock'));
+        const jumboData = {
+          rollNo: generatedRollNo,
+          barcode: generatedRollNo,
+          companyRollNo: submissionData.get("companyRollNo") as string,
+          paperCompany: submissionData.get("paperCompany") as string,
+          paperType: submissionData.get("paperType") as string,
+          widthMm: formData.widthMm,
+          lengthMeters: formData.lengthMeters,
+          sqm: formData.sqm,
+          gsm: formData.gsm,
+          weightKg: formData.weightKg,
+          purchaseRate: Number(submissionData.get("purchaseRate")),
+          wastage: 0,
+          jobNo: submissionData.get("jobNo") as string || "",
+          productName: submissionData.get("productName") as string || "",
+          code: submissionData.get("code") as string || "",
+          lotNumber: submissionData.get("lotNumber") as string,
+          receivedDate: submissionData.get("receivedDate") as string || now.toISOString(),
+          date: now.toISOString(),
+          status: "In Stock",
+          createdAt: now.toISOString(),
+          createdById: user.uid
+        };
+
+        // 4. Update counter and save
+        transaction.set(counterRef, {
+          prefix: prefix,
+          year: currentYear,
+          current_number: currentNumber
+        }, { merge: true });
+
+        transaction.set(jumboRef, jumboData);
+      });
+
+      setIsDialogOpen(false);
+      setFormData({ widthMm: 1020, weightKg: 0, gsm: 0, lengthMeters: 0, sqm: 0 });
+      toast({
+        title: "GRN Recorded",
+        description: "Jumbo Roll has been registered with a unique transactional ID."
+      });
+    } catch (error: any) {
+      console.error("GRN Transaction failed: ", error);
+      toast({
+        variant: "destructive",
+        title: "Registration Failed",
+        description: error.message || "Unique sequence error. Please try again."
+      });
+    } finally {
+      setIsGenerating(false);
     }
-
-    addDocumentNonBlocking(collection(firestore, 'jumbo_stock'), jumboData)
-
-    setIsDialogOpen(false)
-    setFormData({ widthMm: 1020, weightKg: 0, gsm: 0, lengthMeters: 0, sqm: 0 })
-    toast({
-      title: "GRN Recorded",
-      description: `Jumbo Roll ${jumboData.rollNo} added to inventory using global numbering.`
-    })
   }
 
   const handleAddSupplier = () => {
@@ -441,7 +493,9 @@ export default function GRNPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12 text-lg">Save Jumbo Entry</Button>
+              <Button type="submit" className="w-full h-12 text-lg" disabled={isGenerating}>
+                {isGenerating ? <Loader2 className="animate-spin mr-2" /> : "Save Jumbo Entry"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
