@@ -481,7 +481,7 @@ export default function UserManagementPage() {
                               <span className="text-[11px] font-bold">{formatLabel(key)}</span>
                               <Switch 
                                 checked={!!rolePermissions[key]} 
-                                onCheckedChange={(val) => setRolePermissions(p => ({...p, [key]: val}))} 
+                                onValueChange={(val) => setRolePermissions(p => ({...p, [key]: val}))} 
                               />
                             </div>
                           ))}
@@ -549,7 +549,7 @@ export default function UserManagementPage() {
                     <History className="h-3 w-3" /> Security Policy
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    A temporary password will be assigned. The user will be required to change it upon their first successful login.
+                    A temporary password will be assigned (<strong>admin@123</strong>). The user will be required to change it upon their first successful login.
                   </p>
                 </div>
               )}
