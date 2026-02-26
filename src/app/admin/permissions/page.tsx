@@ -130,12 +130,11 @@ export default function PermissionManagementPage() {
   };
 
   /**
-   * Ensures all keys in ALL_SYSTEM_KEYS are categorized and displayed.
+   * Categorizes permissions based on metadata for a structured layout.
    */
   const getCategorizedPermissions = (rolePermissions: Record<string, boolean> = {}) => {
     const grouped: Record<string, [string, boolean][]> = {};
     
-    // We iterate over the MASTER list, not the role's current keys
     ALL_SYSTEM_KEYS.forEach((key) => {
       const val = !!rolePermissions[key];
       const meta = PERMISSION_METADATA[key];
@@ -165,114 +164,128 @@ export default function PermissionManagementPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Access Control Panel</h2>
-          <p className="text-muted-foreground">Manage global roles and dynamic permission discovery.</p>
+          <h2 className="text-3xl font-black tracking-tight text-primary">Access Control Panel</h2>
+          <p className="text-muted-foreground font-medium">Manage global group roles and individual employee overrides.</p>
         </div>
-        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">DYNAMIC SECURITY V2</Badge>
+        <div className="hidden md:block">
+          <Badge variant="outline" className="h-10 px-6 font-bold text-lg border-primary/20 bg-primary/5 text-primary">
+            22 ACTIVE KEYS
+          </Badge>
+        </div>
       </div>
 
       <Tabs defaultValue="roles" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="roles" className="gap-2"><Key className="h-4 w-4" /> Group Roles</TabsTrigger>
-          <TabsTrigger value="users" className="gap-2"><UserCog className="h-4 w-4" /> User Overrides</TabsTrigger>
+        <TabsList className="grid w-full max-w-md grid-cols-2 bg-muted/50 p-1 rounded-xl">
+          <TabsTrigger value="roles" className="gap-2 py-2.5 rounded-lg font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <Key className="h-4 w-4" /> Group Roles
+          </TabsTrigger>
+          <TabsTrigger value="users" className="gap-2 py-2.5 rounded-lg font-bold data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <UserCog className="h-4 w-4" /> Employee Overrides
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="roles" className="pt-6">
-          <div className="grid gap-8">
-            {roles?.map((role) => (
-              <Card key={role.id} className="overflow-hidden border-none shadow-lg bg-card/50 backdrop-blur-sm">
-                <CardHeader className="bg-primary/5 pb-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <CardTitle className="text-2xl font-black text-primary uppercase tracking-tight">{role.name}</CardTitle>
-                      <CardDescription>
-                        Configuration registry for group level access.
-                      </CardDescription>
-                    </div>
-                    <Badge variant="secondary" className="h-6 px-3 uppercase font-mono">ID: {role.id}</Badge>
+        <TabsContent value="roles" className="pt-8 space-y-10 outline-none">
+          {roles?.map((role) => (
+            <Card key={role.id} className="overflow-hidden border-none shadow-xl bg-card border-border/50">
+              <CardHeader className="bg-primary/5 border-b border-primary/10 pb-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-2xl font-black text-primary uppercase tracking-tighter">{role.name}</CardTitle>
+                    <CardDescription className="font-medium">
+                      Operational permissions for all users assigned to the {role.id} role.
+                    </CardDescription>
                   </div>
-                </CardHeader>
-                <CardContent className="p-6 space-y-8">
-                  {getCategorizedPermissions(role.permissions).map((group: any) => (
-                    <div key={group.label} className="space-y-4">
-                      <div className="flex items-center gap-2 border-b pb-2">
-                        <group.icon className="h-4 w-4 text-primary" />
-                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{group.label}</h3>
+                  <Badge variant="secondary" className="h-8 px-4 font-mono font-black border border-primary/10">ROLE_ID: {role.id}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-8 space-y-12">
+                {getCategorizedPermissions(role.permissions).map((group: any) => (
+                  <div key={group.label} className="space-y-6">
+                    <div className="flex items-center gap-3 border-b border-border/50 pb-3">
+                      <div className="p-2 bg-primary/10 rounded-lg">
+                        <group.icon className="h-5 w-5 text-primary" />
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-4">
-                        {group.items.map((entry: [string, boolean]) => {
-                          const [key, val] = entry;
-                          return (
-                            <div key={key} className="flex items-center justify-between py-1 group/item">
-                              <span className="text-sm font-medium text-foreground group-hover/item:text-primary transition-colors">
-                                {formatPermissionLabel(key)}
-                              </span>
-                              <Switch 
-                                checked={val} 
-                                onCheckedChange={() => handleToggleRolePermission(role.id, key, val)}
-                              />
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{group.label}</h3>
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-            ))}
-            
-            <Button variant="outline" className="border-dashed h-16 text-lg font-bold text-muted-foreground hover:text-primary" onClick={() => toast({ title: "Development", description: "Custom role creation is coming soon." })}>
-              <Plus className="mr-2 h-5 w-5" /> Create New Custom Role
-            </Button>
-          </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-6">
+                      {group.items.map(([key, val]: [string, boolean]) => (
+                        <div key={key} className="flex items-center justify-between py-2 group/item hover:bg-muted/30 px-3 -mx-3 rounded-lg transition-colors">
+                          <span className="text-sm font-bold text-foreground group-hover/item:text-primary transition-colors">
+                            {formatPermissionLabel(key)}
+                          </span>
+                          <Switch 
+                            checked={val} 
+                            onCheckedChange={() => handleToggleRolePermission(role.id, key, val)}
+                            className="data-[state=checked]:bg-primary"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
+          
+          <Button 
+            variant="outline" 
+            className="w-full border-dashed h-20 text-lg font-black text-muted-foreground hover:text-primary hover:border-primary/50 hover:bg-primary/5 transition-all" 
+            onClick={() => toast({ title: "Module Locked", description: "Custom role creation is managed by the DB administrator." })}
+          >
+            <Plus className="mr-3 h-6 w-6" /> DEFINE NEW SYSTEM ROLE
+          </Button>
         </TabsContent>
 
-        <TabsContent value="users" className="pt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" /> Employee Permission Registry</CardTitle>
-              <CardDescription>Assign roles and manage specific user-level overrides.</CardDescription>
+        <TabsContent value="users" className="pt-8 outline-none">
+          <Card className="border-none shadow-xl overflow-hidden">
+            <CardHeader className="bg-muted/30 border-b">
+              <CardTitle className="flex items-center gap-3 text-xl font-black">
+                <Users className="h-6 w-6 text-primary" /> Employee Permission Registry
+              </CardTitle>
+              <CardDescription className="font-medium">Assign primary roles and manage individual security exceptions.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Primary Role</TableHead>
-                    <TableHead>Active Overrides</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                  <TableRow className="bg-muted/20 hover:bg-muted/20">
+                    <TableHead className="font-black uppercase tracking-widest text-[10px]">User Profile</TableHead>
+                    <TableHead className="font-black uppercase tracking-widest text-[10px]">Inherited Role</TableHead>
+                    <TableHead className="font-black uppercase tracking-widest text-[10px]">Active Overrides</TableHead>
+                    <TableHead className="text-right font-black uppercase tracking-widest text-[10px]">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {users?.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell>
+                    <TableRow key={u.id} className="hover:bg-muted/10 transition-colors">
+                      <TableCell className="py-4">
                         <div className="flex flex-col">
-                          <span className="font-bold">{u.firstName} {u.lastName}</span>
-                          <span className="text-[10px] text-muted-foreground">{u.email}</span>
+                          <span className="font-black text-foreground">{u.firstName} {u.lastName}</span>
+                          <span className="text-[11px] font-medium text-muted-foreground lowercase">{u.email}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="font-bold">{u.roleId || 'No Role'}</Badge>
+                        <Badge variant="outline" className="font-black bg-primary/5 border-primary/20 text-primary">
+                          {u.roleId?.toUpperCase() || 'NO_ROLE'}
+                        </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
+                        <div className="flex flex-wrap gap-1.5">
                           {u.customPermissions && Object.keys(u.customPermissions).map(k => (
-                            <Badge key={k} variant={u.customPermissions[k] ? "default" : "destructive"} className="text-[9px]">
+                            <Badge key={k} variant={u.customPermissions[k] ? "default" : "destructive"} className="text-[9px] font-black uppercase tracking-tighter h-5">
                               {formatPermissionLabel(k)}: {u.customPermissions[k] ? "ON" : "OFF"}
                             </Badge>
                           ))}
                           {(!u.customPermissions || Object.keys(u.customPermissions).length === 0) && (
-                            <span className="text-xs text-muted-foreground italic">Using role defaults</span>
+                            <span className="text-xs text-muted-foreground font-medium italic italic">Standard role defaults applied</span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => toast({ title: "Module Development", description: "Granular user override toggles are coming in V3." })}>
-                          Manage Overrides
+                        <Button variant="ghost" size="sm" className="font-black text-xs hover:text-primary" onClick={() => toast({ title: "Access Restricted", description: "Granular user override toggles are coming in the next security patch." })}>
+                          MODIFY ACCESS
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -282,11 +295,15 @@ export default function PermissionManagementPage() {
             </CardContent>
           </Card>
           
-          <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
-            <Lock className="h-5 w-5 text-amber-600 mt-0.5" />
-            <div className="text-xs text-amber-800">
-              <p className="font-bold">Security Best Practice</p>
-              <p>Prefer group roles over user overrides whenever possible. Overrides should be used for temporary specialized access or technical debugging.</p>
+          <div className="mt-8 p-6 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-4 shadow-sm">
+            <div className="p-2 bg-amber-100 rounded-lg">
+              <Lock className="h-6 w-6 text-amber-700" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-black text-amber-900 uppercase tracking-tight">Security Protocol Advisory</p>
+              <p className="text-sm text-amber-800 font-medium leading-relaxed">
+                Prefer group roles over user overrides whenever possible. Individual overrides create unique security surfaces that are harder to audit. Use them only for temporary elevated access or specialized technical debugging.
+              </p>
             </div>
           </div>
         </TabsContent>
