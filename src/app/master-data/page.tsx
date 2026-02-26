@@ -36,7 +36,8 @@ import {
   Upload, 
   X,
   Globe,
-  MapPin
+  MapPin,
+  Loader2
 } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
