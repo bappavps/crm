@@ -11,18 +11,21 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useFirestore, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useCollection, useMemoFirebase, useUser } from "@/firebase"
 import { collection } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 
 export function NotificationBell() {
   const firestore = useFirestore()
+  const { user } = useUser()
   const router = useRouter()
 
   const notificationsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    // CRITICAL: Ensure we only attempt to fetch notifications if a user is signed in.
+    // The security rules require an authenticated session for this collection.
+    if (!firestore || !user) return null;
     return collection(firestore, 'notifications');
-  }, [firestore])
+  }, [firestore, user])
 
   const { data: notifications } = useCollection(notificationsQuery)
   const unreadCount = notifications?.length || 0
