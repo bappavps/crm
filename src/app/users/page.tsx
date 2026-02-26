@@ -27,7 +27,10 @@ import {
   Palette,
   ShoppingBag,
   LineChart,
-  LayoutDashboard
+  LayoutDashboard,
+  ShieldAlert,
+  History,
+  RotateCcw
 } from "lucide-react"
 import { 
   Dialog, 
@@ -42,6 +45,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator
 } from "@/components/ui/dropdown-menu"
 import {
   AlertDialog,
@@ -64,7 +68,7 @@ import {
 } from "@/components/ui/accordion"
 import { Switch } from "@/components/ui/switch"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, deleteDoc, serverTimestamp } from "firebase/firestore"
+import { collection, doc, serverTimestamp, query, where, getDocs } from "firebase/firestore"
 import { setDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -130,6 +134,8 @@ export default function UserManagementPage() {
   const [editingUser, setEditingUser] = useState<any>(null)
   const [editingRole, setEditingRole] = useState<any>(null)
   const [userToDelete, setUserToDelete] = useState<any>(null)
+  const [roleToDelete, setRoleToDelete] = useState<any>(null)
+  const [roleUsageCount, setRoleUsageCount] = useState<number>(0)
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({})
 
@@ -179,6 +185,7 @@ export default function UserManagementPage() {
       lastName,
       roles: selectedRoles,
       isActive: editingUser ? editingUser.isActive : true,
+      mustChangePassword: editingUser ? (editingUser.mustChangePassword || false) : true,
       updatedAt: new Date().toISOString(),
       ...(editingUser ? {} : { createdAt: new Date().toISOString() })
     }
@@ -195,6 +202,32 @@ export default function UserManagementPage() {
 
     setIsUserDialogOpen(false)
     toast({ title: editingUser ? "User Updated" : "User Created", description: `${firstName} saved successfully.` })
+  }
+
+  const handleToggleUserStatus = (user: any) => {
+    if (!firestore) return
+    const newStatus = !user.isActive
+    updateDocumentNonBlocking(doc(firestore, 'users', user.id), {
+      isActive: newStatus,
+      updatedAt: new Date().toISOString()
+    })
+    toast({
+      title: newStatus ? "Account Activated" : "Account Deactivated",
+      description: `${user.firstName}'s access has been ${newStatus ? 'restored' : 'suspended'}.`
+    })
+  }
+
+  const handleResetPassword = (user: any) => {
+    // In this prototype, we just set the mustChangePassword flag
+    if (!firestore) return
+    updateDocumentNonBlocking(doc(firestore, 'users', user.id), {
+      mustChangePassword: true,
+      updatedAt: new Date().toISOString()
+    })
+    toast({
+      title: "Password Reset Triggered",
+      description: `${user.firstName} will be required to change their password on next login.`
+    })
   }
 
   const handleDeleteUser = () => {
@@ -232,6 +265,26 @@ export default function UserManagementPage() {
     setDocumentNonBlocking(doc(firestore, 'roles', roleId), roleData, { merge: true })
     setIsRoleDialogOpen(false)
     toast({ title: "Role Saved", description: `${name} role updated.` })
+  }
+
+  const handleOpenDeleteRole = async (role: any) => {
+    if (role.id === 'Admin') {
+      toast({ variant: "destructive", title: "Protected Role", description: "System Administrator role cannot be deleted." })
+      return
+    }
+
+    // Check usage
+    const q = query(collection(firestore, 'users'), where("roles", "array-contains", role.id))
+    const snapshot = await getDocs(q)
+    setRoleUsageCount(snapshot.size)
+    setRoleToDelete(role)
+  }
+
+  const handleDeleteRoleConfirm = () => {
+    if (!firestore || !roleToDelete) return
+    deleteDocumentNonBlocking(doc(firestore, 'roles', roleToDelete.id))
+    setRoleToDelete(null)
+    toast({ title: "Role Removed", description: "System role has been deleted." })
   }
 
   const categorizedPermissions = useMemo(() => {
@@ -282,8 +335,8 @@ export default function UserManagementPage() {
                   <TableRow className="bg-muted/30">
                     <TableHead className="font-black text-[10px] uppercase">Employee</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Assigned Roles</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Contact</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Access Status</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Security</TableHead>
                     <TableHead className="text-right font-black text-[10px] uppercase">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -291,7 +344,7 @@ export default function UserManagementPage() {
                   {usersLoading ? (
                     <TableRow><TableCell colSpan={5} className="text-center py-20"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
                   ) : users?.map((u) => (
-                    <TableRow key={u.id} className="hover:bg-muted/10">
+                    <TableRow key={u.id} className={`hover:bg-muted/10 ${!u.isActive ? 'opacity-60 grayscale' : ''}`}>
                       <TableCell className="py-4">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-9 w-9 border-2 border-primary/10">
@@ -301,7 +354,7 @@ export default function UserManagementPage() {
                           </Avatar>
                           <div className="flex flex-col">
                             <span className="font-black text-sm">{u.firstName} {u.lastName}</span>
-                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">UID: {u.id.slice(-8)}</span>
+                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">{u.email}</span>
                           </div>
                         </div>
                       </TableCell>
@@ -314,18 +367,32 @@ export default function UserManagementPage() {
                           ))}
                         </div>
                       </TableCell>
-                      <TableCell className="text-xs font-medium text-muted-foreground">
-                        <div className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {u.email}</div>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={!!u.isActive} 
+                            onCheckedChange={() => handleToggleUserStatus(u)} 
+                          />
+                          <Badge className={u.isActive ? 'bg-emerald-500' : 'bg-muted'}>
+                            {u.isActive ? 'ACTIVE' : 'SUSPENDED'}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={u.isActive ? 'bg-emerald-500' : 'bg-muted'}>{u.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge>
+                        {u.mustChangePassword && (
+                          <Badge variant="outline" className="text-accent border-accent bg-accent/5 animate-pulse">
+                            <ShieldAlert className="h-3 w-3 mr-1" /> RESET REQ.
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal /></Button></DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" className="w-48">
                             <DropdownMenuItem onClick={() => handleOpenUserDialog(u)}><Pencil className="mr-2 h-4 w-4" /> Edit Profile</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleResetPassword(u)}><RotateCcw className="mr-2 h-4 w-4" /> Reset Password</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete Account</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -340,11 +407,22 @@ export default function UserManagementPage() {
         <TabsContent value="roles" className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {roles?.map((role) => (
-              <Card key={role.id} className="group hover:border-primary/50 transition-all shadow-md overflow-hidden">
+              <Card key={role.id} className="group hover:border-primary/50 transition-all shadow-md overflow-hidden relative">
                 <CardHeader className="bg-muted/30 pb-4">
                   <div className="flex justify-between items-start">
                     <div className="p-2 bg-primary/10 rounded-lg"><Shield className="h-5 w-5 text-primary" /></div>
-                    <Button variant="ghost" size="icon" onClick={() => handleOpenRoleDialog(role)} className="h-8 w-8"><Pencil className="h-4 w-4" /></Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => handleOpenRoleDialog(role)} className="h-8 w-8"><Pencil className="h-4 w-4" /></Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        onClick={() => handleOpenDeleteRole(role)} 
+                        className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                        disabled={role.id === 'Admin'}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                   <CardTitle className="text-lg font-black pt-2 uppercase tracking-tight">{role.name}</CardTitle>
                   <CardDescription className="text-[10px] font-bold uppercase text-muted-foreground">{Object.values(role.permissions || {}).filter(v => v === true).length} ACTIVE PERMISSIONS</CardDescription>
@@ -464,6 +542,17 @@ export default function UserManagementPage() {
                   ))}
                 </div>
               </div>
+
+              {!editingUser && (
+                <div className="p-4 bg-primary/5 border border-dashed rounded-lg">
+                  <p className="text-[10px] font-bold text-primary uppercase mb-1 flex items-center gap-1">
+                    <History className="h-3 w-3" /> Security Policy
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    A temporary password will be assigned. The user will be required to change it upon their first successful login.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button type="submit" className="w-full font-black uppercase">Save Employee Profile</Button>
@@ -472,15 +561,39 @@ export default function UserManagementPage() {
         </DialogContent>
       </Dialog>
 
+      {/* DELETE USER CONFIRM */}
       <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="font-black uppercase">Confirm Deletion</AlertDialogTitle>
-            <AlertDialogDescription className="font-medium">This will permanently remove access for {userToDelete?.firstName}.</AlertDialogDescription>
+            <AlertDialogDescription className="font-medium">This will permanently remove access for {userToDelete?.firstName}. This action cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDeleteUser} className="bg-destructive hover:bg-destructive/90">Delete Account</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* DELETE ROLE CONFIRM */}
+      <AlertDialog open={!!roleToDelete} onOpenChange={(open) => !open && setRoleToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-black uppercase">
+              {roleUsageCount > 0 ? 'Role Blocked' : 'Confirm Role Deletion'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="font-medium">
+              {roleUsageCount > 0 
+                ? `This role is currently assigned to ${roleUsageCount} users. Please reassign those employees to other roles before deleting this system definition.`
+                : `Are you sure you want to delete the "${roleToDelete?.name}" role? This will remove these specific permission defaults from the system.`
+              }
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+            {roleUsageCount === 0 && (
+              <AlertDialogAction onClick={handleDeleteRoleConfirm} className="bg-destructive hover:bg-destructive/90">Delete Role</AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
