@@ -2,32 +2,28 @@
 {
   "entities": {
     "User": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "User",
       "type": "object",
-      "description": "Represents an individual user of the ERP system.",
+      "description": "System user with role-based permissions.",
       "properties": {
         "id": { "type": "string" },
-        "username": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "firstName": { "type": "string" },
         "lastName": { "type": "string" },
-        "role": { "type": "string" },
-        "status": { "type": "string" }
-      },
-      "required": ["id", "username", "email", "firstName", "lastName", "role", "status"]
+        "roleId": { "type": "string", "enum": ["Admin", "Sales", "Manager", "Operator"] },
+        "isActive": { "type": "boolean" }
+      }
     },
     "JobPost": {
       "title": "JobPost",
       "type": "object",
+      "description": "Production job submitted by sales requiring admin approval.",
       "properties": {
         "jobId": { "type": "string" },
         "jobNumber": { "type": "string" },
-        "jobType": { "type": "string", "enum": ["New", "Repeat"] },
+        "jobType": { "type": "string" },
         "clientName": { "type": "string" },
-        "salesUserId": { "type": "string" },
         "salesUserName": { "type": "string" },
-        "jobDate": { "type": "string", "format": "date-time" },
         "status": { "type": "string" },
         "adminApproved": { "type": "boolean" },
         "items": {
@@ -41,26 +37,13 @@
       "type": "object",
       "properties": {
         "material": { "type": "string" },
-        "brand": { "type": "string" },
         "itemName": { "type": "string" },
         "widthMM": { "type": "number" },
         "heightMM": { "type": "number" },
-        "core": { "type": "string" },
-        "od": { "type": "string" },
-        "rollDirection": { "type": "string" },
         "quantity": { "type": "number" },
         "pricePerSqInch": { "type": "number" },
-        "totalSqInch": { "type": "number" },
-        "costPerLabel": { "type": "number" },
         "totalJobValue": { "type": "number" },
         "artworkUrl": { "type": "string" }
-      }
-    },
-    "PricingConfig": {
-      "title": "PricingConfig",
-      "type": "object",
-      "properties": {
-        "sqInchDivider": { "type": "number" }
       }
     }
   },
@@ -68,31 +51,10 @@
     "providers": ["password", "anonymous"]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/jobs/{jobId}",
-        "definition": {
-          "entityName": "JobPost",
-          "schema": { "$ref": "#/backend/entities/JobPost" },
-          "description": "Sales job entries requiring admin approval."
-        }
-      },
-      {
-        "path": "/system_settings/pricing_config",
-        "definition": {
-          "entityName": "PricingConfig",
-          "schema": { "$ref": "#/backend/entities/PricingConfig" },
-          "description": "Global pricing constants."
-        }
-      },
-      {
-        "path": "/counters/job_counter",
-        "definition": {
-          "entityName": "JobCounter",
-          "schema": { "type": "object" },
-          "description": "Atomic counter for job IDs."
-        }
-      }
-    ]
+    "/users/{userId}": { "schema": { "$ref": "#/backend/entities/User" }, "description": "Master user profiles." },
+    "/jobs/{jobId}": { "schema": { "$ref": "#/backend/entities/JobPost" }, "description": "Sales job entries." },
+    "/system_settings/pricing_config": { "schema": { "type": "object" }, "description": "Global pricing dividers." },
+    "/roll_settings/global_config": { "schema": { "type": "object" }, "description": "Inventory numbering logic." },
+    "/counters/{counterId}": { "schema": { "type": "object" }, "description": "Atomic sequence counters." }
   }
 }
