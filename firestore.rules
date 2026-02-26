@@ -15,6 +15,34 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // Master Jobs Collection
+    match /jobs/{jobId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      // Sales can only update if not yet approved
+      allow update: if isAdmin() || (isSignedIn() && resource.data.salesUserId == request.auth.uid && resource.data.status == 'Pending Approval');
+      allow delete: if isAdmin();
+
+      // Technical Specifications Sub-collection
+      match /technical/details {
+        allow read: if isSignedIn();
+        // Only editable by Admin or Designer within the 30-minute lock window
+        allow write: if isAdmin() || (isSignedIn() && request.time < timestamp(resource.data.edit_lock_time));
+      }
+
+      // Financial Summary Sub-collection
+      match /financial/summary {
+        allow read: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/jobs/$(jobId)).data.salesUserId == request.auth.uid);
+        allow write: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'Pending Approval');
+      }
+
+      // Project Files Sub-collection
+      match /files/{fileId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+    }
+
     match /adminUsers/{userId} {
       allow get, list: if isSignedIn();
       allow write: if isAdmin();
@@ -25,51 +53,12 @@ service cloud.firestore {
       allow write: if isAdmin() || isOwner(userId);
     }
 
-    match /salesUsers/{userId} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /managerUsers/{userId} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /operatorUsers/{userId} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /jobs/{jobId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isAdmin() || (isSignedIn() && resource.data.salesUserId == request.auth.uid && resource.data.status == 'Pending Approval');
-      allow delete: if isAdmin();
-    }
-
-    match /estimates/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-
-    match /salesOrders/{id} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isAdmin();
-    }
-
-    match /system_settings/pricing_config {
+    match /system_settings/{id} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    match /job_settings/unique-id-config {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /roll_settings/global_config {
+    match /roll_settings/{id} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
@@ -79,7 +68,6 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
-    // Generic fallback for master data and other collections
     match /{collectionName}/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();

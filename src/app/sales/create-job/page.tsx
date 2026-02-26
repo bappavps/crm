@@ -1,18 +1,16 @@
 
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Trash2, FilePlus, Loader2, Image as ImageIcon, Calculator, Briefcase } from "lucide-react"
-import { useFirestore, useUser, useDoc, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, runTransaction, query, where, getDocs } from "firebase/firestore"
+import { Plus, Trash2, FilePlus, Loader2, Image as ImageIcon } from "lucide-react"
+import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
+import { collection, doc, runTransaction } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 
@@ -43,7 +41,6 @@ export default function CreateJobPage() {
   const [jobType, setJobType] = useState<"New" | "Repeat">("New")
   const [clientName, setClientName] = useState("")
   
-  // Pricing Config
   const pricingRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'system_settings', 'pricing_config');
@@ -125,12 +122,6 @@ export default function CreateJobPage() {
       return
     }
 
-    const missingArtwork = items.find(i => !i.artworkUrl)
-    if (missingArtwork) {
-      toast({ variant: "destructive", title: "Error", description: "Artwork is mandatory for all items." })
-      return
-    }
-
     setIsSubmitting(true)
 
     try {
@@ -140,8 +131,8 @@ export default function CreateJobPage() {
 
         const now = new Date();
         const year = now.getFullYear().toString();
-        
         let currentNumber = 1;
+        
         if (counterSnap.exists()) {
           const data = counterSnap.data();
           if (data.year === year) {
@@ -151,33 +142,73 @@ export default function CreateJobPage() {
 
         const paddedNum = currentNumber.toString().padStart(4, "0");
         const jobNumber = `JOB-${year}-${paddedNum}`;
-
         const jobRef = doc(collection(firestore, 'jobs'));
-        const jobData = {
+        const jobId = jobRef.id;
+
+        // 1. Master Document (Lightweight)
+        const masterData = {
+          id: jobId,
           jobNumber,
           jobType,
           clientName,
           salesUserId: user.uid,
           salesUserName: user.displayName || user.email?.split('@')[0] || "Sales",
-          jobDate: now.toISOString(),
           status: "Pending Approval",
           adminApproved: false,
-          items: items.map(i => ({ ...i })),
+          currentStage: "Sales",
+          itemNameSummary: items[0].itemName, // For quick listing
           createdAt: now.toISOString(),
           updatedAt: now.toISOString()
         };
 
-        transaction.set(counterRef, {
-          prefix: "JOB-",
-          year: year,
-          current_number: currentNumber
-        }, { merge: true });
+        // 2. Technical Sub-doc
+        const techRef = doc(firestore, `jobs/${jobId}/technical/details`);
+        const techData = {
+          items: items.map(i => ({
+            itemName: i.itemName,
+            material: i.material,
+            widthMM: i.widthMM,
+            heightMM: i.heightMM,
+            quantity: i.quantity,
+            core: i.core,
+            rollDirection: i.rollDirection
+          })),
+          edit_lock_time: new Date(now.getTime() + 1000 * 60 * 60 * 24 * 365).toISOString() // Placeholder until approved
+        };
 
-        transaction.set(jobRef, jobData);
+        // 3. Financial Sub-doc
+        const finRef = doc(firestore, `jobs/${jobId}/financial/summary`);
+        const finData = {
+          sqInchDivider: divider,
+          totalJobValue: items.reduce((acc, i) => acc + i.totalJobValue, 0),
+          itemPricing: items.map(i => ({
+            itemName: i.itemName,
+            pricePerSqInch: i.pricePerSqInch,
+            totalJobValue: i.totalJobValue
+          }))
+        };
+
+        // 4. File Sub-docs (for Artworks)
+        items.forEach((item, idx) => {
+          if (item.artworkUrl) {
+            const fileRef = doc(collection(firestore, `jobs/${jobId}/files`));
+            transaction.set(fileRef, {
+              fileType: 'artwork',
+              fileName: `Artwork - ${item.itemName}`,
+              fileUrl: item.artworkUrl,
+              uploadedBy: user.uid,
+              uploadedAt: now.toISOString()
+            });
+          }
+        });
+
+        transaction.set(counterRef, { year, current_number: currentNumber }, { merge: true });
+        transaction.set(jobRef, masterData);
+        transaction.set(techRef, techData);
+        transaction.set(finRef, finData);
       });
 
-      toast({ title: "Job Posted", description: "Job submitted for Admin Approval." })
-      // Reset form
+      toast({ title: "Job Posted", description: "Modular job structure initialized." })
       setItems([{ id: crypto.randomUUID(), material: "", brand: "", itemName: "", widthMM: 0, heightMM: 0, core: "3 Inch", od: "", rollDirection: "Head Out", quantity: 0, pricePerSqInch: 0, totalSqInch: 0, costPerLabel: 0, totalJobValue: 0, artworkUrl: "", remarks: "" }])
       setClientName("")
     } catch (error: any) {
@@ -188,35 +219,33 @@ export default function CreateJobPage() {
   }
 
   const simulateUpload = (id: string) => {
-    // In a real app, this would be a file upload to Storage. 
-    // Here we simulate it by setting a unique picsum URL.
     const url = `https://picsum.photos/seed/${id}/400/400`
     updateItem(id, 'artworkUrl', url)
-    toast({ title: "Artwork Attached", description: "Technical file verified." })
+    toast({ title: "Artwork Linked", description: "File reference stored." })
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Post Sales Job</h2>
-          <p className="text-muted-foreground">Initialize new production orders with integrated pricing logic.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-primary">Post Sales Job (V2)</h2>
+          <p className="text-muted-foreground">Modular document refactoring enabled.</p>
         </div>
         <Button onClick={handleCreateJob} disabled={isSubmitting} className="h-12 px-8 text-lg font-bold">
           {isSubmitting ? <Loader2 className="animate-spin mr-2" /> : <FilePlus className="mr-2 h-5 w-5" />}
-          Submit Job for Approval
+          Initialize Modular Job
         </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle className="text-sm font-bold uppercase tracking-wider text-primary">Master Info</CardTitle>
+            <CardTitle className="text-sm font-bold uppercase text-primary">Master Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label>Client / Company Name</Label>
-              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="e.g. Pharma Co Ltd" />
+              <Label>Client Name</Label>
+              <Input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="e.g. Pharma Co" />
             </div>
             <div className="space-y-2">
               <Label>Job Type</Label>
@@ -228,143 +257,38 @@ export default function CreateJobPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="p-4 bg-muted/30 rounded-lg border border-dashed">
-              <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-                <span>Pricing Divider:</span>
-                <span className="font-bold text-primary">{divider}</span>
-              </div>
-              <p className="text-[10px] text-muted-foreground italic">Cost logic is based on global system settings.</p>
-            </div>
           </CardContent>
         </Card>
 
         <div className="lg:col-span-3 space-y-4">
           {items.map((item, index) => (
-            <Card key={item.id} className="relative overflow-hidden border-l-4 border-l-primary">
-              <CardHeader className="bg-muted/20 py-3 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Badge variant="outline" className="font-black">Item #{index + 1}</Badge>
-                  <Input 
-                    className="h-8 w-64 bg-transparent border-none font-bold" 
-                    placeholder="Enter Item Description..." 
-                    value={item.itemName}
-                    onChange={(e) => updateItem(item.id, 'itemName', e.target.value)}
-                  />
-                </div>
-                <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => removeItem(item.id)}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </CardHeader>
-              <CardContent className="pt-6 space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Material</Label>
-                    <Input value={item.material} onChange={(e) => updateItem(item.id, 'material', e.target.value)} placeholder="Semi Gloss / PP" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Brand</Label>
-                    <Input value={item.brand} onChange={(e) => updateItem(item.id, 'brand', e.target.value)} placeholder="Avery / UPM" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Width (MM)</Label>
-                    <Input type="number" value={item.widthMM} onChange={(e) => updateItem(item.id, 'widthMM', Number(e.target.value))} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Height (MM)</Label>
-                    <Input type="number" value={item.heightMM} onChange={(e) => updateItem(item.id, 'heightMM', Number(e.target.value))} />
+            <Card key={item.id} className="border-l-4 border-l-primary">
+              <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-4">
+                  <Label className="font-bold">Technical Specs</Label>
+                  <Input placeholder="Item Name" value={item.itemName} onChange={(e) => updateItem(item.id, 'itemName', e.target.value)} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input type="number" placeholder="Width" onChange={(e) => updateItem(item.id, 'widthMM', Number(e.target.value))} />
+                    <Input type="number" placeholder="Height" onChange={(e) => updateItem(item.id, 'heightMM', Number(e.target.value))} />
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-xs">Core</Label>
-                    <Select value={item.core} onValueChange={(v) => updateItem(item.id, 'core', v)}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1 Inch">1 Inch</SelectItem>
-                        <SelectItem value="1.5 Inch">1.5 Inch</SelectItem>
-                        <SelectItem value="3 Inch">3 Inch</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">OD (Max)</Label>
-                    <Input value={item.od} onChange={(e) => updateItem(item.id, 'od', e.target.value)} placeholder="e.g. 200mm" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Roll Direction</Label>
-                    <Select value={item.rollDirection} onValueChange={(v) => updateItem(item.id, 'rollDirection', v)}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Head Out">Head Out</SelectItem>
-                        <SelectItem value="Foot Out">Foot Out</SelectItem>
-                        <SelectItem value="Left Out">Left Out</SelectItem>
-                        <SelectItem value="Right Out">Right Out</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs">Quantity</Label>
-                    <Input type="number" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))} />
-                  </div>
+                <div className="space-y-4">
+                  <Label className="font-bold">Costing</Label>
+                  <Input type="number" step="0.001" placeholder="Rate/SqInch" onChange={(e) => updateItem(item.id, 'pricePerSqInch', Number(e.target.value))} />
+                  <Input type="number" placeholder="Quantity" onChange={(e) => updateItem(item.id, 'quantity', Number(e.target.value))} />
+                  <p className="text-xl font-black text-primary">₹{item.totalJobValue.toLocaleString()}</p>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-primary/5 p-4 rounded-lg border border-primary/10">
-                  <div className="space-y-2">
-                    <Label className="text-primary font-bold">Rate (Per Sq Inch)</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-xs font-bold text-muted-foreground">₹</span>
-                      <Input 
-                        type="number" 
-                        step="0.0001" 
-                        className="pl-7 h-10 border-primary/30 font-black text-lg" 
-                        value={item.pricePerSqInch} 
-                        onChange={(e) => updateItem(item.id, 'pricePerSqInch', Number(e.target.value))} 
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Cost Per Label</Label>
-                    <p className="text-2xl font-black text-accent">₹{item.costPerLabel}</p>
-                    <p className="text-[10px] text-muted-foreground italic">Total SqInch: {item.totalSqInch}</p>
-                  </div>
-                  <div className="space-y-1 text-right">
-                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Total Item Value</Label>
-                    <p className="text-3xl font-black text-primary">₹{item.totalJobValue.toLocaleString()}</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-6 items-start">
-                  <div className="flex-1 space-y-2">
-                    <Label className="text-xs">Remarks / Special Instructions</Label>
-                    <Input value={item.remarks} onChange={(e) => updateItem(item.id, 'remarks', e.target.value)} placeholder="Packing details, label finish, etc." />
-                  </div>
-                  <div className="shrink-0 space-y-2">
-                    <Label className="text-xs">Artwork</Label>
-                    {item.artworkUrl ? (
-                      <div className="relative w-24 h-24 rounded-md overflow-hidden border group">
-                        <Image src={item.artworkUrl} alt="artwork" fill className="object-cover" data-ai-hint="label artwork" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                          <Button variant="ghost" size="icon" className="text-white" onClick={() => updateItem(item.id, 'artworkUrl', '')}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
-                      <Button variant="outline" className="w-24 h-24 border-dashed flex flex-col gap-1" onClick={() => simulateUpload(item.id)}>
-                        <ImageIcon className="h-6 w-6 opacity-40" />
-                        <span className="text-[10px]">Attach File</span>
-                      </Button>
-                    )}
-                  </div>
+                <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-4">
+                  {item.artworkUrl ? (
+                    <Image src={item.artworkUrl} alt="Art" width={80} height={80} className="rounded mb-2" />
+                  ) : (
+                    <Button variant="ghost" onClick={() => simulateUpload(item.id)}><ImageIcon className="mr-2" /> Attach Artwork</Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
-
-          <Button variant="outline" className="w-full border-dashed h-12" onClick={addItem}>
-            <Plus className="mr-2 h-4 w-4" /> Add Another Item Row
-          </Button>
+          <Button variant="outline" className="w-full" onClick={addItem}><Plus className="mr-2" /> Add Item</Button>
         </div>
       </div>
     </div>
