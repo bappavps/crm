@@ -21,7 +21,7 @@ import {
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, query, where, getDocs, deleteDoc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
-import { useToast } from "@/toast"
+import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
 export default function SlittingPage() {
