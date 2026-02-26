@@ -26,28 +26,28 @@ export default function EstimatePage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+  const { isLoading: authLoading } = useDoc(adminDocRef);
 
-  // Master Data Queries - Guarded by adminData
+  // Master Data Queries - Open to all signed-in users for estimation purposes
   const customersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'customers');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const materialsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'materials');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const machinesQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'machines');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const cylindersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'cylinders');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const { data: customers } = useCollection(customersQuery)
   const { data: materials } = useCollection(materialsQuery)
@@ -117,7 +117,7 @@ export default function EstimatePage() {
 
     toast({
       title: "Estimate Saved",
-      description: `Estimate for ${metadata.productCode} has been stored.`,
+      description: `Estimate for ${metadata.productCode} has been stored in technical registry.`,
     })
   }
 
@@ -127,14 +127,15 @@ export default function EstimatePage() {
     if (!metadata.customerId || !metadata.productCode) {
       toast({
         variant: "destructive",
-        title: "Validation Error",
-        description: "Save the estimate with customer details first.",
+        title: "Selection Required",
+        description: "Please select a Customer and enter a Product Code to generate a Sales Order.",
       })
       return
     }
 
+    const orderNumber = `SO-${Date.now().toString().slice(-6)}`;
     const orderData = {
-      orderNumber: `SO-${Date.now().toString().slice(-6)}`,
+      orderNumber,
       customerId: metadata.customerId,
       customerName: customers?.find(c => c.id === metadata.customerId)?.name || "Direct Customer",
       estimateId: "converted",
@@ -152,8 +153,8 @@ export default function EstimatePage() {
     addDocumentNonBlocking(collection(firestore, 'salesOrders'), orderData)
     
     toast({
-      title: "Conversion Successful",
-      description: `Created Sales Order ${orderData.orderNumber} from this calculation.`,
+      title: "Order Generated",
+      description: `Sales Order ${orderNumber} created successfully.`,
     })
   }
 
@@ -161,7 +162,7 @@ export default function EstimatePage() {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
         <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
-        <p>Initializing calculator...</p>
+        <p>Syncing authorization...</p>
       </div>
     )
   }

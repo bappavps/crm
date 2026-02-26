@@ -25,11 +25,38 @@ service cloud.firestore {
       allow write: if isAdmin() || isOwner(userId);
     }
 
+    match /salesUsers/{userId} {
+      allow get, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /managerUsers/{userId} {
+      allow get, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /operatorUsers/{userId} {
+      allow get, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /jobs/{jobId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
       allow update: if isAdmin() || (isSignedIn() && resource.data.salesUserId == request.auth.uid && resource.data.status == 'Pending Approval');
       allow delete: if isAdmin();
+    }
+
+    match /estimates/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /salesOrders/{id} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
     }
 
     match /system_settings/pricing_config {

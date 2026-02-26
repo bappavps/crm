@@ -93,7 +93,8 @@ export default function UserManagementPage() {
     const roleColMap: Record<string, string> = {
       'Admin': 'adminUsers',
       'Manager': 'managerUsers',
-      'Operator': 'operatorUsers'
+      'Operator': 'operatorUsers',
+      'Sales': 'salesUsers'
     }
 
     if (editingUser && editingUser.roleId !== roleId) {
@@ -138,7 +139,8 @@ export default function UserManagementPage() {
     const roleColMap: Record<string, string> = {
       'Admin': 'adminUsers',
       'Manager': 'managerUsers',
-      'Operator': 'operatorUsers'
+      'Operator': 'operatorUsers',
+      'Sales': 'salesUsers'
     }
 
     // 1. Delete from main collection
@@ -227,6 +229,7 @@ export default function UserManagementPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Admin">Admin (Full Access)</SelectItem>
+                    <SelectItem value="Sales">Sales (Jobs & Orders)</SelectItem>
                     <SelectItem value="Manager">Manager (Reports & Planning)</SelectItem>
                     <SelectItem value="Operator">Operator (Floor & Inventory)</SelectItem>
                   </SelectContent>
