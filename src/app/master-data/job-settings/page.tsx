@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,11 @@ export default function JobSettingsPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -82,7 +87,7 @@ export default function JobSettingsPage() {
     )
   }
 
-  const currentYear = new Date().getFullYear().toString()
+  const currentYear = isMounted ? new Date().getFullYear().toString() : 'YYYY'
   const displayYear = settings?.yearFormat === 'YYYY' ? currentYear : currentYear.slice(-2)
   const nextNum = (counter?.current_number || 0) + 1
   const previewNum = nextNum.toString().padStart(settings?.numberLength || 4, "0")
@@ -104,7 +109,7 @@ export default function JobSettingsPage() {
             <CardDescription>Define how Sales Job numbers are automatically generated.</CardDescription>
           </CardHeader>
           <CardContent>
-            {settingsLoading ? (
+            {settingsLoading || !isMounted ? (
               <div className="py-10 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : (
               <form onSubmit={handleSave} className="space-y-6">

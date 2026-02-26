@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -34,6 +34,11 @@ export default function JobPlanningPage() {
   const [newCoreName, setNewCoreName] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -174,6 +179,7 @@ export default function JobPlanningPage() {
   }
 
   const isJobLocked = (job: any) => {
+    if (!isMounted) return true; // Default to locked during SSR/initial mount
     if (isAdmin) return false;
     const now = new Date();
     const lockTime = new Date(job.edit_lock_time);
@@ -232,7 +238,7 @@ export default function JobPlanningPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="order_date">Order Date</Label>
-                  <Input id="order_date" name="order_date" type="date" required defaultValue={editingJob?.order_date || new Date().toISOString().split('T')[0]} />
+                  <Input id="order_date" name="order_date" type="date" required defaultValue={editingJob?.order_date || (isMounted ? new Date().toISOString().split('T')[0] : '')} />
                 </div>
               </div>
 
@@ -412,7 +418,7 @@ export default function JobPlanningPage() {
         </CardHeader>
         <CardContent className="p-0 border-t">
           <div className="overflow-x-auto">
-            <Table className="min-w-[3000px]">
+            <Table className="min-w-[3200px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="w-[100px] text-[10px] font-black border-r text-center">ACTION</TableHead>
@@ -421,25 +427,26 @@ export default function JobPlanningPage() {
                   <TableHead className="w-[120px] text-[10px] font-bold border-r">ORDER DATE</TableHead>
                   <TableHead className="w-[150px] text-[10px] font-bold border-r">PLAN STATUS</TableHead>
                   <TableHead className="w-[120px] text-[10px] font-bold border-r">PLATE NO</TableHead>
-                  <TableHead className="w-[200px] text-[10px] font-bold border-r">PRODUCT NAME</TableHead>
-                  <TableHead className="w-[120px] text-[10px] font-bold border-r">SIZE</TableHead>
-                  <TableHead className="w-[120px] text-[10px] font-bold border-r">REPEAT</TableHead>
-                  <TableHead className="w-[150px] text-[10px] font-bold border-r">SUBSTRATE</TableHead>
-                  <TableHead className="w-[120px] text-[10px] font-bold border-r">WIDTH (MM)</TableHead>
+                  <TableHead className="w-[200px] text-[10px] font-bold border-r">JOB NAME</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">LABEL SIZE</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">REPEAT LENGTH</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">MATERIAL</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">PAPER WIDTH</TableHead>
                   <TableHead className="w-[120px] text-[10px] font-bold border-r">DIE TYPE</TableHead>
-                  <TableHead className="w-[150px] text-[10px] font-bold border-r">ALLOC. METERS</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">ALLOCATE METERS</TableHead>
                   <TableHead className="w-[120px] text-[10px] font-bold border-r">LABEL QTY</TableHead>
-                  <TableHead className="w-[100px] text-[10px] font-bold border-r">CORE</TableHead>
-                  <TableHead className="w-[120px] text-[10px] font-bold border-r">QTY/ROLL</TableHead>
-                  <TableHead className="w-[150px] text-[10px] font-bold border-r">DIRECTION</TableHead>
+                  <TableHead className="w-[100px] text-[10px] font-bold border-r">CORE SIZE</TableHead>
+                  <TableHead className="w-[120px] text-[10px] font-bold border-r">QTY PER ROLL</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">ROLL DIRECTION</TableHead>
                   <TableHead className="w-[250px] text-[10px] font-bold border-r">REMARKS</TableHead>
                   <TableHead className="w-[150px] text-[10px] font-bold border-r">STATUS</TableHead>
+                  <TableHead className="w-[150px] text-[10px] font-bold border-r">CREATED DATE</TableHead>
                   <TableHead className="w-[150px] text-[10px] font-bold">CREATED BY</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={20} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={21} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : filteredJobs.map((j) => {
                   const locked = isJobLocked(j);
                   return (
@@ -485,6 +492,7 @@ export default function JobPlanningPage() {
                           {j.status}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-xs border-r">{isMounted && j.created_date ? new Date(j.created_date).toLocaleDateString() : '-'}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">{j.created_by_name}</TableCell>
                     </TableRow>
                   );

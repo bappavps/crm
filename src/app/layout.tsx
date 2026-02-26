@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={cn(inter.variable)} suppressHydrationWarning>
       <body className={cn("antialiased bg-background overflow-hidden font-sans", inter.className)} suppressHydrationWarning>
         <FirebaseClientProvider>
           <AuthInitializer />
