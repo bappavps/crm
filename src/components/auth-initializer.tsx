@@ -4,7 +4,7 @@
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth, useUser, useFirestore } from '@/firebase';
-import { doc, getDoc, setDoc, collection, getDocs, limit, query, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 
 /**
  * Handles authentication state changes, role initialization, and sample data seeding.
@@ -27,32 +27,42 @@ export function AuthInitializer() {
   // Handle Data Seeding and Admin Role Initialization
   useEffect(() => {
     if (user && firestore) {
-      // 1. Auto-initialize Admin role for the current user
+      // Identity check for the specific requested admin user
+      const isTargetAdmin = user.email === 'gm.shreelabel@gmail.com';
+      
       const adminRef = doc(firestore, 'adminUsers', user.uid);
-      getDoc(adminRef).then(async (snap) => {
-        if (!snap.exists()) {
+      const userRef = doc(firestore, 'users', user.uid);
+
+      getDoc(userRef).then(async (snap) => {
+        // Initialize or update user profile if it doesn't exist or is the target admin
+        if (!snap.exists() || isTargetAdmin) {
+          const userData = {
+            id: user.uid,
+            email: user.email || 'gm.shreelabel@gmail.com',
+            firstName: isTargetAdmin ? "Mriganka" : (user.displayName?.split(' ')[0] || 'System'),
+            lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || 'Admin'),
+            roleId: 'Admin', // Required for current security rules (hasRole helper)
+            role: 'admin',   // Specifically requested by user
+            isActive: true,
+            createdAt: snap.exists() ? snap.data().createdAt : serverTimestamp(),
+            updatedAt: serverTimestamp()
+          };
+
+          // 1. Create main User document
+          await setDoc(userRef, userData, { merge: true });
+          
+          // 2. Create Security Marker in adminUsers collection
+          // This allows isAdmin() helper in firestore.rules to return true
           await setDoc(adminRef, { 
             id: user.uid, 
-            username: user.displayName || user.email?.split('@')[0] || 'Admin', 
-            email: user.email,
+            email: userData.email,
             roleId: 'Admin',
             isActive: true,
-            createdAt: new Date().toISOString() 
-          });
-          
-          await setDoc(doc(firestore, 'users', user.uid), {
-            id: user.uid,
-            username: user.displayName || user.email?.split('@')[0] || 'Admin',
-            email: user.email,
-            firstName: 'System',
-            lastName: 'Admin',
-            roleId: 'Admin',
-            isActive: true,
-            createdAt: new Date().toISOString()
-          });
+            createdAt: userData.createdAt 
+          }, { merge: true });
         }
         
-        // 2. Seed Sample Data - Overwrites with clean demo data
+        // 3. Seed Sample Data - Ensures critical system configs exist
         seedCleanDemoData(firestore, user.uid);
       });
     }
@@ -61,9 +71,10 @@ export function AuthInitializer() {
   return null;
 }
 
+/**
+ * Ensures system constants exist in Firestore for the ERP logic to function correctly.
+ */
 async function seedCleanDemoData(db: any, userId: string) {
-  // We use a "flag" to ensure we only reset once per session if needed, 
-  // but for this specific request we want to ensure these specific documents exist.
   const batch = writeBatch(db);
 
   // --- SYSTEM SETTINGS ---
@@ -74,7 +85,7 @@ async function seedCleanDemoData(db: any, userId: string) {
     currencySymbol: "₹",
     pricingMode: "divider",
     lastUpdatedAt: serverTimestamp()
-  });
+  }, { merge: true });
 
   // --- ROLL SETTINGS ---
   const rollSettingsRef = doc(db, 'roll_settings', 'global_config');
@@ -86,7 +97,7 @@ async function seedCleanDemoData(db: any, userId: string) {
     separator: "-",
     barcodePrefix: "BC-",
     trackingYear: 2026
-  });
+  }, { merge: true });
 
   // --- COUNTERS ---
   const jobCounterRef = doc(db, 'counters', 'job_counter');
@@ -94,7 +105,7 @@ async function seedCleanDemoData(db: any, userId: string) {
     prefix: "JOB-",
     year: 2026,
     current_number: 1
-  });
+  }, { merge: true });
 
   // --- CLIENTS (Stored in 'customers' for UI compatibility) ---
   const clientRef = doc(db, 'customers', 'alexa-demo-id');
@@ -108,51 +119,14 @@ async function seedCleanDemoData(db: any, userId: string) {
     status: "Active",
     createdAt: serverTimestamp(),
     createdById: userId
-  });
+  }, { merge: true });
 
-  // --- SAMPLE JOB ---
-  const jobRef = doc(db, 'jobs', 'demo-job-1');
-  batch.set(jobRef, {
-    jobId: "demo-job-1",
-    jobNumber: "JOB-2026-0001",
-    jobType: "Repeat",
-    clientName: "Alexa Lifesciences",
-    salesUserName: "Sales User",
-    jobDate: serverTimestamp(),
-    status: "Pending Approval",
-    adminApproved: false,
-    remarks: "Send for Plates.",
-    artworkUrl: "https://picsum.photos/seed/alexa1/400/400",
-    items: [
-      {
-        id: "item-1",
-        material: "CHROMO",
-        brand: "ALEXA",
-        itemName: "NOREX 500ml",
-        widthMM: 55,
-        heightMM: 75,
-        core: "3 inch",
-        od: "9 inch OD",
-        rollDirection: "Bottom First",
-        quantity: 300000,
-        pricePerSqInch: 0.45,
-        totalSqInch: 6.6,
-        costPerLabel: 2.97,
-        totalJobValue: 891000,
-        artworkUrl: "https://picsum.photos/seed/alexa1/400/400"
-      }
-    ],
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    salesUserId: userId
-  });
-
-  // --- MASTER DATA FALLBACKS (To ensure dropdowns work) ---
+  // --- MASTER DATA FALLBACKS ---
   const matRef = doc(db, 'materials', 'chromo-demo');
-  batch.set(matRef, { id: 'chromo-demo', name: 'CHROMO', gsm: 80, ratePerSqMeter: 22.50 });
+  batch.set(matRef, { id: 'chromo-demo', name: 'CHROMO', gsm: 80, ratePerSqMeter: 22.50 }, { merge: true });
 
   const machRef = doc(db, 'machines', 'flexo-demo');
-  batch.set(machRef, { id: 'flexo-demo', name: 'UV Flexo 8-Color', maxPrintingWidthMm: 250, costPerHour: 1500 });
+  batch.set(machRef, { id: 'flexo-demo', name: 'UV Flexo 8-Color', maxPrintingWidthMm: 250, costPerHour: 1500 }, { merge: true });
 
   await batch.commit();
 }
