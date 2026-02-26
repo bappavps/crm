@@ -18,6 +18,10 @@ export const metadata: Metadata = {
   description: 'Specialized ERP for Narrow Web Flexo Printing',
 };
 
+/**
+ * Root Layout - Server Component
+ * Handles global providers and font injection.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -27,10 +31,14 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={cn(inter.className, "antialiased bg-background overflow-hidden")}>
         <FirebaseClientProvider>
+          {/* AuthInitializer handles redirection and profile provisioning */}
           <AuthInitializer />
+          
+          {/* AppShell provides the sidebar, header, and main container */}
           <AppShell>
             {children}
           </AppShell>
+          
           <Toaster />
         </FirebaseClientProvider>
       </body>

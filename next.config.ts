@@ -1,3 +1,4 @@
+
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
@@ -29,6 +30,16 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
     ],
+  },
+  // Increase chunk load timeout for stable loading in cloud environments
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.output = {
+        ...config.output,
+        chunkLoadTimeout: 30000, // 30 seconds
+      };
+    }
+    return config;
   },
 };
 
