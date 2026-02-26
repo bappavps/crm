@@ -4,19 +4,16 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { 
   FileDown, 
   FileUp, 
   Loader2, 
-  CheckCircle2, 
-  AlertTriangle, 
-  History, 
   Download,
   Boxes,
-  Database
+  Database,
+  History
 } from "lucide-react"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { 
@@ -25,7 +22,6 @@ import {
   writeBatch, 
   getDocs, 
   query, 
-  where, 
   setDoc,
   serverTimestamp,
   orderBy,
@@ -33,6 +29,13 @@ import {
 } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
+
+const TEMPLATE_HEADERS = [
+  "RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", 
+  "SQM", "GSM", "WEIGHT(KG)", "Purchase Rate", "WASTAGE", 
+  "DATE OF USE", "DATE OF RECEIVED", "Job no", "SIZE", "PRODUCT NAME", 
+  "Code", "Lot no/BATCH NO", "Date", "Company Rell no"
+];
 
 export default function StockImportPage() {
   const { toast } = useToast()
@@ -42,14 +45,12 @@ export default function StockImportPage() {
   const [progress, setProgress] = useState(0)
   const [importSummary, setSummary] = useState<any>(null)
 
-  // Authorization check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // History Query
   const logsQuery = useMemoFirebase(() => {
     if (!firestore || !adminData) return null;
     return query(collection(firestore, 'system_logs/stock_import_logs/history'), orderBy('timestamp', 'desc'), limit(10));
@@ -57,29 +58,35 @@ export default function StockImportPage() {
   const { data: history } = useCollection(logsQuery);
 
   const downloadTemplate = () => {
-    const template = [
+    const sampleData = [
       {
-        rollNo: "TLC-1001",
-        paperType: "CHROMO",
-        widthMm: 1020,
-        lengthMeters: 3000,
-        weightKg: 245,
-        supplier: "Avery Dennison",
-        status: "In Stock"
+        "RELL NO": "TLC-1001",
+        "PAPER COMPANY": "Avery Dennison",
+        "PAPER TYPE": "CHROMO",
+        "WIDTH (MM)": 1020,
+        "LENGTH (MTR)": 3000,
+        "SQM": 3060,
+        "GSM": 80,
+        "WEIGHT(KG)": 245,
+        "Purchase Rate": 22.50,
+        "WASTAGE": 0,
+        "DATE OF USE": "",
+        "DATE OF RECEIVED": new Date().toISOString().split('T')[0],
+        "Job no": "",
+        "SIZE": "1020mm",
+        "PRODUCT NAME": "Fasson Chromo",
+        "Code": "AW0331",
+        "Lot no/BATCH NO": "LOT-998877",
+        "Date": new Date().toISOString().split('T')[0],
+        "Company Rell no": "MFR-ROLL-01"
       }
     ];
 
-    const ws = XLSX.utils.json_to_sheet(template);
+    const ws = XLSX.utils.json_to_sheet(sampleData, { header: TEMPLATE_HEADERS });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Jumbo Stock Template");
-    
-    // Add validation instructions
-    XLSX.utils.sheet_add_aoa(ws, [
-      ["rollNo (Unique ID)", "paperType (Substrate)", "widthMm (Number)", "lengthMeters (Number)", "weightKg (Number)", "supplier", "status (In Stock)"]
-    ], { origin: "A1" });
-
-    XLSX.writeFile(wb, "jumbo_stock_template.xlsx");
-    toast({ title: "Template Downloaded", description: "Use this structure for bulk imports." });
+    XLSX.writeFile(wb, "jumbo_stock_template_v2.xlsx");
+    toast({ title: "Template Downloaded", description: "Use this 19-column structure for imports." });
   }
 
   const exportCurrentStock = async () => {
@@ -90,20 +97,31 @@ export default function StockImportPage() {
       const data = snapshot.docs.map(d => {
         const item = d.data();
         return {
-          rollNo: item.rollNo,
-          paperType: item.paperType,
-          widthMm: item.widthMm,
-          lengthMeters: item.lengthMeters,
-          weightKg: item.weightKg,
-          supplier: item.paperCompany,
-          status: item.status
+          "RELL NO": item.rollNo,
+          "PAPER COMPANY": item.paperCompany,
+          "PAPER TYPE": item.paperType,
+          "WIDTH (MM)": item.widthMm,
+          "LENGTH (MTR)": item.lengthMeters,
+          "SQM": item.sqm,
+          "GSM": item.gsm,
+          "WEIGHT(KG)": item.weightKg,
+          "Purchase Rate": item.purchaseRate,
+          "WASTAGE": item.wastage || 0,
+          "DATE OF USE": item.dateOfUse || "",
+          "DATE OF RECEIVED": item.receivedDate || "",
+          "Job no": item.jobNo || "",
+          "SIZE": item.size || "",
+          "PRODUCT NAME": item.productName || "",
+          "Code": item.code || "",
+          "Lot no/BATCH NO": item.lotNo || "",
+          "Date": item.date || "",
+          "Company Rell no": item.companyRollNo || ""
         };
       });
 
-      const ws = XLSX.utils.json_to_sheet(data);
+      const ws = XLSX.utils.json_to_sheet(data, { header: TEMPLATE_HEADERS });
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Current Stock");
-      
       const date = new Date().toISOString().split('T')[0].replace(/-/g, '_');
       XLSX.writeFile(wb, `jumbo_stock_export_${date}.xlsx`);
       toast({ title: "Export Complete", description: `Exported ${data.length} records.` });
@@ -133,13 +151,11 @@ export default function StockImportPage() {
 
         if (data.length === 0) throw new Error("File is empty.");
 
-        // Validate Headers
         const firstRow = data[0] as any;
-        const required = ['rollNo', 'paperType', 'widthMm', 'lengthMeters', 'weightKg'];
+        const required = ["RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", "Lot no/BATCH NO"];
         const missing = required.filter(k => !(k in firstRow));
         if (missing.length > 0) throw new Error(`Missing columns: ${missing.join(', ')}`);
 
-        // Fetch existing rolls to prevent duplicates
         const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
         const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
 
@@ -147,37 +163,53 @@ export default function StockImportPage() {
         let skipped = 0;
         let maxSerial = 0;
 
-        // Process in batches
         const totalRows = data.length;
         for (let i = 0; i < totalRows; i += 50) {
           const batch = writeBatch(firestore);
           const chunk = data.slice(i, i + 50);
 
           chunk.forEach((row: any) => {
-            if (existingRolls.has(row.rollNo)) {
+            const rollId = String(row["RELL NO"]);
+            if (existingRolls.has(rollId)) {
               skipped++;
               return;
             }
 
+            const width = Number(row["WIDTH (MM)"]);
+            const length = Number(row["LENGTH (MTR)"]);
+            const sqm = Number(row["SQM"]) || (width * length / 1000);
+
             const docRef = doc(collection(firestore, 'jumbo_stock'));
             batch.set(docRef, {
-              rollNo: row.rollNo,
-              paperType: row.paperType,
-              widthMm: Number(row.widthMm),
-              lengthMeters: Number(row.lengthMeters),
-              weightKg: Number(row.weightKg),
-              paperCompany: row.supplier || "Unknown",
+              rollNo: rollId,
+              barcode: rollId,
+              paperCompany: row["PAPER COMPANY"],
+              paperType: row["PAPER TYPE"],
+              widthMm: width,
+              lengthMeters: length,
+              sqm: sqm,
+              gsm: Number(row["GSM"]),
+              weightKg: Number(row["WEIGHT(KG)"]),
+              purchaseRate: Number(row["Purchase Rate"]),
+              wastage: Number(row["WASTAGE"] || 0),
+              dateOfUse: row["DATE OF USE"] || "",
+              receivedDate: row["DATE OF RECEIVED"] || new Date().toISOString(),
+              jobNo: row["Job no"] || "",
+              size: row["SIZE"] || "",
+              productName: row["PRODUCT NAME"] || "",
+              code: row["Code"] || "",
+              lotNo: row["Lot no/BATCH NO"] || "",
+              date: row["Date"] || "",
+              companyRollNo: row["Company Rell no"] || "",
               status: "In Stock",
               createdAt: new Date().toISOString(),
               createdById: user.uid
             });
 
-            // Track highest numeric sequence for counter sync
-            const numericPart = parseInt(row.rollNo.replace(/\D/g, ''));
+            const numericPart = parseInt(rollId.replace(/\D/g, ''));
             if (!isNaN(numericPart) && numericPart > maxSerial) {
               maxSerial = numericPart;
             }
-
             inserted++;
           });
 
@@ -185,14 +217,11 @@ export default function StockImportPage() {
           setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
         }
 
-        // Sync Counter
         if (maxSerial > 0) {
           const counterRef = doc(firestore, 'counters', 'jumbo_roll');
-          // Note: Simplified logic, usually subtract startNumber if prefix is involved
           await setDoc(counterRef, { current_number: maxSerial - 1000 }, { merge: true });
         }
 
-        // Log history
         const logRef = doc(collection(firestore, 'system_logs/stock_import_logs/history'));
         await setDoc(logRef, {
           fileName: file.name,
@@ -221,8 +250,8 @@ export default function StockImportPage() {
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Bulk Stock Management</h2>
-          <p className="text-muted-foreground">Import legacy jumbo inventory or export the entire technical registry.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-primary">Bulk Stock Management (GRN V2)</h2>
+          <p className="text-muted-foreground">Import legacy jumbo inventory with full 19-column technical mapping.</p>
         </div>
         <Badge variant="outline" className="h-8 px-4 font-bold text-lg">ADMIN CONSOLE</Badge>
       </div>
@@ -234,7 +263,7 @@ export default function StockImportPage() {
               <CardTitle className="flex items-center gap-2">
                 <FileUp className="h-5 w-5 text-primary" /> Stock Import (Excel)
               </CardTitle>
-              <CardDescription>Upload stock using the standard .xlsx template to maintain numbering logic.</CardDescription>
+              <CardDescription>Upload stock using the standard .xlsx template to maintain numbering and pharma traceability.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
@@ -259,7 +288,7 @@ export default function StockImportPage() {
                 <Boxes className="h-12 w-12 mx-auto text-muted-foreground/40" />
                 <div className="space-y-1">
                   <p className="font-bold">Click or drag Excel file here</p>
-                  <p className="text-xs text-muted-foreground">Only .xlsx files are supported. Required columns: rollNo, paperType, widthMm...</p>
+                  <p className="text-xs text-muted-foreground">Only .xlsx files are supported. Template v2 required.</p>
                 </div>
               </div>
 
@@ -317,9 +346,6 @@ export default function StockImportPage() {
                     </div>
                   </div>
                 ))}
-                {(!history || history.length === 0) && (
-                  <div className="text-center py-10 text-muted-foreground text-xs italic">No import history found.</div>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -327,15 +353,21 @@ export default function StockImportPage() {
 
         <Card className="h-fit">
           <CardHeader>
-            <CardTitle className="text-sm font-bold text-primary flex items-center gap-2 uppercase tracking-wider">
-              <AlertTriangle className="h-4 w-4" /> Technical Safety
-            </CardTitle>
+            <CardTitle className="text-sm font-bold text-primary uppercase">Full Schema Registry</CardTitle>
           </CardHeader>
-          <CardContent className="text-xs space-y-4 text-muted-foreground leading-relaxed">
-            <p><strong className="text-foreground">Uniqueness Enforcement:</strong> The system identifies existing stock by `rollNo`. Rows matching existing rolls are skipped to prevent traceability corruption.</p>
-            <p><strong className="text-foreground">Atomic Sequencing:</strong> After import, the global counter is synchronized to the highest imported roll number. This ensures that manually imported legacy stock doesn't collide with future auto-generated rolls.</p>
-            <div className="bg-amber-50 border border-amber-200 p-3 rounded-md text-amber-800 font-medium">
-              Important: Ensure all numeric columns (width, length, weight) are valid numbers in Excel before uploading.
+          <CardContent className="text-[10px] space-y-2 text-muted-foreground">
+            <p>1. <strong>RELL NO</strong> (Primary Key)</p>
+            <p>2. <strong>PAPER COMPANY</strong></p>
+            <p>3. <strong>PAPER TYPE</strong> (Substrate)</p>
+            <p>4. <strong>WIDTH (MM)</strong></p>
+            <p>5. <strong>LENGTH (MTR)</strong></p>
+            <p>6. <strong>SQM</strong> (Auto-calc if null)</p>
+            <p>7. <strong>GSM</strong></p>
+            <p>8. <strong>WEIGHT(KG)</strong></p>
+            <p>9. <strong>Lot no/BATCH NO</strong> (Mandatory)</p>
+            <p>10. <strong>Company Rell no</strong> (Mandatory)</p>
+            <div className="pt-2 border-t mt-4 text-[9px] italic">
+              * The system preserves pharmaceutical traceability across all 19 technical columns.
             </div>
           </CardContent>
         </Card>
