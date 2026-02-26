@@ -45,6 +45,18 @@
         "totalJobValue": { "type": "number" },
         "artworkUrl": { "type": "string" }
       }
+    },
+    "InventoryAlert": {
+      "title": "InventoryAlert",
+      "type": "object",
+      "properties": {
+        "rollId": { "type": "string" },
+        "alertType": { "type": "string" },
+        "message": { "type": "string" },
+        "severity": { "type": "string", "enum": ["Low", "Medium", "Critical"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "resolved": { "type": "boolean" }
+      }
     }
   },
   "auth": {
@@ -55,6 +67,7 @@
     "/jobs/{jobId}": { "schema": { "$ref": "#/backend/entities/JobPost" }, "description": "Sales job entries." },
     "/system_settings/pricing_config": { "schema": { "type": "object" }, "description": "Global pricing dividers." },
     "/roll_settings/global_config": { "schema": { "type": "object" }, "description": "Inventory numbering logic." },
-    "/counters/{counterId}": { "schema": { "type": "object" }, "description": "Atomic sequence counters." }
+    "/counters/{counterId}": { "schema": { "type": "object" }, "description": "Atomic sequence counters." },
+    "/alerts/{alertId}": { "schema": { "$ref": "#/backend/entities/InventoryAlert" }, "description": "Automated inventory technical alerts." }
   }
 }

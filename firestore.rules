@@ -1,3 +1,4 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -67,6 +68,11 @@ service cloud.firestore {
     match /inventoryItems/{id} {
       allow read: if isSignedIn();
       allow write: if isAdmin() || (isSignedIn() && !isMigrationLocked());
+    }
+
+    match /alerts/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     // --- CONFIGURATION & COUNTERS (Admin Only Write) ---

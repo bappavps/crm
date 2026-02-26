@@ -1,3 +1,4 @@
+
 "use client"
 
 import { 
@@ -28,7 +29,8 @@ import {
   Binary,
   ShieldAlert,
   Database,
-  FileUp
+  FileUp,
+  LineChart
 } from "lucide-react"
 import {
   Sidebar,
@@ -70,6 +72,7 @@ const navGroups = [
   {
     label: "Inventory",
     items: [
+      { name: 'Stock Dashboard', icon: LineChart, href: '/inventory/dashboard' },
       { name: 'Stock Registry', icon: Package, href: '/inventory' },
       { name: 'Slitting (Conversion)', icon: Scissors, href: '/inventory/slitting' },
       { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods' },

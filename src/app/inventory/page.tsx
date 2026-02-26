@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
@@ -19,7 +20,8 @@ import {
   Download,
   Eye,
   LayoutGrid,
-  Info
+  Info,
+  AlertCircle
 } from "lucide-react"
 import { 
   Dialog, 
@@ -39,6 +41,7 @@ import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@
 import { collection, doc } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
+import { cn } from "@/lib/utils"
 
 type SortField = 'barcode' | 'itemType' | 'status' | 'receivedDate' | 'sqm';
 type SortOrder = 'asc' | 'desc';
@@ -92,8 +95,14 @@ export default function InventoryPage() {
     return collection(firestore, 'jumbo_stock');
   }, [firestore, user, adminData])
 
+  const alertsQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return collection(firestore, 'alerts');
+  }, [firestore, user, adminData])
+
   const { data: inventory, isLoading: itemsLoading } = useCollection(inventoryQuery)
   const { data: jumbos, isLoading: jumbosLoading } = useCollection(jumboQuery)
+  const { data: alerts } = useCollection(alertsQuery)
 
   const combinedStock = useMemo(() => {
     const jumboItems = jumbos?.map(j => ({ 
@@ -112,7 +121,8 @@ export default function InventoryPage() {
       receivedDate: j.receivedDate,
       lastUsedDate: j.dateOfUse || "-",
       purchaseRate: j.purchaseRate,
-      status: j.status || 'In Stock'
+      status: j.status || 'In Stock',
+      hasAlert: alerts?.some(a => a.rollId === j.rollNo && !a.resolved)
     })) || [];
     
     const otherItems = inventory?.map(i => ({
@@ -120,7 +130,8 @@ export default function InventoryPage() {
       id: i.id,
       companyRollNo: i.parentRollNo || "-",
       receivedDate: i.createdAt ? new Date(i.createdAt).toISOString().split('T')[0] : "-",
-      lastUsedDate: i.updatedAt ? new Date(i.updatedAt).toISOString().split('T')[0] : "-"
+      lastUsedDate: i.updatedAt ? new Date(i.updatedAt).toISOString().split('T')[0] : "-",
+      hasAlert: alerts?.some(a => a.rollId === i.barcode && !a.resolved)
     })) || [];
 
     let result = [...jumboItems, ...otherItems];
@@ -147,7 +158,7 @@ export default function InventoryPage() {
     });
 
     return result;
-  }, [jumbos, inventory, searchQuery, categoryFilter, statusFilter, sortField, sortOrder]);
+  }, [jumbos, inventory, alerts, searchQuery, categoryFilter, statusFilter, sortField, sortOrder]);
 
   const stats = useMemo(() => {
     const totalSqm = combinedStock.reduce((acc, item) => acc + (Number(item.sqm) || 0), 0)
@@ -315,8 +326,13 @@ export default function InventoryPage() {
                 {isLoading ? (
                   <TableRow><TableCell colSpan={13} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : combinedStock.map((item) => (
-                  <TableRow key={item.id} className="group">
-                    {visibleColumns.rollId && <TableCell className="font-mono text-xs font-bold text-primary">{item.barcode}</TableCell>}
+                  <TableRow key={item.id} className={cn("group transition-colors", item.hasAlert && "bg-destructive/10 hover:bg-destructive/20")}>
+                    {visibleColumns.rollId && (
+                      <TableCell className="font-mono text-xs font-bold text-primary flex items-center gap-2">
+                        {item.hasAlert && <AlertCircle className="h-3 w-3 text-destructive" />}
+                        {item.barcode}
+                      </TableCell>
+                    )}
                     {visibleColumns.companyRollNo && <TableCell className="text-[10px] font-mono text-muted-foreground">{item.companyRollNo}</TableCell>}
                     {visibleColumns.paperCompany && <TableCell className="text-xs">{item.paperCompany || "-"}</TableCell>}
                     {visibleColumns.paperType && <TableCell><Badge variant="outline" className="text-[9px] h-5">{item.itemType}</Badge></TableCell>}
