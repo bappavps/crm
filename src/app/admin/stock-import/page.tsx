@@ -23,6 +23,7 @@ import {
   getDocs, 
   query, 
   setDoc,
+  getDoc,
   serverTimestamp,
   orderBy,
   limit
@@ -49,7 +50,7 @@ export default function StockImportPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 
   const logsQuery = useMemoFirebase(() => {
     if (!firestore || !adminData) return null;
@@ -143,18 +144,18 @@ export default function StockImportPage() {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const ab = evt.target?.result as ArrayBuffer;
+        const wb = XLSX.read(new Uint8Array(ab), { type: 'array' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws);
 
-        if (data.length === 0) throw new Error("File is empty.");
+        if (data.length === 0) throw new Error("File is empty or invalid.");
 
         const firstRow = data[0] as any;
         const required = ["RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", "Lot no/BATCH NO"];
         const missing = required.filter(k => !(k in firstRow));
-        if (missing.length > 0) throw new Error(`Missing columns: ${missing.join(', ')}`);
+        if (missing.length > 0) throw new Error(`Missing columns: ${missing.join(', ')}. Please use the provided template.`);
 
         const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
         const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
@@ -217,9 +218,17 @@ export default function StockImportPage() {
           setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
         }
 
+        // Update sequence counter intelligently based on startNumber setting
         if (maxSerial > 0) {
+          const settingsRef = doc(firestore, 'roll_settings', 'global_config');
+          const settingsSnap = await getDoc(settingsRef);
+          const startNum = settingsSnap.exists() ? Number(settingsSnap.data().startNumber) || 1000 : 1000;
+          
           const counterRef = doc(firestore, 'counters', 'jumbo_roll');
-          await setDoc(counterRef, { current_number: maxSerial - 1000 }, { merge: true });
+          await setDoc(counterRef, { 
+            current_number: Math.max(0, maxSerial - startNum),
+            year: new Date().getFullYear().toString()
+          }, { merge: true });
         }
 
         const logRef = doc(collection(firestore, 'system_logs/stock_import_logs/history'));
@@ -241,9 +250,14 @@ export default function StockImportPage() {
         setIsProcessing(false);
       }
     };
-    reader.readAsBinaryString(file);
+    reader.onerror = () => {
+      toast({ variant: "destructive", title: "File Error", description: "Could not read the uploaded file." });
+      setIsProcessing(false);
+    }
+    reader.readAsArrayBuffer(file);
   }
 
+  if (authLoading) return <div className="p-20 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
   if (!adminData) return <div className="p-20 text-center text-muted-foreground">Admin Access Required.</div>
 
   return (
