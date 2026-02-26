@@ -370,16 +370,16 @@ export default function UserManagementPage() {
 
       {/* --- ROLE DIALOG --- */}
       <Dialog open={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden flex flex-col p-0">
-          <form onSubmit={handleSaveRole} className="flex flex-col h-full">
-            <DialogHeader className="p-6 pb-2">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden flex flex-col p-0 gap-0">
+          <form onSubmit={handleSaveRole} className="flex flex-col h-full overflow-hidden">
+            <DialogHeader className="p-6 pb-2 shrink-0 border-b bg-background">
               <DialogTitle className="text-xl font-black uppercase">
                 {editingRole ? 'Edit System Role' : 'Create New System Role'}
               </DialogTitle>
               <DialogDescription className="font-medium">Define group-level capabilities for operational modules.</DialogDescription>
             </DialogHeader>
             
-            <div className="p-6 space-y-6 overflow-y-auto flex-1 scrollbar-thin">
+            <div className="p-6 space-y-6 overflow-y-auto flex-1 scrollbar-thin bg-background/50">
               <div className="space-y-2">
                 <Label htmlFor="roleName" className="text-xs font-black uppercase">Role Name</Label>
                 <Input id="roleName" name="roleName" defaultValue={editingRole?.name} placeholder="e.g. Accounts Manager" required />
@@ -415,7 +415,7 @@ export default function UserManagementPage() {
               </div>
             </div>
 
-            <DialogFooter className="p-6 bg-muted/30 border-t">
+            <DialogFooter className="p-6 bg-muted/30 border-t shrink-0">
               <Button type="submit" className="w-full font-black uppercase tracking-widest">{editingRole ? 'Update Role' : 'Initialize Role'}</Button>
             </DialogFooter>
           </form>
