@@ -26,7 +26,8 @@ export function AuthInitializer() {
 
   // Handle Data Seeding and Admin Role Initialization
   useEffect(() => {
-    if (user && firestore) {
+    // Only attempt provisioning if the user is signed in and has an email (not anonymous)
+    if (user && firestore && user.email) {
       // Identity check for the specific requested admin user
       const isTargetAdmin = user.email === 'gm.shreelabel@gmail.com';
       
@@ -38,11 +39,11 @@ export function AuthInitializer() {
         if (!snap.exists() || isTargetAdmin) {
           const userData = {
             id: user.uid,
-            email: user.email || 'gm.shreelabel@gmail.com',
+            email: user.email,
             firstName: isTargetAdmin ? "Mriganka" : (user.displayName?.split(' ')[0] || 'System'),
-            lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || 'Admin'),
-            roleId: 'Admin', // Required for current security rules (hasRole helper)
-            role: 'admin',   // Specifically requested by user
+            lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || 'User'),
+            roleId: isTargetAdmin ? 'Admin' : 'Operator', 
+            role: isTargetAdmin ? 'admin' : 'user',
             isActive: true,
             createdAt: snap.exists() ? snap.data().createdAt : serverTimestamp(),
             updatedAt: serverTimestamp()
@@ -53,13 +54,15 @@ export function AuthInitializer() {
           
           // 2. Create Security Marker in adminUsers collection (Non-blocking)
           // This allows isAdmin() helper in firestore.rules to return true
-          setDocumentNonBlocking(adminRef, { 
-            id: user.uid, 
-            email: userData.email,
-            roleId: 'Admin',
-            isActive: true,
-            createdAt: userData.createdAt 
-          }, { merge: true });
+          if (isTargetAdmin) {
+            setDocumentNonBlocking(adminRef, { 
+              id: user.uid, 
+              email: userData.email,
+              roleId: 'Admin',
+              isActive: true,
+              createdAt: userData.createdAt 
+            }, { merge: true });
+          }
         }
         
         // 3. Seed Sample Data - Ensures critical system configs exist
