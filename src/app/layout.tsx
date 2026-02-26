@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 
 const inter = Inter({
   subsets: ["latin"],
-  display: "swap",
   variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -25,8 +25,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn(inter.variable)} suppressHydrationWarning>
-      <body className={cn("antialiased bg-background overflow-hidden font-sans", inter.className)} suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
+      <body className="antialiased bg-background overflow-hidden font-sans">
         <FirebaseClientProvider>
           <AuthInitializer />
           <AppShell>

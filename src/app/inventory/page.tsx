@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -50,6 +50,7 @@ export default function InventoryPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const [isMounted, setIsMounted] = useState(false)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<any>(null)
   
@@ -59,6 +60,10 @@ export default function InventoryPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [sortField, setSortField] = useState<SortField>('barcode')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Column Visibility
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
@@ -193,6 +198,14 @@ export default function InventoryPage() {
     if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortOrder('asc'); }
   };
+
+  if (!isMounted) {
+    return (
+      <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   const isLoading = itemsLoading || jumbosLoading
 

@@ -40,6 +40,14 @@ export default function Dashboard() {
     setIsMounted(true);
   }, []);
 
+  if (!isMounted) {
+    return (
+      <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -106,20 +114,16 @@ export default function Dashboard() {
             <CardTitle>Production vs Orders</CardTitle>
           </CardHeader>
           <CardContent className="h-[300px] flex items-center justify-center">
-            {!isMounted ? (
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/20" />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="orders" fill="#E4892B" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="production" fill="#A33131" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="orders" fill="#E4892B" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="production" fill="#A33131" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
         <Card className="col-span-3">
@@ -127,19 +131,15 @@ export default function Dashboard() {
             <CardTitle>Revenue Stream</CardTitle>
           </CardHeader>
           <CardContent className="h-[300px] flex items-center justify-center">
-            {!isMounted ? (
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/20" />
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="sales" stroke="#E4892B" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            )}
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="sales" stroke="#E4892B" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       </div>

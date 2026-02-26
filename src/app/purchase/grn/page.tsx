@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -48,6 +49,7 @@ export default function GRNPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const [isMounted, setIsMounted] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isManualId, setIsManualId] = useState(false)
@@ -56,6 +58,10 @@ export default function GRNPage() {
   // Sort State
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Filter State
   const [filters, setFilters] = useState({
@@ -94,8 +100,15 @@ export default function GRNPage() {
     lotNo: "",
     companyRollNo: "",
     dateOfUse: "",
-    date: new Date().toISOString().split('T')[0]
+    date: ""
   })
+
+  // Set initial date on mount to avoid hydration mismatch
+  useEffect(() => {
+    if (isMounted) {
+      setFormData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
+    }
+  }, [isMounted])
 
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -297,6 +310,14 @@ export default function GRNPage() {
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  if (!isMounted) {
+    return (
+      <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   if (!adminData && !adminLoading) {
