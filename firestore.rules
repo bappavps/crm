@@ -1,63 +1,260 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    /**
+     * ERP SYSTEM SECURITY RULES - PROTOTYPING PHASE
+     * 
+     * Philosophy:
+     * This ruleset enforces a strict Role-Based Access Control (RBAC) and User-Ownership model. 
+     * While data types and internal schema structures are kept flexible to allow for rapid 
+     * development iteration, the "Who" (Authorization) is strictly controlled.
+     * 
+     * Key Security Decisions:
+     * 1. Admin Supremacy: Users with a document in `/_system_roles/admins/{userId}` 
+     *    possess full read/write access across the entire database.
+     * 2. Denormalization for Performance: Authorization-critical IDs (like `ownerId` or 
+     *    `salesOrderCreatedByUserId`) are expected to be denormalized onto child 
+     *    documents. This allows rules to authorize access without costly `get()` calls.
+     * 3. Ownership & Creation: For transactional data (Artworks, Estimates, Orders), 
+     *    the user who creates the document is granted persistent ownership.
+     * 4. Master Data Posture: Global reference data (Units, Machines, Defects) is 
+     *    publicly readable by all authenticated staff but write-restricted to Admins.
+     * 5. Flat Hierarchy Security: Entities like `InventoryLot` use a flat collection 
+     *    structure where parent-child relationships are tracked via fields, 
+     *    ensuring high performance for inventory lookups.
+     */
+
+    // --- GLOBAL HELPER FUNCTIONS ---
+
+    /** @description Checks if the request is from an authenticated user. */
     function isSignedIn() {
       return request.auth != null;
     }
 
+    /** @description Checks if the user has an entry in the system admin collection. */
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+      return isSignedIn() && exists(/_system_roles/admins/$(request.auth.uid));
     }
 
-    function isInternalStaff() {
-      return isSignedIn();
-    }
-
+    /** @description Checks if the provided UID matches the authenticated user's UID. */
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    match /adminUsers/{userId} { allow read: if isInternalStaff() || isOwner(userId); allow write: if isAdmin(); }
-    match /users/{userId} {
-      allow get, list: if isInternalStaff() || isOwner(userId);
-      allow create: if isOwner(userId) || isAdmin();
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin();
+    /** @description Verifies ownership and ensures the resource exists before modification. */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
     }
 
-    match /jumbo_stock/{id} { allow read, write: if isInternalStaff(); }
-    match /inventoryItems/{id} { allow read, write: if isInternalStaff(); }
-    match /job_planning/{id} { 
-      allow read: if isInternalStaff(); 
-      allow create: if isInternalStaff();
-      allow update: if isAdmin() || (isInternalStaff() && resource.data.edit_lock_time > string(request.time));
-      allow delete: if isAdmin() || (isInternalStaff() && resource.data.edit_lock_time > string(request.time));
+    // --- COLLECTION RULES ---
+
+    /**
+     * @description System administrative roles. Presence of a document grants global admin access.
+     * @path /_system_roles/admins/{userId}
+     * @allow (get, list) if isAdmin();
+     * @deny (write) if !isAdmin();
+     * @principle Restricts administrative privilege management to existing admins.
+     */
+    match /_system_roles/admins/{userId} {
+      allow get, list: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
-    match /job_audit_log/{id} { allow read: if isInternalStaff(); allow create: if isInternalStaff(); }
-    match /jobs/{id} { allow read, write: if isInternalStaff(); }
-    match /job_settings/{id} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
-    match /counters/{id} { allow read: if isInternalStaff(); allow write: if isInternalStaff(); }
-    match /notifications/{id} { allow read, write: if isInternalStaff(); }
-    
-    match /settings/{id} { allow read: if isInternalStaff(); allow write: if isAdmin(); }
-    match /customers/{id} { allow read, write: if isInternalStaff(); }
-    match /materials/{id} { allow read, write: if isInternalStaff(); }
-    match /machines/{id} { allow read, write: if isInternalStaff(); }
-    match /cylinders/{id} { allow read, write: if isInternalStaff(); }
-    match /dies/{id} { allow read, write: if isInternalStaff(); }
-    match /suppliers/{id} { allow read, write: if isInternalStaff(); }
-    match /estimates/{id} { allow read, write: if isInternalStaff(); }
-    match /salesOrders/{id} { allow read, write: if isInternalStaff(); }
-    match /jobCards/{id} { allow read, write: if isInternalStaff(); }
-    match /boms/{id} { allow read, write: if isInternalStaff(); }
-    match /workOrders/{id} { allow read, write: if isInternalStaff(); }
-    match /artworks/{id} { allow read, write: if isInternalStaff(); }
-    match /qualityChecks/{id} { allow read, write: if isInternalStaff(); }
-    match /dispatchChallans/{id} { allow read, write: if isInternalStaff(); }
-    match /invoices/{id} { allow read, write: if isInternalStaff(); }
-    match /purchaseOrders/{id} { allow read, write: if isInternalStaff(); }
-    match /core_sizes/{id} { allow read, write: if isInternalStaff(); }
+
+    /**
+     * @description Profiles for all system users.
+     * @path /users/{userId}
+     * @allow (create) if isOwner(userId);
+     * @allow (update) if isOwner(userId) || isAdmin();
+     * @principle Self-creation and profile management with Admin oversight.
+     */
+    match /users/{userId} {
+      allow get, list: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if (isOwner(userId) || isAdmin()) && resource != null;
+      allow delete: if isAdmin() && resource != null;
+    }
+
+    /**
+     * @description Master data for customers, suppliers, units, machines, dies, plates, and materials.
+     * @path /{masterDataCollection}/{docId}
+     * @allow (get, list) if isSignedIn();
+     * @allow (write) if isAdmin();
+     * @principle Public read for operational efficiency; Admin-only writes for data integrity.
+     */
+    match /{collectionName}/{docId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin() && collectionName in [
+        'customers', 'suppliers', 'unitsOfMeasure', 'machines', 
+        'dies', 'plates', 'rawMaterials', 'finishedGoodDefinitions', 'defects'
+      ];
+    }
+
+    /**
+     * @description Physical inventory lots (Jumbo, Slitted, and Sub-Slitted rolls).
+     * @path /inventoryLots/{inventoryLotId}
+     * @allow (get, list) if isSignedIn();
+     * @allow (write) if isSignedIn();
+     * @principle Operational access for inventory and production staff.
+     */
+    match /inventoryLots/{inventoryLotId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource != null;
+    }
+
+    /**
+     * @description Product artwork files managed by users.
+     * @path /artworks/{artworkId}
+     * @allow (create) if request.resource.data.uploadedByUserId == request.auth.uid;
+     * @allow (update, delete) if isExistingOwner(resource.data.uploadedByUserId) || isAdmin();
+     * @principle Ownership based on the 'uploadedByUserId' field.
+     */
+    match /artworks/{artworkId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.uploadedByUserId == request.auth.uid;
+      allow update, delete: if (isExistingOwner(resource.data.uploadedByUserId) || isAdmin());
+    }
+
+    /**
+     * @description Cost estimates for printing jobs.
+     * @path /estimates/{estimateId}
+     * @allow (create) if request.resource.data.createdByUserId == request.auth.uid;
+     * @allow (update, delete) if isExistingOwner(resource.data.createdByUserId) || isAdmin();
+     * @principle Enforces that only the creator or an admin can modify an estimate.
+     */
+    match /estimates/{estimateId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.createdByUserId == request.auth.uid;
+      allow update, delete: if (isExistingOwner(resource.data.createdByUserId) || isAdmin());
+    }
+
+    /**
+     * @description Bills of Material (BOM) for production.
+     * @path /billsOfMaterial/{billOfMaterialId}
+     * @allow (create) if isSignedIn();
+     * @allow (update, delete) if isAdmin() || isExistingOwner(resource.data.createdByUserId);
+     * @principle Requires owner or admin for modifications.
+     */
+    match /billsOfMaterial/{billOfMaterialId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.createdByUserId));
+
+      // BOM Subcollections rely on denormalized billOfMaterialCreatedByUserId
+      match /{sub}/{subId} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.billOfMaterialCreatedByUserId != null;
+        allow update, delete: if (isAdmin() || isExistingOwner(resource.data.billOfMaterialCreatedByUserId));
+      }
+    }
+
+    /**
+     * @description Confirmed Sales Orders and their nested line items.
+     * @path /salesOrders/{salesOrderId}
+     * @allow (create) if request.resource.data.createdByUserId == request.auth.uid;
+     * @allow (update, delete) if isExistingOwner(resource.data.createdByUserId) || isAdmin();
+     * @principle Secure transactional access via denormalized user IDs.
+     */
+    match /salesOrders/{salesOrderId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.createdByUserId == request.auth.uid;
+      allow update, delete: if (isExistingOwner(resource.data.createdByUserId) || isAdmin());
+
+      match /items/{itemId} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.salesOrderCreatedByUserId != null;
+        allow update, delete: if (isAdmin() || isExistingOwner(resource.data.salesOrderCreatedByUserId));
+      }
+    }
+
+    /**
+     * @description Job Cards for production. Authorized for assigned operators or creators.
+     * @path /jobCards/{jobCardId}
+     * @allow (get, list) if isSignedIn();
+     * @allow (update) if isAdmin() || isOwner(resource.data.assignedOperatorId) || isOwner(resource.data.jobCardCreatedByUserId);
+     * @principle Multi-party authorization (Operator, Manager, Creator).
+     */
+    match /jobCards/{jobCardId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if (isAdmin() || isOwner(resource.data.assignedOperatorId) || isOwner(resource.data.jobCardCreatedByUserId));
+
+      // Subcollections: ProductionLogs, QualityChecks, RawMaterialConsumption
+      match /{sub}/{subId} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if (isAdmin() || isOwner(resource.data.jobCardAssignedOperatorId) || isOwner(resource.data.jobCardCreatedByUserId));
+        
+        // Deeply nested consumption
+        match /rawMaterialConsumption/{consumptionId} {
+          allow get, list: if isSignedIn();
+          allow create: if isSignedIn();
+          allow update, delete: if (isAdmin() || isOwner(resource.data.jobCardAssignedOperatorId));
+        }
+      }
+    }
+
+    /**
+     * @description Financial and logistical documents (Invoices, Dispatches).
+     * @path /invoices/{invoiceId}, /dispatches/{dispatchId}
+     * @allow (write) if isAdmin() || isOwner(request.resource.data.generatedByUserId);
+     * @principle Restricts sensitive financial/shipping records to the generator or admins.
+     */
+    match /invoices/{invoiceId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.generatedByUserId == request.auth.uid;
+      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.generatedByUserId));
+    }
+
+    match /dispatches/{dispatchId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.generatedByUserId == request.auth.uid;
+      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.generatedByUserId));
+
+      // Packing Lists and Items
+      match /packingLists/{packingListId} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if (isAdmin() || isOwner(resource.data.dispatchGeneratedByUserId));
+
+        match /items/{itemId} {
+          allow get, list: if isSignedIn();
+          allow create: if isSignedIn();
+          allow update, delete: if (isAdmin() || isOwner(resource.data.dispatchGeneratedByUserId));
+        }
+      }
+    }
+
+    /**
+     * @description Procurement management (Purchase Orders).
+     * @path /purchaseOrders/{purchaseOrderId}
+     * @allow (create) if request.resource.data.createdByUserId == request.auth.uid;
+     * @principle Ensures only the purchaser or admins manage supplier orders.
+     */
+    match /purchaseOrders/{purchaseOrderId} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.createdByUserId == request.auth.uid;
+      allow update, delete: if (isAdmin() || isExistingOwner(resource.data.createdByUserId));
+
+      match /items/{itemId} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn() && request.resource.data.purchaseOrderCreatedByUserId != null;
+        allow update, delete: if (isAdmin() || isExistingOwner(resource.data.purchaseOrderCreatedByUserId));
+      }
+    }
+
+    /**
+     * @description Inventory batches for finished goods.
+     * @path /finishedGoodInventory/{id}
+     * @allow (get, list) if isSignedIn();
+     * @allow (write) if isSignedIn();
+     * @principle Access for logistics and warehouse management.
+     */
+    match /finishedGoodInventory/{id} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource != null;
+    }
   }
 }
