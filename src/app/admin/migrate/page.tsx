@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
@@ -53,6 +53,11 @@ export default function MigrationPage() {
   const [progress, setProgress] = useState(0)
   const [log, setLog] = useState<string[]>([])
   const [isWipeConfirmOpen, setIsWipeConfirmOpen] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Authorization Check
   const adminDocRef = useMemoFirebase(() => {
@@ -220,6 +225,7 @@ export default function MigrationPage() {
     }
   }
 
+  if (!isMounted) return <div className="flex h-[calc(100vh-10rem)] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
   if (!adminData) return <div className="p-20 text-center text-muted-foreground">Unauthorized Access. Admin Role Required.</div>
 
   return (
@@ -278,7 +284,7 @@ export default function MigrationPage() {
               <Dialog open={isWipeConfirmOpen} onOpenChange={setIsWipeConfirmOpen}>
                 <DialogTrigger asChild>
                   <Button variant="destructive" className="w-full h-12 font-bold" disabled={isProcessing}>
-                    <Trash2 className="mr-2 h-5 w-5" /> Reset Transactional Database
+                    <Trash2 className="mr-2 h-4 w-4" /> Reset Transactional Database
                   </Button>
                 </DialogTrigger>
                 <DialogContent>

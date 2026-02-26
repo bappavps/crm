@@ -1,3 +1,4 @@
+
 import type {Config} from 'tailwindcss';
 
 export default {
@@ -10,9 +11,9 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui"],
-        body: ["var(--font-inter)", "sans-serif"],
-        headline: ["var(--font-inter)", "sans-serif"],
+        sans: ["ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"],
+        body: ["ui-sans-serif", "sans-serif"],
+        headline: ["ui-sans-serif", "sans-serif"],
         code: ['monospace'],
       },
       colors: {
