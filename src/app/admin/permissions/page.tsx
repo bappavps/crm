@@ -19,46 +19,73 @@ import {
   Boxes,
   Factory,
   CheckCircle2,
-  Settings
+  Settings,
+  Palette,
+  ShoppingBag,
+  MoreHorizontal
 } from "lucide-react";
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
-import { PermissionKey } from "@/components/auth/permission-context";
 
-interface PermissionGroup {
-  label: string;
-  icon: any;
-  keys: PermissionKey[];
-}
+/**
+ * Metadata for permission grouping.
+ * If a key exists in Firestore but not here, it will appear in "Other Capabilities".
+ */
+const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
+  estimates: { group: "Sales & CRM", icon: ShoppingCart },
+  salesOrders: { group: "Sales & CRM", icon: ShoppingCart },
+  createJob: { group: "Sales & CRM", icon: ShoppingCart },
+  jobPlanning: { group: "Design & Planning", icon: Palette },
+  artwork: { group: "Design & Planning", icon: Palette },
+  purchaseOrders: { group: "Purchase & Procurement", icon: ShoppingBag },
+  grn: { group: "Purchase & Procurement", icon: ShoppingBag },
+  stockDashboard: { group: "Inventory & Materials", icon: Boxes },
+  stockRegistry: { group: "Inventory & Materials", icon: Boxes },
+  slitting: { group: "Inventory & Materials", icon: Boxes },
+  finishedGoods: { group: "Inventory & Materials", icon: Boxes },
+  dieManagement: { group: "Inventory & Materials", icon: Boxes },
+  jobCards: { group: "Production Floor", icon: Factory },
+  bom: { group: "Production Floor", icon: Factory },
+  workOrders: { group: "Production Floor", icon: Factory },
+  liveFloor: { group: "Production Floor", icon: Factory },
+  qualityControl: { group: "Quality & Logistics", icon: CheckCircle2 },
+  dispatch: { group: "Quality & Logistics", icon: CheckCircle2 },
+  billing: { group: "Quality & Logistics", icon: CheckCircle2 },
+  dashboard: { group: "System & Admin", icon: Settings },
+  reports: { group: "System & Admin", icon: Settings },
+  admin: { group: "System & Admin", icon: Settings },
+};
 
-const PERMISSION_GROUPS: PermissionGroup[] = [
-  {
-    label: "Sales & CRM",
-    icon: ShoppingCart,
-    keys: ['estimates', 'salesOrders', 'createJob']
-  },
-  {
-    label: "Inventory & Materials",
-    icon: Boxes,
-    keys: ['stockDashboard', 'stockRegistry', 'slitting', 'finishedGoods', 'dieManagement']
-  },
-  {
-    label: "Production Floor",
-    icon: Factory,
-    keys: ['jobPlanning', 'artwork', 'jobCards', 'bom', 'workOrders', 'liveFloor']
-  },
-  {
-    label: "Quality & Logistics",
-    icon: CheckCircle2,
-    keys: ['qualityControl', 'dispatch', 'billing']
-  },
-  {
-    label: "System & Admin",
-    icon: Settings,
-    keys: ['dashboard', 'reports', 'admin']
-  }
+const GROUP_ORDER = [
+  "Sales & CRM",
+  "Design & Planning",
+  "Purchase & Procurement",
+  "Inventory & Materials",
+  "Production Floor",
+  "Quality & Logistics",
+  "System & Admin",
+  "Other Capabilities"
 ];
+
+/**
+ * Formats keys (camelCase or snake_case) into readable labels.
+ * Handles common industry acronyms.
+ */
+const formatPermissionLabel = (key: string) => {
+  const acronyms = ["GRN", "BOM", "CRM", "ERP", "QC", "ID"];
+  const words = key
+    .replace(/_/g, ' ')
+    .replace(/([A-Z])/g, ' $1')
+    .split(' ')
+    .filter(Boolean);
+    
+  return words.map(word => {
+    const upper = word.toUpperCase();
+    if (acronyms.includes(upper)) return upper;
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(' ');
+};
 
 export default function PermissionManagementPage() {
   const { toast } = useToast();
@@ -79,12 +106,13 @@ export default function PermissionManagementPage() {
   }, [firestore]);
   const { data: users, isLoading: usersLoading } = useCollection(usersQuery);
 
-  const handleToggleRolePermission = async (roleId: string, key: PermissionKey, currentVal: boolean) => {
+  const handleToggleRolePermission = async (roleId: string, key: string, currentVal: boolean) => {
     if (!firestore) return;
     
     const roleRef = doc(firestore, 'roles', roleId);
+    const role = roles?.find(r => r.id === roleId);
     const updatedPermissions = {
-      ...(roles?.find(r => r.id === roleId)?.permissions || {}),
+      ...(role?.permissions || {}),
       [key]: !currentVal
     };
 
@@ -94,10 +122,32 @@ export default function PermissionManagementPage() {
         updatedAt: serverTimestamp(),
         updatedBy: currentUser?.uid
       });
-      toast({ title: "Role Updated", description: `Permission '${key}' updated for ${roleId}.` });
+      toast({ title: "Role Updated", description: `Permission '${formatPermissionLabel(key)}' toggled for ${roleId}.` });
     } catch (e) {
       toast({ variant: "destructive", title: "Update Failed", description: "Insufficient permissions." });
     }
+  };
+
+  const getCategorizedPermissions = (permissions: Record<string, boolean> = {}) => {
+    const grouped: Record<string, { key: string; val: boolean }[]> = {};
+    
+    Object.entries(permissions).forEach(([key, val]) => {
+      const meta = PERMISSION_METADATA[key];
+      const groupName = meta ? meta.group : "Other Capabilities";
+      if (!grouped[groupName]) grouped[groupName] = [];
+      grouped[groupName].push({ key, val });
+    });
+
+    return GROUP_ORDER.map(label => {
+      const items = grouped[label] || [];
+      if (items.length === 0) return null;
+      
+      const icon = items.length > 0 && PERMISSION_METADATA[items[0].key] 
+        ? PERMISSION_METADATA[items[0].key].icon 
+        : (label === "Other Capabilities" ? Key : Settings);
+
+      return { label, icon, items };
+    }).filter(Boolean);
   };
 
   if (rolesLoading || usersLoading) {
@@ -113,9 +163,9 @@ export default function PermissionManagementPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Access Control Panel</h2>
-          <p className="text-muted-foreground">Manage global roles and granular user permission overrides.</p>
+          <p className="text-muted-foreground">Manage global roles and dynamic permission discovery.</p>
         </div>
-        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">SECURITY V2</Badge>
+        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">DYNAMIC SECURITY V2</Badge>
       </div>
 
       <Tabs defaultValue="roles" className="w-full">
@@ -132,27 +182,29 @@ export default function PermissionManagementPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="text-2xl font-black text-primary uppercase tracking-tight">{role.name}</CardTitle>
-                      <CardDescription>Default access levels for {role.id} group.</CardDescription>
+                      <CardDescription>
+                        {Object.keys(role.permissions || {}).length} Total permissions detected in database.
+                      </CardDescription>
                     </div>
-                    <Badge variant="secondary" className="h-6 px-3">ROLE ID: {role.id}</Badge>
+                    <Badge variant="secondary" className="h-6 px-3 uppercase font-mono">ID: {role.id}</Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="p-6 space-y-8">
-                  {PERMISSION_GROUPS.map((group) => (
+                  {getCategorizedPermissions(role.permissions).map((group: any) => (
                     <div key={group.label} className="space-y-4">
                       <div className="flex items-center gap-2 border-b pb-2">
                         <group.icon className="h-4 w-4 text-primary" />
                         <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{group.label}</h3>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-4">
-                        {group.keys.map((key) => (
+                        {group.items.map(([key, val]: [string, boolean]) => (
                           <div key={key} className="flex items-center justify-between py-1 group/item">
-                            <span className="text-sm font-medium text-foreground group-hover/item:text-primary transition-colors capitalize">
-                              {key.replace(/([A-Z])/g, ' $1')}
+                            <span className="text-sm font-medium text-foreground group-hover/item:text-primary transition-colors">
+                              {formatPermissionLabel(key)}
                             </span>
                             <Switch 
-                              checked={!!role.permissions?.[key]} 
-                              onCheckedChange={() => handleToggleRolePermission(role.id, key, !!role.permissions?.[key])}
+                              checked={val} 
+                              onCheckedChange={() => handleToggleRolePermission(role.id, key, val)}
                             />
                           </div>
                         ))}
@@ -201,7 +253,7 @@ export default function PermissionManagementPage() {
                         <div className="flex flex-wrap gap-1">
                           {Object.keys(u.customPermissions || {}).map(k => (
                             <Badge key={k} className={u.customPermissions[k] ? "bg-emerald-500" : "bg-destructive"}>
-                              {k}: {u.customPermissions[k] ? "ON" : "OFF"}
+                              {formatPermissionLabel(k)}: {u.customPermissions[k] ? "ON" : "OFF"}
                             </Badge>
                           ))}
                           {(!u.customPermissions || Object.keys(u.customPermissions).length === 0) && (
