@@ -29,21 +29,25 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const firestore = useFirestore();
 
   // 1. Fetch User Profile (contains roles[] and customPermissions)
+  /**
+   * CRITICAL: Only query the profile if the auth state is fully resolved and we have a user.
+   * This prevents "Missing or insufficient permissions" errors during initial load.
+   */
   const userRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || isAuthLoading) return null;
     return doc(firestore, 'users', user.uid);
-  }, [firestore, user]);
+  }, [firestore, user, isAuthLoading]);
   const { data: profile, isLoading: isProfileLoading } = useDoc(userRef);
 
   // 2. Fetch All Roles
   /**
-   * CRITICAL: Only query roles if the user is authenticated to prevent security rule violations.
+   * CRITICAL: Only query roles if the user is fully authenticated and auth state is resolved.
    * The rules for the 'roles' collection require an authenticated session.
    */
   const rolesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || isAuthLoading) return null;
     return collection(firestore, 'roles');
-  }, [firestore, user]);
+  }, [firestore, user, isAuthLoading]);
   const { data: allRoles, isLoading: isRolesLoading } = useCollection(rolesQuery);
 
   const permissions = useMemo(() => {
