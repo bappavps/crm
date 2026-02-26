@@ -22,22 +22,23 @@ export function AuthInitializer() {
     }
   }, [user, isUserLoading, pathname, router]);
 
-  // Data Seeding
+  // Data Seeding & Profile Provisioning
   useEffect(() => {
-    if (user && firestore && user.email) {
+    if (user && firestore) {
       const isTargetAdmin = user.email === 'gm.shreelabel@gmail.com';
       const userRef = doc(firestore, 'users', user.uid);
 
       getDoc(userRef).then((snap) => {
-        if (!snap.exists() || isTargetAdmin) {
+        // Provision profile if it doesn't exist
+        if (!snap.exists()) {
           const userData = {
             id: user.uid,
-            email: user.email,
-            firstName: isTargetAdmin ? "Mriganka" : (user.displayName?.split(' ')[0] || 'System'),
-            lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || 'User'),
+            email: user.email || 'guest@shreelabel.com',
+            firstName: isTargetAdmin ? "Mriganka" : (user.displayName?.split(' ')[0] || (user.isAnonymous ? 'Guest' : 'New')),
+            lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || (user.isAnonymous ? 'User' : 'Employee')),
             roles: isTargetAdmin ? ['Admin'] : ['Operator'], 
             isActive: true,
-            createdAt: snap.exists() ? snap.data().createdAt : serverTimestamp(),
+            createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           };
 
@@ -52,8 +53,14 @@ export function AuthInitializer() {
           }
         }
         
-        seedSystemRoles(firestore);
-        seedCleanDemoData(firestore, user.uid);
+        /**
+         * CRITICAL: Only the target admin should attempt to seed system-wide data.
+         * Regular users (Sales, Operators) do not have 'write' permissions on these collections.
+         */
+        if (isTargetAdmin) {
+          seedSystemRoles(firestore);
+          seedCleanDemoData(firestore, user.uid);
+        }
       });
     }
   }, [user, firestore]);
