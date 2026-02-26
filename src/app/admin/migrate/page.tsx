@@ -286,14 +286,16 @@ export default function MigrationPage() {
                     <DialogTitle className="text-destructive flex items-center gap-2">
                       <AlertTriangle className="h-6 w-6" /> Destructive Action Confirmation
                     </DialogTitle>
-                    <DialogDescription className="pt-4 space-y-3">
-                      <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
-                      <ul className="list-disc pl-5 text-xs space-y-1">
-                        <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
-                        <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
-                        <li><strong>Counters</strong> will reset to sequence #1.</li>
-                        <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
-                      </ul>
+                    <DialogDescription asChild>
+                      <div className="pt-4 space-y-3">
+                        <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
+                        <ul className="list-disc pl-5 text-xs space-y-1">
+                          <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
+                          <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
+                          <li><strong>Counters</strong> will reset to sequence #1.</li>
+                          <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
+                        </ul>
+                      </div>
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter className="gap-2 sm:gap-0">
