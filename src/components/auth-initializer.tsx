@@ -35,7 +35,7 @@ export function AuthInitializer() {
             email: user.email,
             firstName: isTargetAdmin ? "Mriganka" : (user.displayName?.split(' ')[0] || 'System'),
             lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || 'User'),
-            roleId: isTargetAdmin ? 'Admin' : 'Operator', 
+            roles: isTargetAdmin ? ['Admin'] : ['Operator'], 
             isActive: true,
             createdAt: snap.exists() ? snap.data().createdAt : serverTimestamp(),
             updatedAt: serverTimestamp()
@@ -47,7 +47,7 @@ export function AuthInitializer() {
             setDocumentNonBlocking(doc(firestore, 'adminUsers', user.uid), { 
               id: user.uid, 
               email: userData.email,
-              roleId: 'Admin'
+              roles: ['Admin']
             }, { merge: true });
           }
         }

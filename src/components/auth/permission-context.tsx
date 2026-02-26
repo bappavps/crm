@@ -1,8 +1,8 @@
 'use client';
 
 import React, { createContext, useContext, ReactNode, useMemo } from 'react';
-import { useUser, useFirestore, useDoc, useMemoFirebase } from '@/firebase';
-import { doc } from 'firebase/firestore';
+import { useUser, useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
+import { collection, doc } from 'firebase/firestore';
 
 export type PermissionKey = 
   | 'dashboard' | 'estimates' | 'salesOrders' | 'createJob' 
@@ -19,7 +19,7 @@ interface PermissionContextType {
   permissions: PermissionsMap;
   hasPermission: (key: PermissionKey) => boolean;
   isLoading: boolean;
-  roleName: string;
+  roles: string[];
 }
 
 const PermissionContext = createContext<PermissionContextType | undefined>(undefined);
@@ -28,38 +28,52 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const { user, isUserLoading: isAuthLoading } = useUser();
   const firestore = useFirestore();
 
-  // 1. Fetch User Profile (contains roleId and customPermissions)
+  // 1. Fetch User Profile (contains roles[] and customPermissions)
   const userRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'users', user.uid);
   }, [firestore, user]);
   const { data: profile, isLoading: isProfileLoading } = useDoc(userRef);
 
-  // 2. Fetch Role Permissions
-  const roleRef = useMemoFirebase(() => {
-    if (!firestore || !profile?.roleId) return null;
-    return doc(firestore, 'roles', profile.roleId);
-  }, [firestore, profile?.roleId]);
-  const { data: roleData, isLoading: isRoleLoading } = useDoc(roleRef);
+  // 2. Fetch All Roles
+  const rolesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'roles');
+  }, [firestore]);
+  const { data: allRoles, isLoading: isRolesLoading } = useCollection(rolesQuery);
 
   const permissions = useMemo(() => {
-    if (!roleData) return {};
+    if (!profile) return {};
     
-    // Default from Role
-    const rolePermissions = roleData.permissions || {};
+    const userRoleIds = profile.roles || (profile.roleId ? [profile.roleId] : []);
+    const mergedPermissions: PermissionsMap = {};
+
+    // 1. Merge all assigned roles (if any is true, result is true)
+    if (allRoles) {
+      userRoleIds.forEach((roleId: string) => {
+        const roleData = allRoles.find(r => r.id === roleId);
+        if (roleData?.permissions) {
+          Object.entries(roleData.permissions).forEach(([key, val]) => {
+            if (val === true) mergedPermissions[key] = true;
+          });
+        }
+      });
+    }
     
-    // Override with User Custom Permissions
+    // 2. Override with User Custom Permissions (Highest Priority)
     const customOverrides = profile?.customPermissions || {};
+    Object.entries(customOverrides).forEach(([key, val]) => {
+      mergedPermissions[key] = !!val;
+    });
     
-    return {
-      ...rolePermissions,
-      ...customOverrides
-    };
-  }, [roleData, profile?.customPermissions]);
+    return mergedPermissions;
+  }, [allRoles, profile]);
 
   const hasPermission = (key: PermissionKey): boolean => {
-    // Admin role bypasses all checks (if explicitly set in role or if it's the target admin email)
+    // Admin override: target email always has full access
     if (user?.email === 'gm.shreelabel@gmail.com') return true;
+    
+    // Check if user has explicit 'admin' permission
     if (permissions['admin'] === true) return true;
     
     return !!permissions[key];
@@ -68,8 +82,8 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const value = {
     permissions,
     hasPermission,
-    isLoading: isAuthLoading || isProfileLoading || isRoleLoading,
-    roleName: roleData?.name || 'Guest'
+    isLoading: isAuthLoading || isProfileLoading || isRolesLoading,
+    roles: profile?.roles || (profile?.roleId ? [profile.roleId] : [])
   };
 
   return (

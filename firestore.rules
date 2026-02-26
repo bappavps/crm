@@ -15,13 +15,6 @@ service cloud.firestore {
       );
     }
 
-    function hasRole(role) {
-      return isSignedIn() && (
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.roleId == role ||
-        isAdmin()
-      );
-    }
-
     // --- RBAC: ROLES & PERMISSIONS ---
 
     match /roles/{roleId} {
@@ -31,10 +24,11 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isSignedIn();
-      // Allow user to write to their own profile, but only Admin can change customPermissions
+      // Only Admin can change roles or customPermissions
       allow update: if (isAdmin() || request.auth.uid == userId) && 
-                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customPermissions', 'roleId']) || isAdmin());
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customPermissions', 'roles', 'roleId']) || isAdmin());
       allow create: if isSignedIn();
+      allow delete: if isAdmin();
     }
 
     // --- MASTER DATA & CONFIG ---
@@ -45,6 +39,11 @@ service cloud.firestore {
     }
 
     match /roll_settings/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /job_settings/{id} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }

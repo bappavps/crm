@@ -1,13 +1,34 @@
-
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useMemo } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { UserPlus, Shield, Loader2, Mail, User as UserIcon, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { 
+  UserPlus, 
+  Shield, 
+  Loader2, 
+  Mail, 
+  User as UserIcon, 
+  MoreHorizontal, 
+  Pencil, 
+  Trash2, 
+  Plus, 
+  Key, 
+  CheckCircle2, 
+  Lock,
+  ShoppingCart,
+  Boxes,
+  Factory,
+  Settings,
+  Palette,
+  ShoppingBag,
+  LineChart,
+  LayoutDashboard
+} from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -34,34 +55,112 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
+import { 
+  Accordion, 
+  AccordionContent, 
+  AccordionItem, 
+  AccordionTrigger 
+} from "@/components/ui/accordion"
+import { Switch } from "@/components/ui/switch"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, deleteDoc, serverTimestamp } from "firebase/firestore"
 import { setDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
+
+/**
+ * MASTER PERMISSION REGISTRY
+ */
+const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
+  dashboard: { group: "Core Access", icon: LayoutDashboard },
+  estimates: { group: "Sales & CRM", icon: ShoppingCart },
+  salesOrders: { group: "Sales & CRM", icon: ShoppingCart },
+  createJob: { group: "Sales & CRM", icon: ShoppingCart },
+  jobPlanning: { group: "Design & Planning", icon: Palette },
+  artwork: { group: "Design & Planning", icon: Palette },
+  purchaseOrders: { group: "Purchase & Procurement", icon: ShoppingBag },
+  grn: { group: "Purchase & Procurement", icon: ShoppingBag },
+  stockDashboard: { group: "Inventory & Materials", icon: Boxes },
+  stockRegistry: { group: "Inventory & Materials", icon: Boxes },
+  slitting: { group: "Inventory & Materials", icon: Boxes },
+  finishedGoods: { group: "Inventory & Materials", icon: Boxes },
+  dieManagement: { group: "Inventory & Materials", icon: Boxes },
+  jobCards: { group: "Production Floor", icon: Factory },
+  bom: { group: "Production Floor", icon: Factory },
+  workOrders: { group: "Production Floor", icon: Factory },
+  liveFloor: { group: "Production Floor", icon: Factory },
+  qualityControl: { group: "Quality & Logistics", icon: CheckCircle2 },
+  dispatch: { group: "Quality & Logistics", icon: CheckCircle2 },
+  billing: { group: "Quality & Logistics", icon: CheckCircle2 },
+  reports: { group: "Analytics", icon: LineChart },
+  admin: { group: "System Administration", icon: Lock },
+};
+
+const GROUP_ORDER = [
+  "Core Access",
+  "Sales & CRM",
+  "Design & Planning",
+  "Purchase & Procurement",
+  "Inventory & Materials",
+  "Production Floor",
+  "Quality & Logistics",
+  "Analytics",
+  "System Administration"
+];
+
+const ALL_SYSTEM_KEYS = Object.keys(PERMISSION_METADATA);
+
+const formatLabel = (key: string) => {
+  const acronyms = ["GRN", "BOM", "QC"];
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .split(' ')
+    .map(w => acronyms.includes(w.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+};
 
 export default function UserManagementPage() {
   const { toast } = useToast()
   const { user: currentUser } = useUser()
   const firestore = useFirestore()
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  
+  // States
+  const [isUserDialogOpen, setIsUserDialogOpen] = useState(false)
+  const [isRoleDialogOpen, setIsRoleDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<any>(null)
+  const [editingRole, setEditingRole] = useState<any>(null)
   const [userToDelete, setUserToDelete] = useState<any>(null)
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
+  const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({})
 
-  // Authorization check - ensures current user is recognized as an Admin
+  // Authorization check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !currentUser) return null;
     return doc(firestore, 'adminUsers', currentUser.uid);
   }, [firestore, currentUser]);
   const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
 
-  // Firestore Query
+  // Queries
   const usersQuery = useMemoFirebase(() => {
     if (!firestore || !currentUser || !adminData) return null;
     return collection(firestore, 'users');
   }, [firestore, currentUser, adminData])
 
-  const { data: users, isLoading } = useCollection(usersQuery)
+  const rolesQuery = useMemoFirebase(() => {
+    if (!firestore || !currentUser || !adminData) return null;
+    return collection(firestore, 'roles');
+  }, [firestore, currentUser, adminData])
+
+  const { data: users, isLoading: usersLoading } = useCollection(usersQuery)
+  const { data: roles, isLoading: rolesLoading } = useCollection(rolesQuery)
+
+  // --- USER LOGIC ---
+
+  const handleOpenUserDialog = (user?: any) => {
+    setEditingUser(user || null)
+    setSelectedRoles(user?.roles || (user?.roleId ? [user.roleId] : []))
+    setIsUserDialogOpen(true)
+  }
 
   const handleSaveUser = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -71,173 +170,303 @@ export default function UserManagementPage() {
     const email = formData.get("email") as string
     const firstName = formData.get("firstName") as string
     const lastName = formData.get("lastName") as string
-    const roleId = formData.get("roleId") as string
     
     const userId = editingUser?.id || crypto.randomUUID()
     const userData = {
       id: userId,
-      username: `${firstName.toLowerCase()}.${lastName.toLowerCase()}`,
       email,
       firstName,
       lastName,
-      roleId,
+      roles: selectedRoles,
       isActive: editingUser ? editingUser.isActive : true,
       updatedAt: new Date().toISOString(),
       ...(editingUser ? {} : { createdAt: new Date().toISOString() })
     }
 
-    // 1. Update main users collection
     setDocumentNonBlocking(doc(firestore, 'users', userId), userData, { merge: true })
 
-    // 2. Handle role-specific collection markers for security rules
-    const roleColMap: Record<string, string> = {
-      'Admin': 'adminUsers',
-      'Manager': 'managerUsers',
-      'Operator': 'operatorUsers',
-      'Sales': 'salesUsers'
+    // Marker collections for security rules
+    const isNowAdmin = selectedRoles.includes('Admin')
+    if (isNowAdmin) {
+      setDocumentNonBlocking(doc(firestore, 'adminUsers', userId), { id: userId, email, roles: selectedRoles }, { merge: true })
+    } else {
+      deleteDocumentNonBlocking(doc(firestore, 'adminUsers', userId))
     }
 
-    if (editingUser && editingUser.roleId !== roleId) {
-      const oldRoleCol = roleColMap[editingUser.roleId]
-      if (oldRoleCol) {
-        deleteDocumentNonBlocking(doc(firestore, oldRoleCol, userId))
-      }
-    }
-
-    const roleCollection = roleColMap[roleId]
-    if (roleCollection) {
-      setDocumentNonBlocking(doc(firestore, roleCollection, userId), {
-        id: userId,
-        email,
-        roleId,
-        isActive: userData.isActive,
-        createdAt: new Date().toISOString()
-      }, { merge: true })
-    }
-
-    setIsDialogOpen(false)
-    setEditingUser(null)
-    toast({
-      title: editingUser ? "User Updated" : "User Created",
-      description: `${firstName} ${lastName} has been saved successfully.`
-    })
-  }
-
-  const toggleUserStatus = (userId: string, currentStatus: boolean) => {
-    if (!firestore) return
-    const userRef = doc(firestore, 'users', userId)
-    updateDocumentNonBlocking(userRef, { isActive: !currentStatus })
-    toast({
-      title: "User Status Updated",
-      description: `User account has been ${!currentStatus ? 'activated' : 'deactivated'}.`
-    })
+    setIsUserDialogOpen(false)
+    toast({ title: editingUser ? "User Updated" : "User Created", description: `${firstName} saved successfully.` })
   }
 
   const handleDeleteUser = () => {
     if (!firestore || !userToDelete) return
-
-    const roleColMap: Record<string, string> = {
-      'Admin': 'adminUsers',
-      'Manager': 'managerUsers',
-      'Operator': 'operatorUsers',
-      'Sales': 'salesUsers'
-    }
-
-    // 1. Delete from main collection
     deleteDocumentNonBlocking(doc(firestore, 'users', userToDelete.id))
+    deleteDocumentNonBlocking(doc(firestore, 'adminUsers', userToDelete.id))
+    setUserToDelete(null)
+    toast({ title: "User Deleted", description: "Account removed." })
+  }
 
-    // 2. Delete from role-specific collection
-    const roleCol = roleColMap[userToDelete.roleId]
-    if (roleCol) {
-      deleteDocumentNonBlocking(doc(firestore, roleCol, userToDelete.id))
+  // --- ROLE LOGIC ---
+
+  const handleOpenRoleDialog = (role?: any) => {
+    setEditingRole(role || null)
+    setRolePermissions(role?.permissions || {})
+    setIsRoleDialogOpen(true)
+  }
+
+  const handleSaveRole = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!firestore || !currentUser) return
+
+    const formData = new FormData(e.currentTarget)
+    const name = formData.get("roleName") as string
+    const roleId = editingRole?.id || name.replace(/\s+/g, '')
+
+    const roleData = {
+      id: roleId,
+      name,
+      permissions: rolePermissions,
+      updatedAt: serverTimestamp(),
+      updatedBy: currentUser.uid
     }
 
-    setUserToDelete(null)
-    toast({
-      title: "User Deleted",
-      description: "The employee account has been removed from the system."
-    })
+    setDocumentNonBlocking(doc(firestore, 'roles', roleId), roleData, { merge: true })
+    setIsRoleDialogOpen(false)
+    toast({ title: "Role Saved", description: `${name} role updated.` })
   }
 
-  const openEditDialog = (user: any) => {
-    setEditingUser(user)
-    setIsDialogOpen(true)
-  }
+  const categorizedPermissions = useMemo(() => {
+    const grouped: Record<string, string[]> = {};
+    ALL_SYSTEM_KEYS.forEach(key => {
+      const group = PERMISSION_METADATA[key].group;
+      if (!grouped[group]) grouped[group] = [];
+      grouped[group].push(key);
+    });
+    return grouped;
+  }, []);
 
-  if (adminCheckLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
-        <p>Verifying administrative privileges...</p>
-      </div>
-    );
-  }
-
-  if (!adminData && !adminCheckLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-        <Shield className="h-16 w-16 text-destructive/20" />
-        <div className="space-y-2">
-          <h2 className="text-2xl font-bold">Access Denied</h2>
-          <p className="text-muted-foreground max-w-md">You do not have the required permissions to manage users. Please contact the system owner.</p>
-        </div>
-      </div>
-    );
-  }
+  if (adminCheckLoading) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
+  if (!adminData) return <div className="p-20 text-center">Access Denied.</div>
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">User Management</h2>
-          <p className="text-muted-foreground">Manage employee access, roles, and permissions.</p>
+          <h2 className="text-3xl font-black tracking-tight text-primary">Administration Center</h2>
+          <p className="text-muted-foreground font-medium">Unified management for employees, roles, and granular security.</p>
         </div>
-        <Button onClick={() => { setEditingUser(null); setIsDialogOpen(true); }} className="bg-primary hover:bg-primary/90">
-          <UserPlus className="mr-2 h-4 w-4" /> Add User
-        </Button>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => handleOpenRoleDialog()} className="border-primary/20 hover:bg-primary/5">
+            <Shield className="mr-2 h-4 w-4" /> Create New Role
+          </Button>
+          <Button onClick={() => handleOpenUserDialog()} className="bg-primary hover:bg-primary/90 shadow-lg">
+            <UserPlus className="mr-2 h-4 w-4" /> Add Employee
+          </Button>
+        </div>
       </div>
 
-      <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) setEditingUser(null); }}>
-        <DialogContent className="sm:max-w-[425px]">
+      <Tabs defaultValue="users" className="w-full">
+        <TabsList className="bg-muted/50 p-1 rounded-xl w-fit">
+          <TabsTrigger value="users" className="gap-2 px-6 font-bold">
+            <UserIcon className="h-4 w-4" /> User Directory
+          </TabsTrigger>
+          <TabsTrigger value="roles" className="gap-2 px-6 font-bold">
+            <Key className="h-4 w-4" /> System Roles
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users" className="pt-6">
+          <Card className="border-none shadow-xl overflow-hidden">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30">
+                    <TableHead className="font-black text-[10px] uppercase">Employee</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Assigned Roles</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Contact</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
+                    <TableHead className="text-right font-black text-[10px] uppercase">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {usersLoading ? (
+                    <TableRow><TableCell colSpan={5} className="text-center py-20"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
+                  ) : users?.map((u) => (
+                    <TableRow key={u.id} className="hover:bg-muted/10">
+                      <TableCell className="py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9 border-2 border-primary/10">
+                            <AvatarFallback className="bg-primary/5 text-primary text-xs font-black">
+                              {u.firstName?.[0]}{u.lastName?.[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex flex-col">
+                            <span className="font-black text-sm">{u.firstName} {u.lastName}</span>
+                            <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">UID: {u.id.slice(-8)}</span>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1.5">
+                          {(u.roles || (u.roleId ? [u.roleId] : [])).map((r: string) => (
+                            <Badge key={r} variant="secondary" className="text-[9px] font-black uppercase tracking-tighter border-primary/10">
+                              {r}
+                            </Badge>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs font-medium text-muted-foreground">
+                        <div className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {u.email}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={u.isActive ? 'bg-emerald-500' : 'bg-muted'}>{u.isActive ? 'ACTIVE' : 'INACTIVE'}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleOpenUserDialog(u)}><Pencil className="mr-2 h-4 w-4" /> Edit Profile</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="roles" className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {roles?.map((role) => (
+              <Card key={role.id} className="group hover:border-primary/50 transition-all shadow-md overflow-hidden">
+                <CardHeader className="bg-muted/30 pb-4">
+                  <div className="flex justify-between items-start">
+                    <div className="p-2 bg-primary/10 rounded-lg"><Shield className="h-5 w-5 text-primary" /></div>
+                    <Button variant="ghost" size="icon" onClick={() => handleOpenRoleDialog(role)} className="h-8 w-8"><Pencil className="h-4 w-4" /></Button>
+                  </div>
+                  <CardTitle className="text-lg font-black pt-2 uppercase tracking-tight">{role.name}</CardTitle>
+                  <CardDescription className="text-[10px] font-bold uppercase text-muted-foreground">{Object.values(role.permissions || {}).filter(v => v === true).length} ACTIVE PERMISSIONS</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {GROUP_ORDER.map(group => {
+                      const activeInGroup = (categorizedPermissions[group] || []).filter(k => role.permissions?.[k]).length;
+                      if (activeInGroup === 0) return null;
+                      return (
+                        <Badge key={group} variant="outline" className="text-[9px] font-black uppercase">
+                          {group.split(' ')[0]}: {activeInGroup}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* --- ROLE DIALOG --- */}
+      <Dialog open={isRoleDialogOpen} onOpenChange={setIsRoleDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden flex flex-col p-0">
+          <form onSubmit={handleSaveRole} className="flex flex-col h-full">
+            <DialogHeader className="p-6 pb-2">
+              <DialogTitle className="text-xl font-black uppercase">
+                {editingRole ? 'Edit System Role' : 'Create New System Role'}
+              </DialogTitle>
+              <DialogDescription className="font-medium">Define group-level capabilities for operational modules.</DialogDescription>
+            </DialogHeader>
+            
+            <div className="p-6 space-y-6 overflow-y-auto flex-1 scrollbar-thin">
+              <div className="space-y-2">
+                <Label htmlFor="roleName" className="text-xs font-black uppercase">Role Name</Label>
+                <Input id="roleName" name="roleName" defaultValue={editingRole?.name} placeholder="e.g. Accounts Manager" required />
+              </div>
+
+              <div className="space-y-4">
+                <Label className="text-xs font-black uppercase text-primary">Operational Permissions</Label>
+                <Accordion type="multiple" className="w-full space-y-2">
+                  {GROUP_ORDER.map((group) => (
+                    <AccordionItem key={group} value={group} className="border rounded-lg px-4 bg-muted/20">
+                      <AccordionTrigger className="hover:no-underline py-3">
+                        <div className="flex items-center gap-3">
+                          {categorizedPermissions[group] && <div className="p-1.5 bg-primary/5 rounded"><CheckCircle2 className="h-4 w-4 text-primary" /></div>}
+                          <span className="text-sm font-black uppercase tracking-tight">{group}</span>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="pb-4 pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {(categorizedPermissions[group] || []).map((key) => (
+                            <div key={key} className="flex items-center justify-between p-2 rounded-md bg-background border border-border/50">
+                              <span className="text-[11px] font-bold">{formatLabel(key)}</span>
+                              <Switch 
+                                checked={!!rolePermissions[key]} 
+                                onCheckedChange={(val) => setRolePermissions(p => ({...p, [key]: val}))} 
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              </div>
+            </div>
+
+            <DialogFooter className="p-6 bg-muted/30 border-t">
+              <Button type="submit" className="w-full font-black uppercase tracking-widest">{editingRole ? 'Update Role' : 'Initialize Role'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- USER DIALOG --- */}
+      <Dialog open={isUserDialogOpen} onOpenChange={setIsUserDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
           <form onSubmit={handleSaveUser}>
             <DialogHeader>
-              <DialogTitle>{editingUser ? 'Edit System User' : 'Add New System User'}</DialogTitle>
-              <DialogDescription>
-                {editingUser ? `Updating profile for ${editingUser.firstName} ${editingUser.lastName}.` : 'Create a profile and assign a specialized ERP role.'}
-              </DialogDescription>
+              <DialogTitle className="text-xl font-black uppercase">{editingUser ? 'Edit Profile' : 'New Employee Entry'}</DialogTitle>
+              <DialogDescription className="font-medium">Assign multiple system roles to this employee.</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-6 py-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" name="firstName" defaultValue={editingUser?.firstName} placeholder="John" required />
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase">First Name</Label>
+                  <Input name="firstName" defaultValue={editingUser?.firstName} required />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" name="lastName" defaultValue={editingUser?.lastName} placeholder="Doe" required />
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase">Last Name</Label>
+                  <Input name="lastName" defaultValue={editingUser?.lastName} required />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input id="email" name="email" type="email" defaultValue={editingUser?.email} placeholder="john.doe@shreelabel.com" required />
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">Work Email</Label>
+                <Input name="email" type="email" defaultValue={editingUser?.email} required />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="roleId">System Role</Label>
-                <Select name="roleId" defaultValue={editingUser?.roleId || "Operator"}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Admin">Admin (Full Access)</SelectItem>
-                    <SelectItem value="Sales">Sales (Jobs & Orders)</SelectItem>
-                    <SelectItem value="Manager">Manager (Reports & Planning)</SelectItem>
-                    <SelectItem value="Operator">Operator (Floor & Inventory)</SelectItem>
-                  </SelectContent>
-                </Select>
+              
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase text-primary">Assign System Roles</Label>
+                <div className="grid grid-cols-2 gap-3 p-4 border rounded-lg bg-muted/20">
+                  {roles?.map((role) => (
+                    <div key={role.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={`role-${role.id}`} 
+                        checked={selectedRoles.includes(role.id)} 
+                        onCheckedChange={(checked) => {
+                          if (checked) setSelectedRoles(p => [...p, role.id]);
+                          else setSelectedRoles(p => p.filter(id => id !== role.id));
+                        }}
+                      />
+                      <label htmlFor={`role-${role.id}`} className="text-xs font-bold leading-none cursor-pointer">{role.name}</label>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit">{editingUser ? 'Save Changes' : 'Create Account'}</Button>
+              <Button type="submit" className="w-full font-black uppercase">Save Employee Profile</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -246,110 +475,15 @@ export default function UserManagementPage() {
       <AlertDialog open={!!userToDelete} onOpenChange={(open) => !open && setUserToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the account for <strong>{userToDelete?.firstName} {userToDelete?.lastName}</strong> and remove their access to the ERP system.
-            </AlertDialogDescription>
+            <AlertDialogTitle className="font-black uppercase">Confirm Deletion</AlertDialogTitle>
+            <AlertDialogDescription className="font-medium">This will permanently remove access for {userToDelete?.firstName}.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteUser} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Delete Account
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleDeleteUser} className="bg-destructive hover:bg-destructive/90">Delete Account</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Shield className="h-5 w-5 text-primary" /> Active System Users
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-primary" />
-                    Fetching user accounts...
-                  </TableCell>
-                </TableRow>
-              ) : users?.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
-                        {u.firstName?.charAt(0)}{u.lastName?.charAt(0)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex flex-col">
-                      <span className="font-medium text-sm">{u.firstName} {u.lastName}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">{u.username}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="text-[10px]">
-                      {u.roleId}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <Mail className="h-3 w-3" />
-                      {u.email}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={u.isActive ? 'bg-emerald-500' : 'bg-muted text-muted-foreground'}>
-                      {u.isActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 p-0">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openEditDialog(u)} className="cursor-pointer">
-                          <Pencil className="mr-2 h-4 w-4" /> Edit Profile
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => toggleUserStatus(u.id, u.isActive)} className="cursor-pointer">
-                          <Shield className="mr-2 h-4 w-4" /> {u.isActive ? 'Deactivate' : 'Activate'}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setUserToDelete(u)} className="text-destructive cursor-pointer">
-                          <Trash2 className="mr-2 h-4 w-4" /> Delete Account
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {(!users || users.length === 0) && !isLoading && (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                    <div className="flex flex-col items-center gap-2">
-                      <UserIcon className="h-8 w-8 opacity-20" />
-                      <p>No user records found. Use "Add User" to register employees.</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   )
 }

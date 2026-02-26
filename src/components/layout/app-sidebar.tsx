@@ -3,7 +3,6 @@
 import { 
   LayoutDashboard, 
   Calculator, 
-  FileText, 
   ShoppingCart, 
   Palette, 
   IdCard, 
@@ -22,13 +21,11 @@ import {
   Box,
   ClipboardCheck,
   Hash,
-  Binary,
   ShieldAlert,
   Database,
   FileUp,
   LineChart,
-  Lock,
-  Key
+  Lock
 } from "lucide-react"
 import {
   Sidebar,
@@ -112,12 +109,11 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 
 const adminNavigation = [
   { name: 'Master Data', icon: Settings, href: '/master-data', permission: 'admin' as PermissionKey },
-  { name: 'Permissions', icon: Key, href: '/admin/permissions', permission: 'admin' as PermissionKey },
-  { name: 'Stock Import', icon: FileUp, href: '/admin/stock-import', permission: 'admin' as PermissionKey },
+  { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
   { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
+  { name: 'Stock Import', icon: FileUp, href: '/admin/stock-import', permission: 'admin' as PermissionKey },
   { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
   { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings', permission: 'admin' as PermissionKey },
-  { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
   { name: 'DB Migration', icon: Database, href: '/admin/migrate', permission: 'admin' as PermissionKey },
 ]
 
@@ -135,7 +131,7 @@ export function AppSidebar() {
       <SidebarHeader className="p-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-            <FileText className="text-white w-6 h-6" />
+            <Lock className="text-white w-6 h-6" />
           </div>
           <div>
             <span className="block font-bold text-white text-lg">Shree Label CRM</span>
@@ -149,8 +145,8 @@ export function AppSidebar() {
     <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl">
       <SidebarHeader className="p-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-            <FileText className="text-white w-6 h-6" />
+          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg">
+            <Lock className="text-white w-6 h-6" />
           </div>
           <div>
             <span className="block font-bold text-white text-lg">Shree Label CRM</span>
@@ -175,14 +171,12 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {navGroups.map((group) => {
-          // Filter items based on permissions
           const visibleItems = group.items.filter(item => hasPermission(item.permission));
-          
           if (visibleItems.length === 0) return null;
 
           return (
             <SidebarGroup key={group.label} className="mt-2">
-              <SidebarGroupLabel className="px-4 text-[10px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-1">
+              <SidebarGroupLabel className="px-4 text-[10px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">
                 {group.label}
               </SidebarGroupLabel>
               <SidebarMenu>
@@ -195,7 +189,7 @@ export function AppSidebar() {
                     >
                       <Link href={item.href}>
                         <item.icon className="mr-3 h-4 w-4" />
-                        <span className="text-sm">{item.name}</span>
+                        <span className="text-sm font-bold">{item.name}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -207,7 +201,7 @@ export function AppSidebar() {
         
         {hasPermission('admin') && (
           <SidebarGroup className="mt-4 border-t border-sidebar-border pt-4">
-            <SidebarGroupLabel className="px-4 text-[10px] font-bold text-sidebar-foreground/40 uppercase tracking-widest mb-1">Administration</SidebarGroupLabel>
+            <SidebarGroupLabel className="px-4 text-[10px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">System Control</SidebarGroupLabel>
             <SidebarMenu>
               {adminNavigation.map((item) => (
                 <SidebarMenuItem key={item.name}>
@@ -218,7 +212,7 @@ export function AppSidebar() {
                   >
                     <Link href={item.href}>
                       <item.icon className="mr-3 h-4 w-4" />
-                      <span className="text-sm">{item.name}</span>
+                      <span className="text-sm font-bold">{item.name}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
