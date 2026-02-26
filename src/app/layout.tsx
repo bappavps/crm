@@ -1,4 +1,3 @@
-
 import type {Metadata} from 'next';
 import { Inter } from "next/font/google";
 import './globals.css';
@@ -14,7 +13,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Shree Label ERP',
+  title: 'Shree Label Creation CRM',
   description: 'Specialized ERP for Narrow Web Flexo Printing',
 };
 

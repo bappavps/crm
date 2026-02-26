@@ -1,4 +1,3 @@
-
 "use client"
 
 import { usePathname } from "next/navigation"
@@ -22,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <SidebarInset className="flex flex-col flex-1 overflow-auto">
           <header className="h-16 border-b bg-card flex items-center px-6 sticky top-0 z-10 gap-4">
             <div className="flex-1">
-              <h1 className="text-xl font-bold text-primary">Shree Label ERP</h1>
+              <h1 className="text-xl font-bold text-primary">Shree Label Creation CRM</h1>
             </div>
             <NotificationBell />
             <UserNav />
