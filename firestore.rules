@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -23,65 +22,22 @@ service cloud.firestore {
       );
     }
 
-    function isMigrationLocked() {
-      let settings = get(/databases/$(database)/documents/system_settings/pricing_config).data;
-      return settings.migration_lock == true;
-    }
+    // --- RBAC: ROLES & PERMISSIONS ---
 
-    // --- MASTER JOBS COLLECTION ---
-
-    match /jobs/{jobId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && !isMigrationLocked();
-      allow update: if isAdmin() || (
-        isSignedIn() && 
-        !isMigrationLocked() &&
-        resource.data.status != 'Approved' && 
-        (resource.data.salesUserId == request.auth.uid || hasRole('Sales'))
-      );
-      allow delete: if isAdmin();
-
-      match /technical/details {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn() && !isMigrationLocked();
-        allow update: if isAdmin() || (
-          isSignedIn() && 
-          !isMigrationLocked() &&
-          request.time < timestamp(resource.data.edit_lock_time)
-        );
-        allow delete: if isAdmin();
-      }
-
-      match /financial/summary {
-        allow read: if isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/jobs/$(jobId)).data.salesUserId == request.auth.uid);
-        allow write: if isAdmin();
-      }
-
-      match /files/{fileId} {
-        allow read: if isSignedIn();
-        allow create: if isSignedIn() && !isMigrationLocked() && get(/databases/$(database)/documents/jobs/$(jobId)).data.status != 'Completed';
-        allow update, delete: if isAdmin();
-      }
-    }
-
-    // --- INVENTORY & STOCK ---
-
-    match /jumbo_stock/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && !isMigrationLocked());
-    }
-
-    match /inventoryItems/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && !isMigrationLocked());
-    }
-
-    match /alerts/{id} {
+    match /roles/{roleId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
-    // --- CONFIGURATION & COUNTERS (Admin Only Write) ---
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Allow user to write to their own profile, but only Admin can change customPermissions
+      allow update: if (isAdmin() || request.auth.uid == userId) && 
+                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customPermissions', 'roleId']) || isAdmin());
+      allow create: if isSignedIn();
+    }
+
+    // --- MASTER DATA & CONFIG ---
 
     match /system_settings/{id} {
       allow read: if isSignedIn();
@@ -95,28 +51,51 @@ service cloud.firestore {
 
     match /counters/{id} {
       allow read: if isSignedIn();
-      allow write: if isSignedIn() && !isMigrationLocked();
+      allow write: if isSignedIn();
     }
 
-    // --- LOGS ---
+    // --- CORE COLLECTIONS ---
 
-    match /system_logs/{document=**} {
-      allow read, write: if isAdmin();
-    }
-
-    // --- USERS & ROLES ---
-
-    match /users/{userId} {
+    match /jobs/{jobId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow write: if isSignedIn();
+      
+      match /{allSubcollections=**} {
+        allow read, write: if isSignedIn();
+      }
+    }
+
+    match /salesOrders/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /estimates/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /jumbo_stock/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /inventoryItems/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /alerts/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
 
     match /adminUsers/{userId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && request.auth.token.email == 'gm.shreelabel@gmail.com' && request.auth.uid == userId);
+      allow write: if isAdmin() || (request.auth.token.email == 'gm.shreelabel@gmail.com' && request.auth.uid == userId);
     }
 
-    // --- OTHER COLLECTIONS (Fallback) ---
+    // --- FALLBACK ---
 
     match /{collectionName}/{docId} {
       allow read: if isSignedIn();

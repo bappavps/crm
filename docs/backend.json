@@ -1,61 +1,27 @@
-
 {
   "entities": {
+    "Role": {
+      "title": "Role",
+      "type": "object",
+      "description": "Group permission set.",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "permissions": { "type": "object" }
+      }
+    },
     "User": {
       "title": "User",
       "type": "object",
-      "description": "System user with role-based permissions.",
+      "description": "System user with role-based and custom override permissions.",
       "properties": {
         "id": { "type": "string" },
         "email": { "type": "string", "format": "email" },
         "firstName": { "type": "string" },
         "lastName": { "type": "string" },
-        "roleId": { "type": "string", "enum": ["Admin", "Sales", "Manager", "Operator"] },
+        "roleId": { "type": "string" },
+        "customPermissions": { "type": "object" },
         "isActive": { "type": "boolean" }
-      }
-    },
-    "JobPost": {
-      "title": "JobPost",
-      "type": "object",
-      "description": "Production job submitted by sales requiring admin approval.",
-      "properties": {
-        "jobId": { "type": "string" },
-        "jobNumber": { "type": "string" },
-        "jobType": { "type": "string" },
-        "clientName": { "type": "string" },
-        "salesUserName": { "type": "string" },
-        "status": { "type": "string" },
-        "adminApproved": { "type": "boolean" },
-        "items": {
-          "type": "array",
-          "items": { "$ref": "#/backend/entities/JobItem" }
-        }
-      }
-    },
-    "JobItem": {
-      "title": "JobItem",
-      "type": "object",
-      "properties": {
-        "material": { "type": "string" },
-        "itemName": { "type": "string" },
-        "widthMM": { "type": "number" },
-        "heightMM": { "type": "number" },
-        "quantity": { "type": "number" },
-        "pricePerSqInch": { "type": "number" },
-        "totalJobValue": { "type": "number" },
-        "artworkUrl": { "type": "string" }
-      }
-    },
-    "InventoryAlert": {
-      "title": "InventoryAlert",
-      "type": "object",
-      "properties": {
-        "rollId": { "type": "string" },
-        "alertType": { "type": "string" },
-        "message": { "type": "string" },
-        "severity": { "type": "string", "enum": ["Low", "Medium", "Critical"] },
-        "createdAt": { "type": "string", "format": "date-time" },
-        "resolved": { "type": "boolean" }
       }
     }
   },
@@ -63,11 +29,11 @@
     "providers": ["password", "anonymous"]
   },
   "firestore": {
-    "/users/{userId}": { "schema": { "$ref": "#/backend/entities/User" }, "description": "Master user profiles." },
-    "/jobs/{jobId}": { "schema": { "$ref": "#/backend/entities/JobPost" }, "description": "Sales job entries." },
+    "/roles/{roleId}": { "schema": { "$ref": "#/backend/entities/Role" }, "description": "Global permission groups." },
+    "/users/{userId}": { "schema": { "$ref": "#/backend/entities/User" }, "description": "Master user profiles with overrides." },
+    "/jobs/{jobId}": { "schema": { "type": "object" }, "description": "Sales job entries." },
     "/system_settings/pricing_config": { "schema": { "type": "object" }, "description": "Global pricing dividers." },
     "/roll_settings/global_config": { "schema": { "type": "object" }, "description": "Inventory numbering logic." },
-    "/counters/{counterId}": { "schema": { "type": "object" }, "description": "Atomic sequence counters." },
-    "/alerts/{alertId}": { "schema": { "$ref": "#/backend/entities/InventoryAlert" }, "description": "Automated inventory technical alerts." }
+    "/counters/{counterId}": { "schema": { "type": "object" }, "description": "Atomic sequence counters." }
   }
 }

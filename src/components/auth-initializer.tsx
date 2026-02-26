@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect } from 'react';
@@ -8,7 +7,6 @@ import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 /**
  * Handles authentication state changes, role initialization, and sample data seeding.
- * Redirects unauthenticated users to the login page.
  */
 export function AuthInitializer() {
   const auth = useAuth();
@@ -17,25 +15,20 @@ export function AuthInitializer() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Handle Redirection based on Auth State
+  // Handle Redirection
   useEffect(() => {
     if (!isUserLoading && !user && pathname !== '/login') {
       router.push('/login');
     }
   }, [user, isUserLoading, pathname, router]);
 
-  // Handle Data Seeding and Admin Role Initialization
+  // Data Seeding
   useEffect(() => {
-    // Only attempt provisioning if the user is signed in and has an email (not anonymous)
     if (user && firestore && user.email) {
-      // Identity check for the specific requested admin user
       const isTargetAdmin = user.email === 'gm.shreelabel@gmail.com';
-      
-      const adminRef = doc(firestore, 'adminUsers', user.uid);
       const userRef = doc(firestore, 'users', user.uid);
 
       getDoc(userRef).then((snap) => {
-        // Initialize or update user profile if it doesn't exist or is the target admin
         if (!snap.exists() || isTargetAdmin) {
           const userData = {
             id: user.uid,
@@ -43,29 +36,23 @@ export function AuthInitializer() {
             firstName: isTargetAdmin ? "Mriganka" : (user.displayName?.split(' ')[0] || 'System'),
             lastName: isTargetAdmin ? "Debnath" : (user.displayName?.split(' ')[1] || 'User'),
             roleId: isTargetAdmin ? 'Admin' : 'Operator', 
-            role: isTargetAdmin ? 'admin' : 'user',
             isActive: true,
             createdAt: snap.exists() ? snap.data().createdAt : serverTimestamp(),
             updatedAt: serverTimestamp()
           };
 
-          // 1. Create main User document (Non-blocking)
           setDocumentNonBlocking(userRef, userData, { merge: true });
           
-          // 2. Create Security Marker in adminUsers collection (Non-blocking)
-          // This allows isAdmin() helper in firestore.rules to return true
           if (isTargetAdmin) {
-            setDocumentNonBlocking(adminRef, { 
+            setDocumentNonBlocking(doc(firestore, 'adminUsers', user.uid), { 
               id: user.uid, 
               email: userData.email,
-              roleId: 'Admin',
-              isActive: true,
-              createdAt: userData.createdAt 
+              roleId: 'Admin'
             }, { merge: true });
           }
         }
         
-        // 3. Seed Sample Data - Ensures critical system configs exist
+        seedSystemRoles(firestore);
         seedCleanDemoData(firestore, user.uid);
       });
     }
@@ -75,53 +62,65 @@ export function AuthInitializer() {
 }
 
 /**
- * Ensures system constants exist in Firestore for the ERP logic to function correctly.
+ * Seeds initial role definitions if they don't exist.
  */
+async function seedSystemRoles(db: any) {
+  const roles = [
+    {
+      id: 'Admin',
+      name: 'System Administrator',
+      permissions: {
+        dashboard: true, estimates: true, salesOrders: true, createJob: true,
+        jobPlanning: true, artwork: true, purchaseOrders: true, grn: true,
+        stockDashboard: true, stockRegistry: true, slitting: true, finishedGoods: true,
+        dieManagement: true, jobCards: true, bom: true, workOrders: true, liveFloor: true,
+        qualityControl: true, dispatch: true, billing: true, reports: true, admin: true
+      }
+    },
+    {
+      id: 'Sales',
+      name: 'Sales Executive',
+      permissions: {
+        dashboard: true, estimates: true, salesOrders: true, createJob: true,
+        artwork: true, reports: true
+      }
+    },
+    {
+      id: 'Operator',
+      name: 'Production Operator',
+      permissions: {
+        dashboard: true, slitting: true, jobCards: true, bom: true, workOrders: true,
+        liveFloor: true, qualityControl: true
+      }
+    },
+    {
+      id: 'Manager',
+      name: 'Operations Manager',
+      permissions: {
+        dashboard: true, estimates: true, jobPlanning: true, purchaseOrders: true,
+        stockDashboard: true, stockRegistry: true, reports: true, jobCards: true
+      }
+    }
+  ];
+
+  for (const role of roles) {
+    setDocumentNonBlocking(doc(db, 'roles', role.id), {
+      ...role,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+}
+
 function seedCleanDemoData(db: any, userId: string) {
-  // Use non-blocking writes for system seeding
-  const pricingRef = doc(db, 'system_settings', 'pricing_config');
-  setDocumentNonBlocking(pricingRef, {
+  setDocumentNonBlocking(doc(db, 'system_settings', 'pricing_config'), {
     sqInchDivider: 625,
-    decimalPrecision: 4,
-    currencySymbol: "₹",
-    pricingMode: "divider",
     lastUpdatedAt: serverTimestamp()
   }, { merge: true });
 
-  const rollSettingsRef = doc(db, 'roll_settings', 'global_config');
-  setDocumentNonBlocking(rollSettingsRef, {
+  setDocumentNonBlocking(doc(db, 'roll_settings', 'global_config'), {
     parentPrefix: "TLC-",
     startNumber: 1000,
-    childType: "alphabet",
-    subChildType: "number",
     separator: "-",
-    barcodePrefix: "BC-",
     trackingYear: 2026
   }, { merge: true });
-
-  const jobCounterRef = doc(db, 'counters', 'job_counter');
-  setDocumentNonBlocking(jobCounterRef, {
-    prefix: "JOB-",
-    year: 2026,
-    current_number: 1
-  }, { merge: true });
-
-  const clientRef = doc(db, 'customers', 'alexa-demo-id');
-  setDocumentNonBlocking(clientRef, {
-    id: 'alexa-demo-id',
-    name: "Alexa Lifesciences",
-    address: "Kolkata",
-    phone: "9876543210",
-    email: "info@alexa.com",
-    gstNumber: "19ABCDE1234F1Z5",
-    status: "Active",
-    createdAt: serverTimestamp(),
-    createdById: userId
-  }, { merge: true });
-
-  const matRef = doc(db, 'materials', 'chromo-demo');
-  setDocumentNonBlocking(matRef, { id: 'chromo-demo', name: 'CHROMO', gsm: 80, ratePerSqMeter: 22.50 }, { merge: true });
-
-  const machRef = doc(db, 'machines', 'flexo-demo');
-  setDocumentNonBlocking(machRef, { id: 'flexo-demo', name: 'UV Flexo 8-Color', maxPrintingWidthMm: 250, costPerHour: 1500 }, { merge: true });
 }

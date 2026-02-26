@@ -4,6 +4,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from "@/firebase/client-provider";
 import { AuthInitializer } from "@/components/auth-initializer";
+import { PermissionProvider } from "@/components/auth/permission-context";
 import { AppShell } from "@/components/layout/shell";
 import { cn } from "@/lib/utils";
 
@@ -33,10 +34,12 @@ export default function RootLayout({
           {/* AuthInitializer handles redirection and profile provisioning */}
           <AuthInitializer />
           
-          {/* AppShell provides the sidebar, header, and main container */}
-          <AppShell>
-            {children}
-          </AppShell>
+          <PermissionProvider>
+            {/* AppShell provides the sidebar, header, and main container */}
+            <AppShell>
+              {children}
+            </AppShell>
+          </PermissionProvider>
           
           <Toaster />
         </FirebaseClientProvider>
