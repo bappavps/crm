@@ -6,22 +6,53 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Database, AlertTriangle, CheckCircle2, History } from "lucide-react"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, runTransaction, query, where, limit, getDocs } from "firebase/firestore"
+import { 
+  Loader2, 
+  Database, 
+  AlertTriangle, 
+  CheckCircle2, 
+  History, 
+  Trash2, 
+  RefreshCw,
+  ShieldAlert
+} from "lucide-react"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogDescription,
+  DialogTrigger
+} from "@/components/ui/dialog"
+import { useFirestore, useUser, useDoc, useMemoFirebase } from "@/firebase"
+import { 
+  collection, 
+  doc, 
+  runTransaction, 
+  query, 
+  where, 
+  limit, 
+  getDocs, 
+  writeBatch,
+  deleteDoc,
+  setDoc,
+  serverTimestamp
+} from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 
 /**
- * PRODUCTION MIGRATION UTILITY (V2)
- * Refactors heavy job documents into Master-Subcollection structure.
+ * PRODUCTION MIGRATION & RESET UTILITY (V2)
+ * Handles both Master-Subcollection restructuring and development data wipes.
  */
 export default function MigrationPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
-  const [isMigrating, setIsMigrating] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState(0)
   const [log, setLog] = useState<string[]>([])
+  const [isWipeConfirmOpen, setIsWipeConfirmOpen] = useState(false)
 
   // Authorization Check
   const adminDocRef = useMemoFirebase(() => {
@@ -32,23 +63,25 @@ export default function MigrationPage() {
 
   const addLog = (msg: string) => setLog(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev])
 
+  /**
+   * REFACTORING: Move legacy fields to sub-collections
+   */
   const runMigration = async () => {
     if (!firestore || !adminData) return
-    setIsMigrating(true)
+    setIsProcessing(true)
     addLog("Starting migration scan...")
 
     try {
-      // 1. Find jobs that haven't been migrated
       const jobsQuery = query(
         collection(firestore, 'jobs'),
         where("migrated_v2", "!=", true),
-        limit(20) // Process in small batches for safety
+        limit(20)
       )
       
       const snapshot = await getDocs(jobsQuery)
       if (snapshot.empty) {
         addLog("All jobs are already on V2 architecture.")
-        setIsMigrating(false)
+        setIsProcessing(false)
         return
       }
 
@@ -60,12 +93,10 @@ export default function MigrationPage() {
         const jobId = jobDoc.id
 
         await runTransaction(firestore, async (transaction) => {
-          // Sub-doc references
           const techRef = doc(firestore, `jobs/${jobId}/technical/details`)
           const finRef = doc(firestore, `jobs/${jobId}/financial/summary`)
           const masterRef = doc(firestore, 'jobs', jobId)
 
-          // 1. Technical Migration
           const techData = {
             items: jobData.items || [],
             plateNo: jobData.plateNo || "",
@@ -76,7 +107,6 @@ export default function MigrationPage() {
             migrated_from_v1: true
           }
 
-          // 2. Financial Migration
           const finData = {
             totalJobValue: jobData.totalJobValue || 0,
             sqInchDivider: jobData.sqInchDivider || 625,
@@ -84,28 +114,15 @@ export default function MigrationPage() {
             migrated_from_v1: true
           }
 
-          // 3. File Migration (if artwork exists)
-          if (jobData.artworkUrl) {
-            const fileRef = doc(collection(firestore, `jobs/${jobId}/files`))
-            transaction.set(fileRef, {
-              fileType: 'artwork',
-              fileName: 'Migrated Legacy Artwork',
-              fileUrl: jobData.artworkUrl,
-              uploadedAt: jobData.createdAt || new Date().toISOString()
-            })
-          }
-
-          // 4. Atomic Updates
           transaction.set(techRef, techData)
           transaction.set(finRef, finData)
           
-          // 5. Clean Master Document
           transaction.update(masterRef, {
             migrated_v2: true,
-            items: null, // Remove heavy array
+            items: null,
             artworkUrl: null,
             totalJobValue: null,
-            updatedAt: new Date().toISOString()
+            updatedAt: serverTimestamp()
           })
         })
 
@@ -120,92 +137,205 @@ export default function MigrationPage() {
       addLog(`FATAL ERROR: ${error.message}`)
       toast({ variant: "destructive", title: "Migration Failed", description: error.message })
     } finally {
-      setIsMigrating(false)
+      setIsProcessing(false)
     }
   }
 
-  if (!adminData) return <div className="p-20 text-center text-muted-foreground">Unauthorized Access.</div>
+  /**
+   * EMERGENCY RESET: Wipe all transactional data
+   */
+  const runFullReset = async () => {
+    if (!firestore || !adminData) return
+    setIsProcessing(true)
+    setProgress(0)
+    setLog([])
+    addLog("--- INITIATING FULL TRANSACTIONAL WIPE ---")
+
+    const collectionsToWipe = [
+      'jobs',
+      'salesOrders',
+      'estimates',
+      'customers',
+      'jumbo_stock',
+      'inventoryItems',
+      'job_audit_log',
+      'qualityChecks',
+      'jobCards',
+      'workOrders',
+      'notifications'
+    ]
+
+    try {
+      // 1. Wipe Collections in Batches
+      for (const colName of collectionsToWipe) {
+        addLog(`Wiping collection: ${colName}...`)
+        const q = query(collection(firestore, colName))
+        const snapshot = await getDocs(q)
+        
+        if (snapshot.empty) {
+          addLog(`Collection ${colName} is already empty.`);
+          continue;
+        }
+
+        const batches = []
+        let currentBatch = writeBatch(firestore)
+        let count = 0
+
+        for (const d of snapshot.docs) {
+          currentBatch.delete(d.ref)
+          count++
+          
+          if (count === 50) {
+            batches.push(currentBatch.commit())
+            currentBatch = writeBatch(firestore)
+            count = 0
+          }
+        }
+        
+        if (count > 0) batches.push(currentBatch.commit())
+        await Promise.all(batches)
+        addLog(`Successfully wiped ${snapshot.size} docs from ${colName}.`)
+      }
+
+      // 2. Reset Counters
+      addLog("Resetting atomic sequences...")
+      const counters = ['job_counter', 'jumbo_roll', 'job_id']
+      for (const c of counters) {
+        await setDoc(doc(firestore, 'counters', c), {
+          current_number: 0,
+          year: new Date().getFullYear().toString(),
+          resetAt: serverTimestamp()
+        }, { merge: true })
+        addLog(`Counter [${c}] reset to zero.`)
+      }
+
+      addLog("--- WIPE COMPLETE ---")
+      toast({ title: "Database Reset", description: "Transactional data has been cleared." })
+    } catch (error: any) {
+      addLog(`WIPE ERROR: ${error.message}`)
+      toast({ variant: "destructive", title: "Wipe Failed", description: error.message })
+    } finally {
+      setIsProcessing(false)
+      setIsWipeConfirmOpen(false)
+    }
+  }
+
+  if (!adminData) return <div className="p-20 text-center text-muted-foreground">Unauthorized Access. Admin Role Required.</div>
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Database Restructuring Tool</h2>
-          <p className="text-muted-foreground">Migrating heavy "Jobs" documents to Master-Subcollection V2.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-primary">Database Maintenance Suite</h2>
+          <p className="text-muted-foreground">Admin-only tools for restructuring and environment resets.</p>
         </div>
-        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">ARCHITECTURE V2</Badge>
+        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">ADMIN CONSOLE</Badge>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5 text-primary" /> Migration Console
+        <div className="md:col-span-2 space-y-6">
+          {/* MIGRATION CARD */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 text-primary" /> Schema Migration (V2)
+              </CardTitle>
+              <CardDescription>
+                Restructure heavy "Jobs" documents into modular sub-collections for scaling.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg flex items-start gap-3">
+                <CheckCircle2 className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+                <div className="text-xs text-blue-800">
+                  <p className="font-bold">Architecture V2 Benefits</p>
+                  <p>Isolates Technical vs Financial data. Prevents 1MB doc limits. Enhances security rules.</p>
+                </div>
+              </div>
+              <Button 
+                onClick={runMigration} 
+                disabled={isProcessing} 
+                className="w-full h-12 font-bold"
+                variant="outline"
+              >
+                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <History className="mr-2 h-5 w-5" />}
+                Run Technical Refactor
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* DANGER ZONE RESET CARD */}
+          <Card className="border-destructive/20 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <ShieldAlert className="h-5 w-5" /> Danger Zone: Full Wipe
+              </CardTitle>
+              <CardDescription className="text-destructive/70">
+                Permanently delete all Jobs, Orders, Inventory, and Logs. Resets atomic counters.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Dialog open={isWipeConfirmOpen} onOpenChange={setIsWipeConfirmOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="destructive" className="w-full h-12 font-bold" disabled={isProcessing}>
+                    <Trash2 className="mr-2 h-5 w-5" /> Reset Transactional Database
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="text-destructive flex items-center gap-2">
+                      <AlertTriangle className="h-6 w-6" /> Destructive Action Confirmation
+                    </DialogTitle>
+                    <DialogDescription className="pt-4 space-y-3">
+                      <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
+                      <ul className="list-disc pl-5 text-xs space-y-1">
+                        <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
+                        <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
+                        <li><strong>Counters</strong> will reset to sequence #1.</li>
+                        <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
+                      </ul>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="ghost" onClick={() => setIsWipeConfirmOpen(false)}>Cancel</Button>
+                    <Button variant="destructive" onClick={runFullReset} disabled={isProcessing}>
+                      {isProcessing ? <Loader2 className="animate-spin mr-2" /> : "Yes, Wipe All Data"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* LOG CONSOLE */}
+        <Card className="flex flex-col">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center justify-between">
+              Process Log
+              {isProcessing && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
             </CardTitle>
-            <CardDescription>
-              This utility Extracts Technical and Financial data from the master "jobs" document 
-              and moves it into optimized sub-collections.
-            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="bg-amber-50 border border-amber-200 p-4 rounded-lg flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
-              <div className="text-xs text-amber-800 space-y-1">
-                <p className="font-bold uppercase">Production Warning</p>
-                <p>Ensure you have performed a Firestore backup. This process deletes the "items" array from the master document once moved.</p>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs font-bold uppercase text-muted-foreground">
-                <span>Atomic Progress</span>
-                <span>{progress}%</span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-
-            <Button 
-              onClick={runMigration} 
-              disabled={isMigrating} 
-              className="w-full h-12 text-lg font-bold"
-            >
-              {isMigrating ? <Loader2 className="animate-spin mr-2" /> : <History className="mr-2 h-5 w-5" />}
-              Execute Transactional Migration
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Process Log</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px] overflow-y-auto bg-muted/30 rounded-md p-3 font-mono text-[10px] space-y-1 border">
+          <CardContent className="flex-1 min-h-[400px]">
+            <div className="h-full overflow-y-auto bg-black rounded-md p-3 font-mono text-[10px] space-y-1 border border-primary/20 text-emerald-500 shadow-inner">
               {log.map((entry, i) => (
-                <p key={i} className={entry.includes("ERROR") ? "text-destructive" : ""}>{entry}</p>
+                <p key={i} className={entry.includes("ERROR") ? "text-red-400" : entry.includes("WIPE") ? "text-amber-400" : ""}>
+                  {entry}
+                </p>
               ))}
-              {log.length === 0 && <p className="text-muted-foreground italic text-center py-20">No active process log.</p>}
+              {log.length === 0 && <p className="text-muted-foreground italic text-center py-40 opacity-30">Waiting for process start...</p>}
             </div>
+            {isProcessing && (
+              <div className="mt-4 space-y-1">
+                <div className="flex justify-between text-[10px] font-bold text-primary">
+                  <span>PROCESSING</span>
+                  <span>{progress}%</span>
+                </div>
+                <Progress value={progress} className="h-1 bg-muted" />
+              </div>
+            )}
           </CardContent>
         </Card>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="p-4 border rounded-lg bg-card text-center space-y-1">
-          <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto" />
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Data Integrity</p>
-          <p className="text-xs font-medium">Atomic Transactions</p>
-        </div>
-        <div className="p-4 border rounded-lg bg-card text-center space-y-1">
-          <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto" />
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Idempotency</p>
-          <p className="text-xs font-medium">Safe Re-runs</p>
-        </div>
-        <div className="p-4 border rounded-lg bg-card text-center space-y-1">
-          <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto" />
-          <p className="text-[10px] font-bold uppercase text-muted-foreground">Capacity</p>
-          <p className="text-xs font-medium">Batch Processing</p>
-        </div>
       </div>
     </div>
   )
