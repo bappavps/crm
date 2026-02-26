@@ -2,103 +2,114 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // --- HELPER FUNCTIONS ---
+    /**
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION
+     * 
+     * Core Philosophy:
+     * This ruleset implements a robust Role-Based Access Control (RBAC) and Database-Backed Access Control (DBAC) 
+     * model. It prioritizes administrative control for sensitive operations (user creation, role management, 
+     * status toggling) while allowing users to manage their own profiles under strict conditions.
+     * 
+     * Data Structure:
+     * - /userProfiles/{userId}: Centralized user data including 'status' and 'roleId'.
+     * - /systemRoles/{roleId}: Definitions of system permissions and roles.
+     * - /adminUsers/{adminUid}: A marker collection used to identify global administrators efficiently.
+     * 
+     * Key Security Decisions:
+     * 1. Authorization Independence: Admin status is determined by the existence of a document in 
+     *    the /adminUsers collection, avoiding dependency on custom claims or heavy lookups.
+     * 2. Account Status Gatekeeping: Access to most system resources is predicated on the user 
+     *    having an 'active' status in their profile.
+     * 3. Immutability: Users are prevented from modifying their own administrative fields (role, status) 
+     *    even if they have write access to their profile.
+     * 4. Protected Roles: Hardcoded protection prevents the deletion of core system roles 
+     *    (System Administrator, SuperAdmin) to ensure system stability.
+     * 
+     * Denormalization for Authorization:
+     * To ensure performant rules, user 'status' and 'roleId' are stored directly on the UserProfile. 
+     * Admin status is checked via the /adminUsers collection existence check.
+     */
 
+    // --- Global Helper Functions ---
+
+    /** Checks if the request is from an authenticated user. */
     function isSignedIn() {
       return request.auth != null;
     }
 
+    /** Checks if the authenticated user is a designated system administrator. */
     function isAdmin() {
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) ||
-        request.auth.token.email == 'gm.shreelabel@gmail.com'
-      );
+      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
     }
 
-    // --- RBAC: ROLES & PERMISSIONS ---
-
-    match /roles/{roleId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+    /** Checks if the authenticated user's account status is currently 'active'. */
+    function isUserActive() {
+      return get(/databases/$(database)/documents/userProfiles/$(request.auth.uid)).data.status == 'active';
     }
 
-    match /users/{userId} {
-      allow read: if isSignedIn();
-      // Only Admin can change roles or customPermissions
-      allow update: if (isAdmin() || request.auth.uid == userId) && 
-                    (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['customPermissions', 'roles', 'roleId']) || isAdmin());
-      allow create: if isSignedIn();
+    /** Checks if the provided ID matches the authenticated user's UID. */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** Validates ownership and ensures the document exists for destructive operations. */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    /** Ensures critical relational/auth fields are not modified by the user. */
+    function isNotModifyingRestrictedFields() {
+      return request.resource.data.roleId == resource.data.roleId && 
+             request.resource.data.status == resource.data.status &&
+             request.resource.data.id == resource.data.id;
+    }
+
+    // --- Collection Rules ---
+
+    /**
+     * @description Rules for UserProfile. Admins manage the lifecycle. Users manage their own basic info if active.
+     * @path /userProfiles/{userId}
+     * @allow Authenticated user (get/list/update) their own profile; Admin (all)
+     * @deny Non-admin creating users; Inactive users updating their own profile; Users changing their own role/status.
+     * @principle Ownership-based access with Admin overrides and relational integrity enforcement.
+     */
+    match /userProfiles/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isOwner(userId) || isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isExistingOwner(userId) && resource.data.status == 'active' && isNotModifyingRestrictedFields());
       allow delete: if isAdmin();
     }
 
-    // --- MASTER DATA & CONFIG ---
-
-    match /system_settings/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+    /**
+     * @description System Roles define permissions. Readable by all active users, but writable only by Admins.
+     * @path /systemRoles/{roleId}
+     * @allow Any active user (get/list); Admin (create/update/delete).
+     * @deny Non-admins writing roles; Deleting protected "System Administrator" or "SuperAdmin" roles.
+     * @principle Role-based access with protection for critical system identifiers.
+     */
+    match /systemRoles/{roleId} {
+      allow get, list: if isSignedIn() && isUserActive();
+      allow create, update: if isAdmin();
+      allow delete: if isAdmin() && 
+                    resource.data.name != 'System Administrator' && 
+                    resource.data.name != 'SuperAdmin';
     }
 
-    match /roll_settings/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+    /**
+     * @description Marker collection for DBAC Admin identification. Not accessible by client-side apps.
+     * @path /adminUsers/{adminUid}
+     * @allow None.
+     * @deny All client-side requests.
+     * @principle Structural segregation of authorization markers (Database as Canonical Source).
+     */
+    match /adminUsers/{adminUid} {
+      allow read, write: if false;
     }
 
-    match /job_settings/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /counters/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    // --- CORE COLLECTIONS ---
-
-    match /jobs/{jobId} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-      
-      match /{allSubcollections=**} {
-        allow read, write: if isSignedIn();
-      }
-    }
-
-    match /salesOrders/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    match /estimates/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    match /jumbo_stock/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    match /inventoryItems/{id} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn();
-    }
-
-    match /alerts/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /adminUsers/{userId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() || (request.auth.token.email == 'gm.shreelabel@gmail.com' && request.auth.uid == userId);
-    }
-
-    // --- FALLBACK ---
-
-    match /{collectionName}/{docId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+    // --- Catch-all Default ---
+    match /{path=**} {
+      allow read, write: if false;
     }
   }
 }
