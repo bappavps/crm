@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
 import { FileText, Printer, Download, Plus, Loader2, CheckCircle2, XCircle, Send, ShoppingCart, Info, Lock } from "lucide-react"
 import { 
   Dialog, 
