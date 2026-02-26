@@ -12,30 +12,58 @@ import {
   Users, 
   Key, 
   Loader2, 
-  Save, 
   UserCog, 
-  CheckCircle2, 
   Lock,
-  Plus
+  Plus,
+  ShoppingCart,
+  Boxes,
+  Factory,
+  CheckCircle2,
+  Settings
 } from "lucide-react";
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase";
-import { collection, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { PermissionKey } from "@/components/auth/permission-context";
 
-const PERMISSION_KEYS: PermissionKey[] = [
-  'dashboard', 'estimates', 'salesOrders', 'createJob', 
-  'jobPlanning', 'artwork', 'purchaseOrders', 'grn', 
-  'stockDashboard', 'stockRegistry', 'slitting', 'finishedGoods', 'dieManagement',
-  'jobCards', 'bom', 'workOrders', 'liveFloor',
-  'qualityControl', 'dispatch', 'billing', 'reports', 'admin'
+interface PermissionGroup {
+  label: string;
+  icon: any;
+  keys: PermissionKey[];
+}
+
+const PERMISSION_GROUPS: PermissionGroup[] = [
+  {
+    label: "Sales & CRM",
+    icon: ShoppingCart,
+    keys: ['estimates', 'salesOrders', 'createJob']
+  },
+  {
+    label: "Inventory & Materials",
+    icon: Boxes,
+    keys: ['stockDashboard', 'stockRegistry', 'slitting', 'finishedGoods', 'dieManagement']
+  },
+  {
+    label: "Production Floor",
+    icon: Factory,
+    keys: ['jobPlanning', 'artwork', 'jobCards', 'bom', 'workOrders', 'liveFloor']
+  },
+  {
+    label: "Quality & Logistics",
+    icon: CheckCircle2,
+    keys: ['qualityControl', 'dispatch', 'billing']
+  },
+  {
+    label: "System & Admin",
+    icon: Settings,
+    keys: ['dashboard', 'reports', 'admin']
+  }
 ];
 
 export default function PermissionManagementPage() {
   const { toast } = useToast();
   const { user: currentUser } = useUser();
   const firestore = useFirestore();
-  const [isSaving, setIsSaving] = useState(false);
 
   // 1. Fetch Roles
   const rolesQuery = useMemoFirebase(() => {
@@ -72,34 +100,6 @@ export default function PermissionManagementPage() {
     }
   };
 
-  const handleToggleUserOverride = async (userId: string, key: PermissionKey, currentVal: any) => {
-    if (!firestore) return;
-    
-    const userRef = doc(firestore, 'users', userId);
-    const user = users?.find(u => u.id === userId);
-    const currentOverrides = user?.customPermissions || {};
-    
-    // Toggle logic: null -> true -> false -> null (removes override)
-    let newVal: boolean | null = null;
-    if (currentVal === undefined || currentVal === null) newVal = true;
-    else if (currentVal === true) newVal = false;
-    else newVal = null;
-
-    const updatedOverrides = { ...currentOverrides };
-    if (newVal === null) delete updatedOverrides[key];
-    else updatedOverrides[key] = newVal;
-
-    try {
-      await updateDoc(userRef, { 
-        customPermissions: updatedOverrides,
-        updatedAt: serverTimestamp()
-      });
-      toast({ title: "User Override Updated", description: `Custom flag set for ${user?.firstName}.` });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Update Failed", description: "Insufficient permissions." });
-    }
-  };
-
   if (rolesLoading || usersLoading) {
     return (
       <div className="flex h-[70vh] items-center justify-center">
@@ -115,7 +115,7 @@ export default function PermissionManagementPage() {
           <h2 className="text-3xl font-bold tracking-tight text-primary">Access Control Panel</h2>
           <p className="text-muted-foreground">Manage global roles and granular user permission overrides.</p>
         </div>
-        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">SECURITY LEVEL 4</Badge>
+        <Badge variant="outline" className="h-8 px-4 font-bold text-lg">SECURITY V2</Badge>
       </div>
 
       <Tabs defaultValue="roles" className="w-full">
@@ -125,35 +125,45 @@ export default function PermissionManagementPage() {
         </TabsList>
 
         <TabsContent value="roles" className="pt-6">
-          <div className="grid gap-6">
+          <div className="grid gap-8">
             {roles?.map((role) => (
-              <Card key={role.id} className="overflow-hidden border-l-4 border-l-primary">
-                <CardHeader className="bg-muted/30">
+              <Card key={role.id} className="overflow-hidden border-none shadow-lg bg-card/50 backdrop-blur-sm">
+                <CardHeader className="bg-primary/5 pb-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle className="text-xl font-black text-primary uppercase">{role.name}</CardTitle>
-                      <CardDescription>Default permissions for {role.id} group.</CardDescription>
+                      <CardTitle className="text-2xl font-black text-primary uppercase tracking-tight">{role.name}</CardTitle>
+                      <CardDescription>Default access levels for {role.id} group.</CardDescription>
                     </div>
-                    <Badge variant="secondary">ROLE ID: {role.id}</Badge>
+                    <Badge variant="secondary" className="h-6 px-3">ROLE ID: {role.id}</Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="p-0">
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-0 border-t">
-                    {PERMISSION_KEYS.map((key) => (
-                      <div key={key} className="p-4 border-r border-b flex flex-col gap-2 items-center justify-center hover:bg-primary/5 transition-colors">
-                        <span className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground text-center line-clamp-1">{key}</span>
-                        <Switch 
-                          checked={!!role.permissions?.[key]} 
-                          onCheckedChange={() => handleToggleRolePermission(role.id, key, !!role.permissions?.[key])}
-                        />
+                <CardContent className="p-6 space-y-8">
+                  {PERMISSION_GROUPS.map((group) => (
+                    <div key={group.label} className="space-y-4">
+                      <div className="flex items-center gap-2 border-b pb-2">
+                        <group.icon className="h-4 w-4 text-primary" />
+                        <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{group.label}</h3>
                       </div>
-                    ))}
-                  </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-4">
+                        {group.keys.map((key) => (
+                          <div key={key} className="flex items-center justify-between py-1 group/item">
+                            <span className="text-sm font-medium text-foreground group-hover/item:text-primary transition-colors capitalize">
+                              {key.replace(/([A-Z])/g, ' $1')}
+                            </span>
+                            <Switch 
+                              checked={!!role.permissions?.[key]} 
+                              onCheckedChange={() => handleToggleRolePermission(role.id, key, !!role.permissions?.[key])}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </CardContent>
               </Card>
             ))}
             
-            <Button variant="outline" className="border-dashed h-20 text-lg font-bold">
+            <Button variant="outline" className="border-dashed h-16 text-lg font-bold text-muted-foreground hover:text-primary">
               <Plus className="mr-2 h-5 w-5" /> Create New Custom Role
             </Button>
           </div>
@@ -163,7 +173,7 @@ export default function PermissionManagementPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-primary" /> Employee Permission Registry</CardTitle>
-              <CardDescription>Bypass role defaults by setting specific user-level overrides.</CardDescription>
+              <CardDescription>Assign roles and manage specific user-level overrides.</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -185,7 +195,7 @@ export default function PermissionManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{u.roleId || 'No Role'}</Badge>
+                        <Badge variant="outline" className="font-bold">{u.roleId || 'No Role'}</Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -200,8 +210,8 @@ export default function PermissionManagementPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" onClick={() => toast({ title: "Editor Mode", description: "Select a key to toggle override for this user." })}>
-                          Edit Flags
+                        <Button variant="ghost" size="sm" onClick={() => toast({ title: "Module Development", description: "Granular user override toggles are coming in V3." })}>
+                          Manage Overrides
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -215,7 +225,7 @@ export default function PermissionManagementPage() {
             <Lock className="h-5 w-5 text-amber-600 mt-0.5" />
             <div className="text-xs text-amber-800">
               <p className="font-bold">Security Best Practice</p>
-              <p>Prefer group roles over user overrides whenever possible. Overrides are intended for temporary access or specialized technical accounts.</p>
+              <p>Prefer group roles over user overrides whenever possible. Overrides should be used for temporary specialized access or technical debugging.</p>
             </div>
           </div>
         </TabsContent>
