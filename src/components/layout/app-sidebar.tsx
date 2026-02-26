@@ -27,7 +27,8 @@ import {
   ListTodo,
   FilePlus,
   Binary,
-  ShieldAlert
+  ShieldAlert,
+  Database
 } from "lucide-react"
 import {
   Sidebar,
@@ -107,6 +108,7 @@ const adminNavigation = [
   { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings' },
   { name: 'Job Settings', icon: Binary, href: '/master-data/job-settings' },
   { name: 'User Management', icon: Users, href: '/users' },
+  { name: 'DB Migration', icon: Database, href: '/admin/migrate' },
 ]
 
 export function AppSidebar() {

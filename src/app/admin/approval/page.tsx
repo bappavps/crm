@@ -15,7 +15,6 @@ export default function AdminApprovalPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
 
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -51,10 +50,11 @@ export default function AdminApprovalPage() {
           currentStage: 'Planning'
         });
 
-        transaction.update(techRef, {
+        // Initialize technical doc with lock if it doesn't exist, otherwise update lock
+        transaction.set(techRef, {
           edit_lock_time: lockTime,
           approval_timestamp: now.toISOString()
-        });
+        }, { merge: true });
       });
 
       toast({ title: "Job Approved", description: "Master status updated and technical lock set to 30 mins." })
