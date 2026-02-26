@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -19,18 +19,25 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, query, where, getDocs, deleteDoc } from "firebase/firestore"
-import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { collection, doc, query, where, getDocs, deleteDoc, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
+/**
+ * SLITTING (CONVERSION) MODULE V2
+ * Uses Atomic Transactions to ensure Job, Jumbo, and Slitted items are updated together.
+ */
 export default function SlittingPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [selectedJumboId, setSelectedJumboId] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => { setIsMounted(true) }, [])
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -39,54 +46,52 @@ export default function SlittingPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Roll Settings - Updated Path and fields
+  // Roll Settings
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'roll_settings', 'global_config');
   }, [firestore]);
   const { data: settings } = useDoc(settingsDocRef);
 
-  // Firestore Queries
+  // Firestore Queries - Synchronized with 'jobs' collection
   const jumboQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'jumbo_stock');
-  }, [firestore, user, adminData])
+  }, [firestore, user])
 
   const slittedQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'inventoryItems');
-  }, [firestore, user, adminData])
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'inventoryItems'), where("itemType", "==", "Slitted Roll"));
+  }, [firestore, user])
 
   const planningQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'job_planning');
-  }, [firestore, user, adminData])
+    if (!firestore || !user) return null;
+    // Jobs that are approved and released by planning but not yet slit
+    return query(collection(firestore, 'jobs'), where("status", "==", "Approved"), where("planning_status", "==", "Released"));
+  }, [firestore, user])
 
   const { data: jumbos, isLoading: jumbosLoading } = useCollection(jumboQuery)
-  const { data: inventory, isLoading: itemsLoading } = useCollection(slittedQuery)
+  const { data: slittedRolls, isLoading: itemsLoading } = useCollection(slittedQuery)
   const { data: jobs } = useCollection(planningQuery)
 
   const activeJumbos = jumbos?.filter(j => j.status === 'In Stock') || []
-  const slittedRolls = inventory?.filter(item => item.itemType === 'Slitted Roll') || []
-  const waitingJobs = jobs?.filter(job => job.status === 'WAITING FOR SLITTING') || []
+  const waitingJobs = jobs || []
 
   const selectedJobData = useMemo(() => 
     waitingJobs.find(j => j.id === selectedJobId), 
     [waitingJobs, selectedJobId]
   )
 
-  // AUTO PAPER SUGGESTION LOGIC
+  // INTELLIGENT STOCK MATCHING
   const suggestedRolls = useMemo(() => {
     if (!selectedJobData || !activeJumbos.length) return []
 
     const reqWidth = Number(selectedJobData.paper_width)
-    const reqLength = Number(selectedJobData.allocate_meters)
     const reqMaterial = selectedJobData.material
 
     const matching = activeJumbos.filter(j => 
       j.paperType === reqMaterial &&
-      j.widthMm >= reqWidth &&
-      j.lengthMeters >= reqLength
+      j.widthMm >= reqWidth
     )
 
     const sorted = [...matching].sort((a, b) => {
@@ -111,96 +116,109 @@ export default function SlittingPage() {
     e.preventDefault()
     if (!firestore || !user || !selectedJobData || !selectedJumboId) return
 
+    setIsProcessing(true)
     const formData = new FormData(e.currentTarget)
     const selectedJumbo = activeJumbos.find(j => j.id === selectedJumboId)
     
     if (!selectedJumbo) {
       toast({ variant: "destructive", title: "Error", description: "Jumbo Roll selection required." })
+      setIsProcessing(false)
       return
     }
 
     const slitWidth = Number(formData.get("slitWidth"))
     const numRolls = Number(formData.get("numRolls"))
 
-    // 1. Mark Jumbo as Consumed
-    updateDocumentNonBlocking(doc(firestore, 'jumbo_stock', selectedJumboId), {
-      status: "Consumed",
-      updatedAt: new Date().toISOString()
-    })
+    try {
+      await runTransaction(firestore, async (transaction) => {
+        const jumboRef = doc(firestore, 'jumbo_stock', selectedJumboId)
+        const jobRef = doc(firestore, 'jobs', selectedJobData.id)
+        
+        // 1. Mark Jumbo as Consumed
+        transaction.update(jumboRef, {
+          status: "Consumed",
+          consumedAt: new Date().toISOString(),
+          consumedBy: user.uid,
+          updatedAt: serverTimestamp()
+        })
 
-    // 2. Update Job Status to SLITTING DONE
-    updateDocumentNonBlocking(doc(firestore, 'job_planning', selectedJobData.id), {
-      status: "SLITTING DONE",
-      updatedAt: new Date().toISOString()
-    })
+        // 2. Update Job Status
+        transaction.update(jobRef, {
+          planning_status: "Converted",
+          currentStage: "Production",
+          updatedAt: serverTimestamp()
+        })
 
-    // 3. Remove associated notification
-    const nq = query(collection(firestore, 'notifications'), where("jobId", "==", selectedJobData.id))
-    const nSnap = await getDocs(nq)
-    nSnap.docs.forEach(d => deleteDoc(d.ref))
+        // 3. Create Slitted Child Rolls
+        const sep = settings?.separator || "-"
+        const prefixType = settings?.childType || "alphabet"
 
-    // 4. Create Slitted Child Rolls
-    const sep = settings?.separator || "-"
-    const prefixType = settings?.childType || "alphabet"
+        for (let i = 0; i < numRolls; i++) {
+          let childId = ""
+          if (prefixType === "alphabet") {
+            childId = String.fromCharCode(65 + i)
+          } else {
+            childId = (i + 1).toString()
+          }
 
-    for (let i = 0; i < numRolls; i++) {
-      let childId = ""
-      if (prefixType === "alphabet") {
-        childId = String.fromCharCode(65 + i)
-      } else {
-        childId = (i + 1).toString()
-      }
+          const generatedBarcode = `${selectedJumbo.rollNo}${sep}${childId}`
+          const slitRef = doc(collection(firestore, 'inventoryItems'))
 
-      const generatedBarcode = `${selectedJumbo.rollNo}${sep}${childId}`
+          transaction.set(slitRef, {
+            barcode: generatedBarcode,
+            name: `Slitted: ${selectedJumbo.paperType}`,
+            parentJumboId: selectedJumboId,
+            parentRollNo: selectedJumbo.rollNo,
+            itemType: "Slitted Roll",
+            dimensions: `${slitWidth}mm x ${selectedJumbo.lengthMeters}m`,
+            currentQuantity: 1,
+            unitOfMeasure: "roll",
+            location: "Production Floor",
+            status: "ASSIGNED",
+            assigned_job_id: selectedJobData.jobNumber,
+            assigned_job_internal_id: selectedJobData.id,
+            assigned_date: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            createdById: user.uid
+          })
+        }
 
-      const slitData = {
-        barcode: generatedBarcode,
-        name: `Slitted: ${selectedJumbo.paperType}`,
-        parentJumboId: selectedJumboId,
-        parentRollNo: selectedJumbo.rollNo,
-        itemType: "Slitted Roll",
-        dimensions: `${slitWidth}mm x ${selectedJumbo.lengthMeters}m`,
-        currentQuantity: 1,
-        unitOfMeasure: "roll",
-        location: "Production Ready",
-        status: "ASSIGNED",
-        assigned_job_id: selectedJobData.plate_no || selectedJobData.id,
-        assigned_job_name: selectedJobData.job_name,
-        assigned_date: new Date().toISOString(),
-        assigned_user: user.displayName || user.email?.split('@')[0] || "Operator",
-        createdAt: new Date().toISOString(),
-        createdById: user.uid
-      }
-      addDocumentNonBlocking(collection(firestore, 'inventoryItems'), slitData)
+        // 4. Remove associated notifications if any
+        const nq = query(collection(firestore, 'notifications'), where("jobId", "==", selectedJobData.id))
+        const nSnap = await getDocs(nq)
+        nSnap.docs.forEach(d => transaction.delete(d.ref))
+      })
+
+      toast({ title: "Slitting Completed", description: `Parent ${selectedJumbo.rollNo} converted to ${numRolls} rolls for ${selectedJobData.jobNumber}.` })
+      setIsDialogOpen(false)
+      setSelectedJobId(null)
+      setSelectedJumboId(null)
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Transaction Failed", description: error.message })
+    } finally {
+      setIsProcessing(false)
     }
-
-    setIsDialogOpen(false)
-    setSelectedJobId(null)
-    setSelectedJumboId(null)
-    toast({
-      title: "Slitting Completed",
-      description: `Material assigned to Job ${selectedJobData.job_name}. Notification cleared.`
-    })
   }
+
+  if (!isMounted) return null
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Slitting (Conversion)</h2>
-          <p className="text-muted-foreground">Process jobs released by Design and execute material conversion.</p>
+          <p className="text-muted-foreground">Process released technical plans and execute material conversion.</p>
         </div>
         <Button onClick={() => setIsDialogOpen(true)} className="bg-primary hover:bg-primary/90 shadow-lg">
-          <Scissors className="mr-2 h-4 w-4" /> Start Slitting Run
+          <Scissors className="mr-2 h-4 w-4" /> Execute Conversion Run
         </Button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Waiting Jobs Dashboard Section */}
         <Card className="lg:col-span-1 border-amber-100 shadow-sm">
           <CardHeader className="bg-amber-50/50 pb-4">
             <CardTitle className="text-sm font-bold flex items-center gap-2 text-amber-700 uppercase tracking-wider">
-              <Clock className="h-4 w-4" /> Jobs Waiting for Slitting
+              <Clock className="h-4 w-4" /> Planning Release Queue
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0 max-h-[600px] overflow-auto">
@@ -209,13 +227,13 @@ export default function SlittingPage() {
                 {waitingJobs.map((job) => (
                   <div key={job.id} className="p-4 hover:bg-muted/30 transition-colors group cursor-pointer" onClick={() => { setSelectedJobId(job.id); setIsDialogOpen(true); }}>
                     <div className="flex justify-between items-start mb-1">
-                      <span className="font-black text-primary text-xs tracking-tighter">{job.plate_no}</span>
-                      <Badge variant="outline" className="text-[10px] px-1 h-4 bg-white">{job.material}</Badge>
+                      <span className="font-black text-primary text-xs tracking-tighter">{job.jobNumber}</span>
+                      <Badge variant="outline" className="text-[10px] px-1 h-4 bg-white">{job.material || 'N/A'}</Badge>
                     </div>
-                    <p className="text-sm font-bold truncate group-hover:text-primary transition-colors">{job.job_name}</p>
+                    <p className="text-sm font-bold truncate group-hover:text-primary transition-colors">{job.clientName}</p>
                     <div className="flex justify-between mt-2 text-[10px] text-muted-foreground font-medium">
-                      <span>{job.paper_width}mm width</span>
-                      <span>{job.allocate_meters}m required</span>
+                      <span>{job.paper_width || '0'}mm width</span>
+                      <span>Ready for Conversion</span>
                     </div>
                   </div>
                 ))}
@@ -223,20 +241,20 @@ export default function SlittingPage() {
             ) : (
               <div className="p-10 text-center text-muted-foreground">
                 <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-20" />
-                <p className="text-xs">No pending jobs in queue.</p>
+                <p className="text-xs">No pending releases in queue.</p>
               </div>
             )}
           </CardContent>
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Master Assigned Slitted Stock</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-lg flex items-center gap-2"><RefreshCw className="h-5 w-5 text-primary" /> Active Conversion Registry</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead>Roll ID</TableHead>
-                  <TableHead>Assigned Master Plate</TableHead>
+                  <TableHead>Child Roll ID</TableHead>
+                  <TableHead>Assigned Job</TableHead>
                   <TableHead>Dimensions</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -244,21 +262,18 @@ export default function SlittingPage() {
               <TableBody>
                 {itemsLoading ? (
                   <TableRow><TableCell colSpan={4} className="text-center py-10"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                ) : slittedRolls.slice(0, 15).map((s) => (
+                ) : slittedRolls?.slice(0, 15).map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-mono text-xs font-bold">{s.barcode}</TableCell>
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-primary">{s.assigned_job_id || 'Unassigned'}</span>
-                        <span className="text-[10px] text-muted-foreground line-clamp-1">{s.assigned_job_name}</span>
-                      </div>
+                      <span className="text-xs font-bold text-primary">{s.assigned_job_id || 'Unassigned'}</span>
                     </TableCell>
                     <TableCell className="text-xs font-mono">{s.dimensions}</TableCell>
                     <TableCell><Badge variant={s.status === 'ASSIGNED' ? 'default' : 'secondary'}>{s.status}</Badge></TableCell>
                   </TableRow>
                 ))}
-                {slittedRolls.length === 0 && !itemsLoading && (
-                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">No slitted stock assigned to master plans.</TableCell></TableRow>
+                {slittedRolls?.length === 0 && !itemsLoading && (
+                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">No slitted stock currently assigned.</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -270,19 +285,18 @@ export default function SlittingPage() {
         <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSlittingConversion}>
             <DialogHeader>
-              <DialogTitle>Execute Slitting & Assign Plan</DialogTitle>
-              <DialogDescription>Select a job from the slitting queue to see auto-paper suggestions.</DialogDescription>
+              <DialogTitle>Execute Atomic Conversion</DialogTitle>
+              <DialogDescription>Convert a technical release into slitted rolls. This update is permanent and transactional.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="jobId">Select Job from Queue</Label>
+                <Label htmlFor="jobId">Select Released Job</Label>
                 <Select value={selectedJobId || ""} onValueChange={handleJobSelect} required>
                   <SelectTrigger><SelectValue placeholder="Choose Job to Slit" /></SelectTrigger>
                   <SelectContent>
                     {waitingJobs.map((j) => (
-                      <SelectItem key={j.id} value={j.id}>{j.plate_no} - {j.job_name}</SelectItem>
+                      <SelectItem key={j.id} value={j.id}>{j.jobNumber} - {j.clientName}</SelectItem>
                     ))}
-                    {waitingJobs.length === 0 && <SelectItem value="none" disabled>No jobs in waiting queue</SelectItem>}
                   </SelectContent>
                 </Select>
               </div>
@@ -290,20 +304,20 @@ export default function SlittingPage() {
               {selectedJobData && (
                 <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 space-y-3">
                   <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase">
-                    <ListTodo className="h-3 w-3" /> Technical Plan Parameters
+                    <ListTodo className="h-3 w-3" /> Technical Specification
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div className="space-y-1">
                       <Label className="text-[10px] text-muted-foreground uppercase">Material</Label>
-                      <p className="font-bold">{selectedJobData.material}</p>
+                      <p className="font-bold">{selectedJobData.material || 'N/A'}</p>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground uppercase">Req. Width</Label>
-                      <p className="font-bold">{selectedJobData.paper_width} mm</p>
+                      <Label className="text-[10px] text-muted-foreground uppercase">Planned Width</Label>
+                      <p className="font-bold">{selectedJobData.paper_width || '0'} mm</p>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] text-muted-foreground uppercase">Req. Meter</Label>
-                      <p className="font-bold text-accent">{selectedJobData.allocate_meters} m</p>
+                      <Label className="text-[10px] text-muted-foreground uppercase">Plate ID</Label>
+                      <p className="font-bold text-accent">{selectedJobData.plateNo || 'N/A'}</p>
                     </div>
                   </div>
                 </div>
@@ -311,21 +325,18 @@ export default function SlittingPage() {
 
               {selectedJobId && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="flex items-center gap-2 text-sm font-bold">
-                      <Sparkles className="h-4 w-4 text-primary" /> Intelligent Stock Matching
-                    </Label>
-                  </div>
+                  <Label className="flex items-center gap-2 text-sm font-bold">
+                    <Sparkles className="h-4 w-4 text-primary" /> Intelligent Stock Matching
+                  </Label>
                   
                   {suggestedRolls.length > 0 ? (
-                    <div className="border rounded-md overflow-hidden shadow-inner bg-background">
+                    <div className="border rounded-md overflow-hidden bg-background">
                       <Table>
                         <TableHeader className="bg-muted/50">
                           <TableRow>
                             <TableHead className="w-[50px]"></TableHead>
                             <TableHead>Roll ID</TableHead>
                             <TableHead>Width</TableHead>
-                            <TableHead>Length</TableHead>
                             <TableHead>Material</TableHead>
                             <TableHead className="text-right">Match</TableHead>
                           </TableRow>
@@ -351,7 +362,6 @@ export default function SlittingPage() {
                               </TableCell>
                               <TableCell className="font-mono text-xs font-bold">{roll.rollNo}</TableCell>
                               <TableCell className="text-xs">{roll.widthMm} mm</TableCell>
-                              <TableCell className="text-xs">{roll.lengthMeters} m</TableCell>
                               <TableCell className="text-[10px]">{roll.paperType}</TableCell>
                               <TableCell className="text-right">
                                 {roll.isBestMatch ? (
@@ -368,7 +378,7 @@ export default function SlittingPage() {
                   ) : (
                     <div className="p-10 text-center border-2 border-dashed rounded-lg space-y-2">
                       <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto opacity-50" />
-                      <p className="text-sm font-medium text-muted-foreground">No matching inventory found for the master plan specs.</p>
+                      <p className="text-sm font-medium text-muted-foreground">No matching inventory found for specifications.</p>
                     </div>
                   )}
                 </div>
@@ -387,15 +397,15 @@ export default function SlittingPage() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="numRolls">Total Rolls to Slit</Label>
+                    <Label htmlFor="numRolls">Total Rolls to Generate</Label>
                     <Input id="numRolls" name="numRolls" type="number" defaultValue={1} required />
                   </div>
                 </div>
               )}
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12" disabled={!selectedJumboId}>
-                Confirm Conversion & Complete Notification
+              <Button type="submit" className="w-full h-12" disabled={!selectedJumboId || isProcessing}>
+                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : "Finalize Transactional Conversion"}
               </Button>
             </DialogFooter>
           </form>
