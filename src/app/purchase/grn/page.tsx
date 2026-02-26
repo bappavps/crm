@@ -10,7 +10,23 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
-import { Plus, Loader2, Printer, Search, ArrowUpDown, FilterX, ArrowUp, ArrowDown, Hash, Info, Calendar } from "lucide-react"
+import { 
+  Plus, 
+  Loader2, 
+  Printer, 
+  Search, 
+  ArrowUpDown, 
+  FilterX, 
+  ArrowUp, 
+  ArrowDown, 
+  Hash, 
+  Info, 
+  Calendar,
+  Filter,
+  ChevronDown,
+  ChevronUp,
+  Download
+} from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -22,8 +38,10 @@ import {
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, runTransaction, query, where, getDocs } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
+import * as XLSX from 'xlsx'
 
-type SortField = 'rollNo' | 'receivedDate' | 'weightKg' | 'sqm' | 'paperCompany' | 'paperType';
+type SortField = 'rollNo' | 'receivedDate' | 'purchaseRate' | 'gsm' | 'sqm' | 'weightKg';
 type SortOrder = 'asc' | 'desc';
 
 export default function GRNPage() {
@@ -33,14 +51,34 @@ export default function GRNPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isManualId, setIsManualId] = useState(false)
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   
-  const [searchQuery, setSearchQuery] = useState("")
-  const [companyFilter, setCompanyFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
+  // Sort State
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
-  // Expanded State for all 19 Fields
+  // Filter State
+  const [filters, setFilters] = useState({
+    rollNo: "",
+    paperType: "all",
+    lotNo: "",
+    companyRollNo: "",
+    jobNo: "",
+    productName: "",
+    receivedDateStart: "",
+    receivedDateEnd: "",
+    dateOfUseStart: "",
+    dateOfUseEnd: "",
+    gsmMin: "",
+    gsmMax: "",
+    widthMin: "",
+    widthMax: "",
+    rateMin: "",
+    rateMax: "",
+    status: "all"
+  })
+
+  // Form State
   const [formData, setFormData] = useState({
     widthMm: 1020,
     lengthMeters: 0,
@@ -63,7 +101,7 @@ export default function GRNPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminLoading } = useDoc(adminDocRef);
 
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -102,18 +140,29 @@ export default function GRNPage() {
 
   const filteredAndSortedJumbos = useMemo(() => {
     if (!jumbos) return [];
-    let result = jumbos.filter(j => j.status === 'In Stock' || j.status === 'Available');
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(j => 
-        (j.rollNo || "").toLowerCase().includes(q) || 
-        (j.productName || "").toLowerCase().includes(q) ||
-        (j.lotNo || "").toLowerCase().includes(q)
-      );
-    }
-    if (companyFilter !== "all") result = result.filter(j => j.paperCompany === companyFilter);
-    if (typeFilter !== "all") result = result.filter(j => j.paperType === typeFilter);
+    
+    let result = [...jumbos];
 
+    // Apply Advanced Filters
+    if (filters.rollNo) result = result.filter(j => (j.rollNo || "").toLowerCase().includes(filters.rollNo.toLowerCase()));
+    if (filters.paperType !== "all") result = result.filter(j => j.paperType === filters.paperType);
+    if (filters.lotNo) result = result.filter(j => (j.lotNo || "").toLowerCase().includes(filters.lotNo.toLowerCase()));
+    if (filters.companyRollNo) result = result.filter(j => (j.companyRollNo || "").toLowerCase().includes(filters.companyRollNo.toLowerCase()));
+    if (filters.jobNo) result = result.filter(j => (j.jobNo || "").toLowerCase().includes(filters.jobNo.toLowerCase()));
+    if (filters.productName) result = result.filter(j => (j.productName || "").toLowerCase().includes(filters.productName.toLowerCase()));
+    if (filters.status !== "all") result = result.filter(j => j.status === filters.status);
+
+    // Range Filters
+    if (filters.receivedDateStart) result = result.filter(j => j.receivedDate >= filters.receivedDateStart);
+    if (filters.receivedDateEnd) result = result.filter(j => j.receivedDate <= filters.receivedDateEnd);
+    if (filters.gsmMin) result = result.filter(j => (j.gsm || 0) >= Number(filters.gsmMin));
+    if (filters.gsmMax) result = result.filter(j => (j.gsm || 0) <= Number(filters.gsmMax));
+    if (filters.widthMin) result = result.filter(j => (j.widthMm || 0) >= Number(filters.widthMin));
+    if (filters.widthMax) result = result.filter(j => (j.widthMm || 0) <= Number(filters.widthMax));
+    if (filters.rateMin) result = result.filter(j => (j.purchaseRate || 0) >= Number(filters.rateMin));
+    if (filters.rateMax) result = result.filter(j => (j.purchaseRate || 0) <= Number(filters.rateMax));
+
+    // Sort Logic
     result.sort((a, b) => {
       let valA = a[sortField];
       let valB = b[sortField];
@@ -123,8 +172,40 @@ export default function GRNPage() {
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
+
     return result;
-  }, [jumbos, searchQuery, companyFilter, typeFilter, sortField, sortOrder]);
+  }, [jumbos, filters, sortField, sortOrder]);
+
+  const stats = useMemo(() => {
+    const totalSqm = filteredAndSortedJumbos.reduce((acc, j) => acc + (Number(j.sqm) || 0), 0)
+    const totalWeight = filteredAndSortedJumbos.reduce((acc, j) => acc + (Number(j.weightKg) || 0), 0)
+    const totalValue = filteredAndSortedJumbos.reduce((acc, j) => acc + ((Number(j.purchaseRate) || 0) * (Number(j.sqm) || 0)), 0)
+    return { count: filteredAndSortedJumbos.length, totalSqm, totalWeight, totalValue }
+  }, [filteredAndSortedJumbos])
+
+  const handleExport = () => {
+    const data = filteredAndSortedJumbos.map(j => ({
+      "RELL NO": j.rollNo,
+      "PAPER COMPANY": j.paperCompany,
+      "PAPER TYPE": j.paperType,
+      "WIDTH (MM)": j.widthMm,
+      "LENGTH (MTR)": j.lengthMeters,
+      "SQM": j.sqm,
+      "GSM": j.gsm,
+      "WEIGHT(KG)": j.weightKg,
+      "Purchase Rate": j.purchaseRate,
+      "WASTAGE": j.wastage,
+      "DATE OF RECEIVED": j.receivedDate,
+      "Lot no/BATCH NO": j.lotNo,
+      "Company Rell no": j.companyRollNo,
+      "Status": j.status
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "GRN Registry");
+    XLSX.writeFile(wb, `GRN_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast({ title: "Export Complete", description: `Downloaded ${data.length} records.` });
+  }
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -134,6 +215,14 @@ export default function GRNPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: e.target.type === 'number' ? Number(value) : value }));
+  }
+
+  const resetFilters = () => {
+    setFilters({
+      rollNo: "", paperType: "all", lotNo: "", companyRollNo: "", jobNo: "", productName: "",
+      receivedDateStart: "", receivedDateEnd: "", dateOfUseStart: "", dateOfUseEnd: "",
+      gsmMin: "", gsmMax: "", widthMin: "", widthMax: "", rateMin: "", rateMax: "", status: "all"
+    })
   }
 
   const handleAddJumbo = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -198,21 +287,9 @@ export default function GRNPage() {
 
       setIsDialogOpen(false);
       setFormData({ 
-        widthMm: 1020, 
-        lengthMeters: 0, 
-        sqm: 0, 
-        gsm: 0, 
-        weightKg: 0, 
-        purchaseRate: 0, 
-        wastage: 0, 
-        jobNo: "", 
-        size: "", 
-        productName: "", 
-        code: "", 
-        lotNo: "", 
-        companyRollNo: "",
-        dateOfUse: "",
-        date: new Date().toISOString().split('T')[0]
+        widthMm: 1020, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0, purchaseRate: 0, wastage: 0, 
+        jobNo: "", size: "", productName: "", code: "", lotNo: "", companyRollNo: "",
+        dateOfUse: "", date: new Date().toISOString().split('T')[0]
       });
       toast({ title: "GRN Recorded", description: "Technical stock entry successful." });
     } catch (error: any) {
@@ -222,8 +299,8 @@ export default function GRNPage() {
     }
   }
 
-  if (!adminData && !isLoading) {
-    return <div className="p-20 text-center text-muted-foreground">Admin access required to view technical stock logs.</div>
+  if (!adminData && !adminLoading) {
+    return <div className="p-20 text-center text-muted-foreground">Admin access required.</div>
   }
 
   return (
@@ -231,38 +308,105 @@ export default function GRNPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">GRN (Jumbo Entry)</h2>
-          <p className="text-muted-foreground">Comprehensive substrate intake with pharmaceutical traceability (Full ERP Schema).</p>
+          <p className="text-muted-foreground">Pharmaceutical-grade substrate intake and registry.</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg">
-          <Plus className="mr-2 h-4 w-4" /> New Technical Entry
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4" /> Export Excel</Button>
+          <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg"><Plus className="mr-2 h-4 w-4" /> New Entry</Button>
+        </div>
       </div>
 
+      {/* Summary Stats Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card className="bg-primary/5 border-primary/10">
+          <CardContent className="p-4 flex flex-col">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Rolls</span>
+            <span className="text-2xl font-black text-primary">{stats.count}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-primary/5 border-primary/10">
+          <CardContent className="p-4 flex flex-col">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total SQM</span>
+            <span className="text-2xl font-black text-primary">{stats.totalSqm.toLocaleString()}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-primary/5 border-primary/10">
+          <CardContent className="p-4 flex flex-col">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Weight (KG)</span>
+            <span className="text-2xl font-black text-primary">{stats.totalWeight.toLocaleString()}</span>
+          </CardContent>
+        </Card>
+        <Card className="bg-primary/5 border-primary/10">
+          <CardContent className="p-4 flex flex-col">
+            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Inventory Value</span>
+            <span className="text-2xl font-black text-emerald-600">₹{stats.totalValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Filter Section */}
       <Card className="border-primary/10 bg-muted/20">
-        <CardContent className="pt-6 pb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-            <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase">Search Registry</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="RELL NO, Product, Lot..." className="pl-8 bg-background" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+        <CardHeader className="py-3 px-6 flex flex-row items-center justify-between cursor-pointer" onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}>
+          <CardTitle className="text-sm font-bold flex items-center gap-2">
+            <Filter className="h-4 w-4 text-primary" /> Advanced Search & Filtering
+          </CardTitle>
+          {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </CardHeader>
+        {showAdvancedFilters && (
+          <CardContent className="px-6 pb-6 pt-0 space-y-6 animate-in fade-in slide-in-from-top-2">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">Roll ID / RELL NO</Label>
+                <Input value={filters.rollNo} onChange={e => setFilters({...filters, rollNo: e.target.value})} placeholder="Search ID..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">Paper Type</Label>
+                <Select value={filters.paperType} onValueChange={val => setFilters({...filters, paperType: val})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    {materials?.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">Lot / Batch No</Label>
+                <Input value={filters.lotNo} onChange={e => setFilters({...filters, lotNo: e.target.value})} placeholder="Search Lot..." />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">Company Roll No</Label>
+                <Input value={filters.companyRollNo} onChange={e => setFilters({...filters, companyRollNo: e.target.value})} placeholder="Search MFR Roll..." />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs font-bold uppercase">Paper Company</Label>
-              <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                <SelectTrigger className="bg-background"><SelectValue placeholder="All Companies" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Companies</SelectItem>
-                  {suppliers?.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">Received Date Range</Label>
+                <div className="flex gap-2">
+                  <Input type="date" value={filters.receivedDateStart} onChange={e => setFilters({...filters, receivedDateStart: e.target.value})} className="h-8 text-[10px]" />
+                  <Input type="date" value={filters.receivedDateEnd} onChange={e => setFilters({...filters, receivedDateEnd: e.target.value})} className="h-8 text-[10px]" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">GSM Range</Label>
+                <div className="flex gap-2">
+                  <Input placeholder="Min" value={filters.gsmMin} onChange={e => setFilters({...filters, gsmMin: e.target.value})} className="h-8 text-[10px]" />
+                  <Input placeholder="Max" value={filters.gsmMax} onChange={e => setFilters({...filters, gsmMax: e.target.value})} className="h-8 text-[10px]" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-[10px] uppercase font-bold">Width (mm) Range</Label>
+                <div className="flex gap-2">
+                  <Input placeholder="Min" value={filters.widthMin} onChange={e => setFilters({...filters, widthMin: e.target.value})} className="h-8 text-[10px]" />
+                  <Input placeholder="Max" value={filters.widthMax} onChange={e => setFilters({...filters, widthMax: e.target.value})} className="h-8 text-[10px]" />
+                </div>
+              </div>
+              <div className="flex items-end gap-2">
+                <Button variant="outline" onClick={resetFilters} className="w-full"><FilterX className="mr-2 h-4 w-4" /> Reset</Button>
+              </div>
             </div>
-            <Button variant="outline" onClick={() => { setSearchQuery(""); setCompanyFilter("all"); setTypeFilter("all"); }}>
-              <FilterX className="mr-2 h-4 w-4" /> Clear Filters
-            </Button>
-          </div>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -270,11 +414,9 @@ export default function GRNPage() {
           <form onSubmit={handleAddJumbo}>
             <DialogHeader>
               <DialogTitle>Substrate Technical Intake (19 Columns)</DialogTitle>
-              <DialogDescription>Enter full pharmaceutical parameters for incoming rolls to ensure supply chain integrity.</DialogDescription>
+              <DialogDescription>Full ERP technical entry for substrate rolls.</DialogDescription>
             </DialogHeader>
-            
             <div className="grid gap-6 py-4">
-              {/* ID SECTION */}
               <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg border border-primary/10">
                 <div className="flex items-center gap-2">
                   <Hash className="h-5 w-5 text-primary" />
@@ -299,7 +441,6 @@ export default function GRNPage() {
                 </div>
               </div>
 
-              {/* CORE DETAILS SECTION */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="space-y-2">
                   <Label className="text-[11px] font-bold text-primary">PAPER COMPANY</Label>
@@ -321,117 +462,65 @@ export default function GRNPage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[11px] font-bold text-primary">DATE OF RECEIVED</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input name="receivedDate" type="date" className="pl-10" defaultValue={new Date().toISOString().split('T')[0]} required />
-                  </div>
+                  <Input name="receivedDate" type="date" defaultValue={new Date().toISOString().split('T')[0]} required />
                 </div>
               </div>
 
-              <Separator />
-
-              {/* PHARMA TRACEABILITY SECTION */}
               <div className="bg-muted/30 p-5 rounded-lg border border-border/50 space-y-5">
-                <div className="flex items-center gap-2 text-xs font-black uppercase text-muted-foreground tracking-tighter">
-                  <Info className="h-4 w-4" /> Traceability Mapping & Pharma Registry
-                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold uppercase">Lot no / BATCH NO</Label>
-                    <Input name="lotNo" value={formData.lotNo} onChange={handleInputChange} placeholder="LOT-9988" className="bg-background h-9" required />
+                    <Input name="lotNo" value={formData.lotNo} onChange={handleInputChange} required />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold uppercase">Company Roll no</Label>
-                    <Input name="companyRollNo" value={formData.companyRollNo} onChange={handleInputChange} placeholder="MFR-001" className="bg-background h-9" required />
+                    <Input name="companyRollNo" value={formData.companyRollNo} onChange={handleInputChange} required />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold uppercase">PRODUCT NAME</Label>
-                    <Input name="productName" value={formData.productName} onChange={handleInputChange} placeholder="Fasson Chromo" className="bg-background h-9" />
+                    <Input name="productName" value={formData.productName} onChange={handleInputChange} />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[10px] font-bold uppercase">Code</Label>
-                    <Input name="code" value={formData.code} onChange={handleInputChange} placeholder="AW0331" className="bg-background h-9" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold uppercase">Job no</Label>
-                    <Input name="jobNo" value={formData.jobNo} onChange={handleInputChange} placeholder="Ref Job #" className="bg-background h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold uppercase">SIZE (Label Size)</Label>
-                    <Input name="size" value={formData.size} onChange={handleInputChange} placeholder="e.g. 50x100" className="bg-background h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold uppercase">Date (In-File Date)</Label>
-                    <Input name="date" type="date" value={formData.date} onChange={handleInputChange} className="bg-background h-9" />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-[10px] font-bold uppercase">DATE OF USE</Label>
-                    <Input name="dateOfUse" type="date" value={formData.dateOfUse} onChange={handleInputChange} className="bg-background h-9" />
+                    <Input name="code" value={formData.code} onChange={handleInputChange} />
                   </div>
                 </div>
               </div>
 
-              {/* PHYSICAL PARAMETERS SECTION */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase">WIDTH (MM)</Label>
-                  <Input name="widthMm" type="number" value={formData.widthMm} onChange={handleInputChange} className="h-10 text-lg font-bold" required />
+                  <Input name="widthMm" type="number" value={formData.widthMm} onChange={handleInputChange} className="font-bold" required />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase">LENGTH (MTR)</Label>
-                  <Input name="lengthMeters" type="number" value={formData.lengthMeters} onChange={handleInputChange} className="h-10 text-lg font-bold" required />
+                  <Input name="lengthMeters" type="number" value={formData.lengthMeters} onChange={handleInputChange} className="font-bold" required />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase text-primary">SQM (AUTO-CALC)</Label>
-                  <div className="h-10 px-3 flex items-center bg-primary/5 border-2 border-primary/20 rounded-md font-black text-primary text-xl">
+                  <div className="h-10 px-3 flex items-center bg-primary/5 border-2 border-primary/20 rounded-md font-black text-primary">
                     {formData.sqm}
                   </div>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase">GSM</Label>
-                  <Input name="gsm" type="number" value={formData.gsm} onChange={handleInputChange} className="h-10" required />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase">WEIGHT (KG)</Label>
-                  <Input name="weightKg" type="number" value={formData.weightKg} onChange={handleInputChange} className="h-10" required />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase">Purchase Rate (₹ / Unit)</Label>
-                  <Input name="purchaseRate" type="number" step="0.01" value={formData.purchaseRate} onChange={handleInputChange} className="h-10" />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase">WASTAGE (%)</Label>
-                  <Input name="wastage" type="number" value={formData.wastage} onChange={handleInputChange} className="h-10" />
+                  <Input name="gsm" type="number" value={formData.gsm} onChange={handleInputChange} required />
                 </div>
               </div>
             </div>
-
             <DialogFooter className="pt-4 border-t">
               <Button variant="ghost" type="button" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" className="h-12 px-10 text-lg font-bold shadow-xl bg-primary hover:bg-primary/90" disabled={isGenerating}>
-                {isGenerating ? <Loader2 className="animate-spin mr-2" /> : <Plus className="mr-2 h-5 w-5" />}
-                Complete Technical GRN
-              </Button>
+              <Button type="submit" className="h-12 px-10 text-lg font-bold bg-primary" disabled={isGenerating}>Complete GRN</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
       <Card className="shadow-2xl border-none">
-        <CardHeader className="border-b pb-4">
-          <CardTitle className="text-xl flex items-center gap-2 text-primary">
-            <Info className="h-6 w-6" /> Technical Stock Registry
-          </CardTitle>
-        </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-primary/20">
+          <div className="overflow-x-auto">
             <Table className="min-w-[2400px]">
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-background z-20 shadow-sm">
                 <TableRow className="bg-muted/50 hover:bg-muted/50">
                   <TableHead className="w-[80px] text-center font-black sticky left-0 bg-muted/50 border-r">PRINT</TableHead>
                   <TableHead className="cursor-pointer font-black text-primary sticky left-[80px] bg-muted/50 border-r z-10" onClick={() => toggleSort('rollNo')}>
@@ -441,64 +530,49 @@ export default function GRNPage() {
                   <TableHead className="font-black">PAPER TYPE</TableHead>
                   <TableHead className="font-black">WIDTH (MM)</TableHead>
                   <TableHead className="font-black">LENGTH (MTR)</TableHead>
-                  <TableHead className="font-black text-primary">SQM</TableHead>
-                  <TableHead className="font-black">GSM</TableHead>
-                  <TableHead className="font-black">WEIGHT(KG)</TableHead>
-                  <TableHead className="font-black text-emerald-600">Purchase Rate</TableHead>
-                  <TableHead className="font-black text-red-600">WASTAGE</TableHead>
-                  <TableHead className="font-black">DATE OF USE</TableHead>
-                  <TableHead className="font-black">DATE OF RECEIVED</TableHead>
-                  <TableHead className="font-black">Job no</TableHead>
-                  <TableHead className="font-black">SIZE</TableHead>
-                  <TableHead className="font-black">PRODUCT NAME</TableHead>
-                  <TableHead className="font-black">Code</TableHead>
-                  <TableHead className="font-black">Lot no/BATCH NO</TableHead>
-                  <TableHead className="font-black">Date</TableHead>
-                  <TableHead className="font-black">Company Rell no</TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('sqm')}>
+                    <div className="flex items-center gap-1">SQM {sortField === 'sqm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('gsm')}>
+                    <div className="flex items-center gap-1">GSM {sortField === 'gsm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('weightKg')}>
+                    <div className="flex items-center gap-1">WEIGHT(KG) {sortField === 'weightKg' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('purchaseRate')}>
+                    <div className="flex items-center gap-1">Purchase Rate {sortField === 'purchaseRate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="font-black">WASTAGE</TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('receivedDate')}>
+                    <div className="flex items-center gap-1">RECEIVED {sortField === 'receivedDate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="font-black">LOT NO</TableHead>
+                  <TableHead className="font-black">MFR ROLL NO</TableHead>
+                  <TableHead className="font-black">STATUS</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={20} className="text-center py-20"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={15} className="text-center py-20"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : filteredAndSortedJumbos.map((j) => (
                   <TableRow key={j.id} className="hover:bg-primary/5 transition-colors group">
-                    <TableCell className="text-center sticky left-0 bg-background border-r z-10">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary group-hover:scale-110 transition-transform" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button>
-                    </TableCell>
+                    <TableCell className="text-center sticky left-0 bg-background border-r z-10"><Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button></TableCell>
                     <TableCell className="font-black text-primary sticky left-[80px] bg-background border-r z-10 font-mono">{j.rollNo}</TableCell>
-                    <TableCell className="font-medium">{j.paperCompany}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-bold bg-white">{j.paperType}</Badge>
-                    </TableCell>
+                    <TableCell>{j.paperCompany}</TableCell>
+                    <TableCell><Badge variant="outline" className="font-bold bg-white">{j.paperType}</Badge></TableCell>
                     <TableCell className="font-mono">{j.widthMm}mm</TableCell>
                     <TableCell className="font-mono">{j.lengthMeters}m</TableCell>
                     <TableCell className="font-black text-primary">{j.sqm}</TableCell>
                     <TableCell>{j.gsm}</TableCell>
                     <TableCell className="font-bold">{j.weightKg}kg</TableCell>
                     <TableCell className="text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString() || '0'}</TableCell>
-                    <TableCell className="text-red-600 font-bold">{j.wastage}%</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{j.dateOfUse || '-'}</TableCell>
+                    <TableCell>{j.wastage}%</TableCell>
                     <TableCell className="text-xs font-bold text-muted-foreground">{new Date(j.receivedDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-xs font-mono">{j.jobNo || '-'}</TableCell>
-                    <TableCell className="text-xs">{j.size || '-'}</TableCell>
-                    <TableCell className="text-xs truncate max-w-[150px]">{j.productName || '-'}</TableCell>
-                    <TableCell className="text-xs font-mono">{j.code || '-'}</TableCell>
-                    <TableCell className="text-xs font-black text-muted-foreground">{j.lotNo || '-'}</TableCell>
-                    <TableCell className="text-xs">{j.date || '-'}</TableCell>
-                    <TableCell className="text-xs font-bold text-primary">{j.companyRollNo || '-'}</TableCell>
+                    <TableCell className="text-xs">{j.lotNo || '-'}</TableCell>
+                    <TableCell className="text-xs">{j.companyRollNo || '-'}</TableCell>
+                    <TableCell><Badge className={j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500'}>{j.status}</Badge></TableCell>
                   </TableRow>
                 ))}
-                {filteredAndSortedJumbos.length === 0 && !isLoading && (
-                  <TableRow>
-                    <TableCell colSpan={20} className="text-center py-40 text-muted-foreground">
-                      <div className="flex flex-col items-center gap-2">
-                        <Search className="h-12 w-12 opacity-10" />
-                        <p className="font-black text-lg">No Technical Stock Found</p>
-                        <p className="text-sm">Initialize a new GRN entry or adjust your filters.</p>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
               </TableBody>
             </Table>
           </div>
