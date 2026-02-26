@@ -22,18 +22,19 @@ import {
   Settings,
   Palette,
   ShoppingBag,
-  MoreHorizontal
+  LineChart,
+  LayoutDashboard
 } from "lucide-react";
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase";
 import { collection, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * Metadata for permission grouping.
- * Maps technical keys to logical operational groups and icons.
+ * MASTER PERMISSION REGISTRY
+ * Defines all 22 potential permission keys in the system and their logical groups.
  */
 const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
-  dashboard: { group: "System & Admin", icon: Settings },
+  dashboard: { group: "Core Access", icon: LayoutDashboard },
   estimates: { group: "Sales & CRM", icon: ShoppingCart },
   salesOrders: { group: "Sales & CRM", icon: ShoppingCart },
   createJob: { group: "Sales & CRM", icon: ShoppingCart },
@@ -53,11 +54,12 @@ const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
   qualityControl: { group: "Quality & Logistics", icon: CheckCircle2 },
   dispatch: { group: "Quality & Logistics", icon: CheckCircle2 },
   billing: { group: "Quality & Logistics", icon: CheckCircle2 },
-  reports: { group: "Analytics", icon: Settings },
-  admin: { group: "System & Admin", icon: Lock },
+  reports: { group: "Analytics", icon: LineChart },
+  admin: { group: "System Administration", icon: Lock },
 };
 
 const GROUP_ORDER = [
+  "Core Access",
   "Sales & CRM",
   "Design & Planning",
   "Purchase & Procurement",
@@ -65,9 +67,11 @@ const GROUP_ORDER = [
   "Production Floor",
   "Quality & Logistics",
   "Analytics",
-  "System & Admin",
+  "System Administration",
   "Other Capabilities"
 ];
+
+const ALL_SYSTEM_KEYS = Object.keys(PERMISSION_METADATA);
 
 const formatPermissionLabel = (key: string) => {
   const acronyms = ["GRN", "BOM", "CRM", "ERP", "QC", "ID", "FG"];
@@ -126,14 +130,17 @@ export default function PermissionManagementPage() {
   };
 
   /**
-   * Correctly categorizes permissions into iterable arrays to avoid destructuring errors.
+   * Ensures all keys in ALL_SYSTEM_KEYS are categorized and displayed.
    */
-  const getCategorizedPermissions = (permissions: Record<string, boolean> = {}) => {
+  const getCategorizedPermissions = (rolePermissions: Record<string, boolean> = {}) => {
     const grouped: Record<string, [string, boolean][]> = {};
     
-    Object.entries(permissions).forEach(([key, val]) => {
+    // We iterate over the MASTER list, not the role's current keys
+    ALL_SYSTEM_KEYS.forEach((key) => {
+      const val = !!rolePermissions[key];
       const meta = PERMISSION_METADATA[key];
       const groupName = meta ? meta.group : "Other Capabilities";
+      
       if (!grouped[groupName]) grouped[groupName] = [];
       grouped[groupName].push([key, val]);
     });
@@ -182,7 +189,7 @@ export default function PermissionManagementPage() {
                     <div>
                       <CardTitle className="text-2xl font-black text-primary uppercase tracking-tight">{role.name}</CardTitle>
                       <CardDescription>
-                        {Object.keys(role.permissions || {}).length} Total permissions detected in database.
+                        Configuration registry for group level access.
                       </CardDescription>
                     </div>
                     <Badge variant="secondary" className="h-6 px-3 uppercase font-mono">ID: {role.id}</Badge>
@@ -196,17 +203,20 @@ export default function PermissionManagementPage() {
                         <h3 className="text-xs font-black uppercase tracking-widest text-muted-foreground">{group.label}</h3>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-4">
-                        {group.items.map(([key, val]: [string, boolean]) => (
-                          <div key={key} className="flex items-center justify-between py-1 group/item">
-                            <span className="text-sm font-medium text-foreground group-hover/item:text-primary transition-colors">
-                              {formatPermissionLabel(key)}
-                            </span>
-                            <Switch 
-                              checked={val} 
-                              onCheckedChange={() => handleToggleRolePermission(role.id, key, val)}
-                            />
-                          </div>
-                        ))}
+                        {group.items.map((entry: [string, boolean]) => {
+                          const [key, val] = entry;
+                          return (
+                            <div key={key} className="flex items-center justify-between py-1 group/item">
+                              <span className="text-sm font-medium text-foreground group-hover/item:text-primary transition-colors">
+                                {formatPermissionLabel(key)}
+                              </span>
+                              <Switch 
+                                checked={val} 
+                                onCheckedChange={() => handleToggleRolePermission(role.id, key, val)}
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
@@ -250,7 +260,7 @@ export default function PermissionManagementPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {Object.keys(u.customPermissions || {}).map(k => (
+                          {u.customPermissions && Object.keys(u.customPermissions).map(k => (
                             <Badge key={k} variant={u.customPermissions[k] ? "default" : "destructive"} className="text-[9px]">
                               {formatPermissionLabel(k)}: {u.customPermissions[k] ? "ON" : "OFF"}
                             </Badge>
