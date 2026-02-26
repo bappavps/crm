@@ -31,7 +31,8 @@ import {
   ShieldAlert,
   History,
   RotateCcw,
-  FileText
+  FileText,
+  Users
 } from "lucide-react"
 import { 
   Dialog, 
@@ -82,6 +83,10 @@ const PERMISSION_METADATA: Record<string, { group: string; icon: any }> = {
   quotations: { group: "Sales & CRM", icon: FileText },
   salesOrders: { group: "Sales & CRM", icon: ShoppingCart },
   createJob: { group: "Sales & CRM", icon: ShoppingCart },
+  client_add: { group: "Sales & CRM", icon: Users },
+  client_edit: { group: "Sales & CRM", icon: Users },
+  client_delete: { group: "Sales & CRM", icon: Users },
+  client_credit_edit: { group: "Sales & CRM", icon: Shield },
   jobPlanning: { group: "Design & Planning", icon: Palette },
   artwork: { group: "Design & Planning", icon: Palette },
   purchaseOrders: { group: "Purchase & Procurement", icon: ShoppingBag },
@@ -120,6 +125,7 @@ const formatLabel = (key: string) => {
   const acronyms = ["GRN", "BOM", "QC"];
   return key
     .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
     .split(' ')
     .map(w => acronyms.includes(w.toUpperCase()) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');

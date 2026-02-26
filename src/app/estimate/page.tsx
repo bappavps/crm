@@ -10,17 +10,30 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send } from "lucide-react"
+import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send, UserPlus, Image as ImageIcon } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, runTransaction } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useRouter } from "next/navigation"
+import { usePermissions } from "@/components/auth/permission-context"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter,
+  DialogDescription
+} from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 
 export default function EstimatePage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
   const router = useRouter()
+  const { hasPermission } = usePermissions()
+
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
 
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -52,6 +65,8 @@ export default function EstimatePage() {
   const { data: materials } = useCollection(materialsQuery)
   const { data: machines } = useCollection(machinesQuery)
   const { data: cylinders } = useCollection(cylindersQuery)
+
+  const activeCustomers = customers?.filter(c => c.isActive !== false) || []
 
   const [inputs, setInputs] = useState<EstimateInputs>({
     labelLength: 50,
@@ -89,6 +104,35 @@ export default function EstimatePage() {
     }))
   }
 
+  const handleQuickAddClient = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!firestore || !user) return
+
+    const formData = new FormData(e.currentTarget)
+    const clientData = {
+      id: crypto.randomUUID(),
+      name: formData.get("clientName") as string,
+      companyName: formData.get("companyName") as string,
+      address: formData.get("address") as string,
+      whatsapp: formData.get("whatsapp") as string,
+      email: formData.get("email") as string,
+      website: formData.get("website") as string,
+      gstNumber: formData.get("gstNumber") as string,
+      note: formData.get("note") as string,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      createdById: user.uid
+    }
+
+    addDocumentNonBlocking(collection(firestore, 'customers'), clientData)
+    
+    toast({
+      title: "Client Added",
+      description: `${clientData.name} has been created and is now available for selection.`,
+    })
+    setIsQuickAddOpen(false)
+  }
+
   const handleSave = () => {
     if (!firestore || !user) return
     
@@ -107,7 +151,7 @@ export default function EstimatePage() {
       ...metadata,
       ...results,
       estimateNumber: `EST-${Date.now().toString().slice(-6)}`,
-      customerName: customers?.find(c => c.id === metadata.customerId)?.name || "Unknown",
+      customerName: activeCustomers?.find(c => c.id === metadata.customerId)?.name || "Unknown",
       status: "Approved",
       createdById: user.uid,
       createdAt: new Date().toISOString(),
@@ -127,7 +171,7 @@ export default function EstimatePage() {
       return
     }
 
-    const customer = customers?.find(c => c.id === metadata.customerId)
+    const customer = activeCustomers?.find(c => c.id === metadata.customerId)
     const year = new Date().getFullYear().toString()
     const quoteNum = `QT-${year}-${Math.floor(1000 + Math.random() * 9000)}`
 
@@ -184,13 +228,20 @@ export default function EstimatePage() {
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
               <div className="space-y-2">
-                <Label>Customer</Label>
-                <Select onValueChange={(val) => setMetadata(p => ({...p, customerId: val}))}>
+                <div className="flex items-center justify-between">
+                  <Label>Customer</Label>
+                  {hasPermission('client_add') && (
+                    <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1" onClick={() => setIsQuickAddOpen(true)}>
+                      <Plus className="h-3 w-3" /> Quick Add
+                    </Button>
+                  )}
+                </div>
+                <Select value={metadata.customerId} onValueChange={(val) => setMetadata(p => ({...p, customerId: val}))}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select Customer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {customers?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    {activeCustomers?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -313,6 +364,75 @@ export default function EstimatePage() {
           </Card>
         </div>
       </div>
+
+      {/* Quick Add Client Dialog */}
+      <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <form onSubmit={handleQuickAddClient}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 uppercase font-black">
+                <UserPlus className="h-5 w-5 text-primary" /> Quick Add New Client
+              </DialogTitle>
+              <DialogDescription>Register a new client profile without leaving the estimate module.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-6 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="clientName" className="text-[10px] font-bold uppercase">Client Person Name</Label>
+                  <Input id="clientName" name="clientName" placeholder="e.g. John Doe" required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="companyName" className="text-[10px] font-bold uppercase">Company Name</Label>
+                  <Input id="companyName" name="companyName" placeholder="e.g. Acme Labels Ltd." required />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="address" className="text-[10px] font-bold uppercase">Full Address</Label>
+                <Textarea id="address" name="address" placeholder="Registered office address..." required />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="whatsapp" className="text-[10px] font-bold uppercase">WhatsApp</Label>
+                  <Input id="whatsapp" name="whatsapp" placeholder="+91..." />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-[10px] font-bold uppercase">Email</Label>
+                  <Input id="email" name="email" type="email" placeholder="client@company.com" required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gstNumber" className="text-[10px] font-bold uppercase">GST Number</Label>
+                  <Input id="gstNumber" name="gstNumber" placeholder="12ABCDE1234F1Z1" required />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="website" className="text-[10px] font-bold uppercase">Website</Label>
+                  <Input id="website" name="website" placeholder="www.company.com" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-bold uppercase">Photo / Logo</Label>
+                  <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors">
+                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-[10px] text-muted-foreground uppercase font-bold">Upload Simulation</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="note" className="text-[10px] font-bold uppercase">Operational Note</Label>
+                <Input id="note" name="note" placeholder="Any specific billing or contact notes..." />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setIsQuickAddOpen(false)}>Cancel</Button>
+              <Button type="submit" className="font-black uppercase">Register Client Profile</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

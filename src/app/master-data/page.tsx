@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState } from "react"
@@ -16,15 +15,18 @@ import {
   DialogTitle, 
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler, Truck, Trash2, Pencil } from "lucide-react"
+import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler, Truck, Trash2, Pencil, ShieldCheck } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { usePermissions } from "@/components/auth/permission-context"
+import { Switch } from "@/components/ui/switch"
 
 export default function MasterDataPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const { hasPermission } = usePermissions()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders" | "suppliers">("materials")
   const [editingItem, setEditingItem] = useState<any>(null)
@@ -76,6 +78,11 @@ export default function MasterDataPage() {
     
     if (!firestore || !user) return
 
+    // Explicitly handle isActive for customers
+    if (dialogType === 'customers') {
+      (data as any).isActive = (data as any).isActive === 'on';
+    }
+
     if (editingItem) {
       const itemRef = doc(firestore, dialogType, editingItem.id)
       updateDocumentNonBlocking(itemRef, {
@@ -93,7 +100,8 @@ export default function MasterDataPage() {
         ...data,
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
-        createdById: user.uid
+        createdById: user.uid,
+        ...(dialogType === 'customers' ? { isActive: true } : {})
       })
       toast({
         title: "Master Data Updated",
@@ -193,6 +201,21 @@ export default function MasterDataPage() {
                     <Label htmlFor="email" className="text-right">Email</Label>
                     <Input id="email" name="email" type="email" className="col-span-3" defaultValue={editingItem?.email} required />
                   </div>
+                  {dialogType === "customers" && hasPermission('client_credit_edit') && (
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="creditPeriod" className="text-right">Credit (Days)</Label>
+                      <Input id="creditPeriod" name="creditPeriod" type="number" className="col-span-3" defaultValue={editingItem?.creditPeriod} placeholder="e.g. 30" />
+                    </div>
+                  )}
+                  {dialogType === "customers" && editingItem && (
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="isActive" className="text-right">Active Status</Label>
+                      <div className="col-span-3 flex items-center gap-2">
+                        <Switch id="isActive" name="isActive" defaultChecked={editingItem?.isActive !== false} />
+                        <span className="text-xs text-muted-foreground">{editingItem?.isActive !== false ? 'Active' : 'Inactive'}</span>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               {dialogType === "cylinders" && (
@@ -391,7 +414,9 @@ export default function MasterDataPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-lg">Customer Master</CardTitle>
-              <Button size="sm" onClick={() => openAddDialog("customers")}><Plus className="h-4 w-4 mr-2" /> Add Customer</Button>
+              {hasPermission('client_add') && (
+                <Button size="sm" onClick={() => openAddDialog("customers")}><Plus className="h-4 w-4 mr-2" /> Add Customer</Button>
+              )}
             </CardHeader>
             <CardContent>
               <Table>
@@ -400,25 +425,40 @@ export default function MasterDataPage() {
                     <TableHead>Company Name</TableHead>
                     <TableHead>GST No.</TableHead>
                     <TableHead>Email</TableHead>
+                    {hasPermission('client_credit_edit') && <TableHead>Credit (Days)</TableHead>}
+                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {customers?.map((c) => (
-                    <TableRow key={c.id}>
+                    <TableRow key={c.id} className={c.isActive === false ? 'opacity-60 grayscale' : ''}>
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="font-mono text-xs">{c.gstNumber}</TableCell>
                       <TableCell className="text-xs">{c.email}</TableCell>
+                      {hasPermission('client_credit_edit') && <TableCell className="font-bold">{c.creditPeriod || '0'}</TableCell>}
+                      <TableCell>
+                        <Badge className={c.isActive !== false ? 'bg-emerald-500' : 'bg-muted'}>
+                          {c.isActive !== false ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("customers", c)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("customers", c.id, c.name)}><Trash2 className="h-4 w-4" /></Button>
+                        {hasPermission('client_edit') && (
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog("customers", c)}><Pencil className="h-4 w-4" /></Button>
+                        )}
+                        {hasPermission('client_delete') && (
+                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("customers", c.id, c.name)}><Trash2 className="h-4 w-4" /></Button>
+                        )}
+                        {!hasPermission('client_edit') && !hasPermission('client_delete') && (
+                          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">View Only</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
                   {(!customers || customers.length === 0) && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        {customersLoading ? "Loading..." : "No customers found. Click Add to create one."}
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        {customersLoading ? "Loading..." : "No customers found."}
                       </TableCell>
                     </TableRow>
                   )}
