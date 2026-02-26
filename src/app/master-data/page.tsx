@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -15,13 +15,36 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogFooter,
+  DialogDescription
 } from "@/components/ui/dialog"
-import { Settings, Users, Database, Box, Plus, TrendingUp, Ruler, Truck, Trash2, Pencil, ShieldCheck } from "lucide-react"
+import { 
+  Settings, 
+  Users, 
+  Database, 
+  Box, 
+  Plus, 
+  TrendingUp, 
+  Ruler, 
+  Truck, 
+  Trash2, 
+  Pencil, 
+  ShieldCheck, 
+  Eye, 
+  Info, 
+  Phone, 
+  Mail, 
+  Upload, 
+  X,
+  Globe,
+  MapPin
+} from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { usePermissions } from "@/components/auth/permission-context"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
+import Image from "next/image"
 
 export default function MasterDataPage() {
   const { toast } = useToast()
@@ -29,8 +52,13 @@ export default function MasterDataPage() {
   const firestore = useFirestore()
   const { hasPermission } = usePermissions()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders" | "suppliers">("materials")
   const [editingItem, setEditingItem] = useState<any>(null)
+  const [viewingItem, setViewingItem] = useState<any>(null)
+  
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Wait for the user to have their Admin role document ready before fetching protected collections
   const adminDocRef = useMemoFirebase(() => {
@@ -72,69 +100,90 @@ export default function MasterDataPage() {
   const { data: cylinders, isLoading: cylindersLoading } = useCollection(cylindersQuery)
   const { data: suppliers, isLoading: suppliersLoading } = useCollection(suppliersQuery)
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => setPhotoPreview(reader.result as string)
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    const data = Object.fromEntries(formData.entries())
+    const rawData = Object.fromEntries(formData.entries())
     
     if (!firestore || !user) return
 
-    // Explicitly handle isActive for customers
+    let finalData: any = { ...rawData };
+
+    // Standardize Customer Data
     if (dialogType === 'customers') {
-      (data as any).isActive = (data as any).isActive === 'on';
+      finalData = {
+        clientPersonName: rawData.clientPersonName,
+        companyName: rawData.companyName,
+        fullAddress: rawData.fullAddress,
+        whatsapp: rawData.whatsapp,
+        email: rawData.email,
+        website: rawData.website,
+        gstNumber: rawData.gstNumber,
+        operationalNote: rawData.operationalNote,
+        creditDays: Number(rawData.creditDays) || 0,
+        status: rawData.status === 'on' ? 'Active' : 'Inactive',
+        photoUrl: photoPreview || editingItem?.photoUrl || null
+      }
     }
 
     if (editingItem) {
       const itemRef = doc(firestore, dialogType, editingItem.id)
       updateDocumentNonBlocking(itemRef, {
-        ...data,
+        ...finalData,
         updatedAt: new Date().toISOString(),
         updatedById: user.uid
       })
-      toast({
-        title: "Record Updated",
-        description: `Changes to ${data.name || 'item'} have been saved.`,
-      })
+      toast({ title: "Record Updated", description: `Changes have been saved.` })
     } else {
       const colRef = collection(firestore, dialogType)
       addDocumentNonBlocking(colRef, {
-        ...data,
+        ...finalData,
         id: crypto.randomUUID(),
         createdAt: new Date().toISOString(),
-        createdById: user.uid,
-        ...(dialogType === 'customers' ? { isActive: true } : {})
+        createdById: user.uid
       })
-      toast({
-        title: "Master Data Updated",
-        description: `New ${dialogType.slice(0, -1)} has been added successfully.`,
-      })
+      toast({ title: "Master Data Updated", description: `New ${dialogType.slice(0, -1)} added successfully.` })
     }
 
     setIsDialogOpen(false)
     setEditingItem(null)
+    setPhotoPreview(null)
   }
 
   const handleDelete = (type: string, id: string, name: string) => {
     if (!firestore) return
     if (confirm(`Are you sure you want to delete "${name}"?`)) {
       deleteDocumentNonBlocking(doc(firestore, type, id))
-      toast({
-        title: "Record Deleted",
-        description: `${name} has been removed from master data.`
-      })
+      toast({ title: "Record Deleted", description: `${name} has been removed.` })
     }
   }
 
-  const openAddDialog = (type: "materials" | "machines" | "customers" | "cylinders" | "suppliers") => {
+  const openAddDialog = (type: typeof dialogType) => {
     setDialogType(type)
     setEditingItem(null)
+    setPhotoPreview(null)
     setIsDialogOpen(true)
   }
 
-  const openEditDialog = (type: "materials" | "machines" | "customers" | "cylinders" | "suppliers", item: any) => {
+  const openEditDialog = (type: typeof dialogType, item: any) => {
     setDialogType(type)
     setEditingItem(item)
+    setPhotoPreview(item.photoUrl || null)
     setIsDialogOpen(true)
+  }
+
+  const openDetails = (item: any) => {
+    setViewingItem(item)
+    setIsDetailsOpen(true)
   }
 
   return (
@@ -148,94 +197,219 @@ export default function MasterDataPage() {
 
       <Dialog open={isDialogOpen} onOpenChange={(open) => {
         setIsDialogOpen(open)
-        if (!open) setEditingItem(null)
+        if (!open) { setEditingItem(null); setPhotoPreview(null); }
       }}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className={dialogType === 'customers' ? "sm:max-w-[700px] max-h-[90vh] overflow-y-auto" : "sm:max-w-[425px]"}>
           <form onSubmit={handleSave}>
             <DialogHeader>
               <DialogTitle>{editingItem ? 'Edit' : 'Add New'} {dialogType.charAt(0).toUpperCase() + dialogType.slice(1, -1)}</DialogTitle>
             </DialogHeader>
+            
             <div className="grid gap-4 py-4">
-              {(dialogType === "materials") && (
-                <>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} placeholder="e.g. Chromo, PP White" required />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="gsm" className="text-right">GSM</Label>
-                    <Input id="gsm" name="gsm" type="number" className="col-span-3" defaultValue={editingItem?.gsm} required />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="ratePerSqMeter" className="text-right">Rate/sqm</Label>
-                    <Input id="ratePerSqMeter" name="ratePerSqMeter" type="number" step="0.01" className="col-span-3" defaultValue={editingItem?.ratePerSqMeter} required />
-                  </div>
-                </>
-              )}
-              {dialogType === "machines" && (
-                <>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} required />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="maxPrintingWidthMm" className="text-right">Max Width</Label>
-                    <Input id="maxPrintingWidthMm" name="maxPrintingWidthMm" type="number" className="col-span-3" defaultValue={editingItem?.maxPrintingWidthMm} required />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="costPerHour" className="text-right">Cost/hr</Label>
-                    <Input id="costPerHour" name="costPerHour" type="number" className="col-span-3" defaultValue={editingItem?.costPerHour} required />
-                  </div>
-                </>
-              )}
-              {(dialogType === "customers" || dialogType === "suppliers") && (
-                <>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">Company</Label>
-                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} required />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="gstNumber" className="text-right">GST No.</Label>
-                    <Input id="gstNumber" name="gstNumber" className="col-span-3" defaultValue={editingItem?.gstNumber} required />
-                  </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="email" className="text-right">Email</Label>
-                    <Input id="email" name="email" type="email" className="col-span-3" defaultValue={editingItem?.email} required />
-                  </div>
-                  {dialogType === "customers" && hasPermission('client_credit_edit') && (
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="creditPeriod" className="text-right">Credit (Days)</Label>
-                      <Input id="creditPeriod" name="creditPeriod" type="number" className="col-span-3" defaultValue={editingItem?.creditPeriod} placeholder="e.g. 30" />
+              {dialogType === "customers" ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="companyName">Company Name</Label>
+                      <Input id="companyName" name="companyName" defaultValue={editingItem?.companyName} required />
                     </div>
-                  )}
-                  {dialogType === "customers" && editingItem && (
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="isActive" className="text-right">Active Status</Label>
-                      <div className="col-span-3 flex items-center gap-2">
-                        <Switch id="isActive" name="isActive" defaultChecked={editingItem?.isActive !== false} />
-                        <span className="text-xs text-muted-foreground">{editingItem?.isActive !== false ? 'Active' : 'Inactive'}</span>
+                    <div className="space-y-2">
+                      <Label htmlFor="clientPersonName">Contact Person</Label>
+                      <Input id="clientPersonName" name="clientPersonName" defaultValue={editingItem?.clientPersonName} required />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="fullAddress">Full Address</Label>
+                    <Textarea id="fullAddress" name="fullAddress" defaultValue={editingItem?.fullAddress} required />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="whatsapp">WhatsApp</Label>
+                      <Input id="whatsapp" name="whatsapp" defaultValue={editingItem?.whatsapp} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email</Label>
+                      <Input id="email" name="email" type="email" defaultValue={editingItem?.email} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="gstNumber">GST Number</Label>
+                      <Input id="gstNumber" name="gstNumber" defaultValue={editingItem?.gstNumber} required />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="website">Website</Label>
+                        <Input id="website" name="website" defaultValue={editingItem?.website} />
+                      </div>
+                      {hasPermission('client_credit_edit') && (
+                        <div className="space-y-2">
+                          <Label htmlFor="creditDays">Credit Period (Days)</Label>
+                          <Input id="creditDays" name="creditDays" type="number" defaultValue={editingItem?.creditDays || 0} />
+                        </div>
+                      )}
+                      <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/30">
+                        <Label htmlFor="status">Account Active</Label>
+                        <Switch id="status" name="status" defaultChecked={editingItem ? (editingItem.status === 'Active' || editingItem.isActive !== false) : true} />
                       </div>
                     </div>
-                  )}
-                </>
-              )}
-              {dialogType === "cylinders" && (
-                <>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="name" className="text-right">Name</Label>
-                    <Input id="name" name="name" className="col-span-3" defaultValue={editingItem?.name} placeholder="e.g. Cyl 508" required />
+
+                    <div className="space-y-2">
+                      <Label>Client Photo / Logo</Label>
+                      <div 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex flex-col items-center justify-center gap-2 p-4 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors relative h-32"
+                      >
+                        {photoPreview ? (
+                          <div className="relative w-full h-full">
+                            <Image src={photoPreview} alt="Preview" fill className="object-contain" />
+                            <Button 
+                              type="button" 
+                              variant="destructive" 
+                              size="icon" 
+                              className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                              onClick={(e) => { e.stopPropagation(); setPhotoPreview(null); }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <>
+                            <Upload className="h-6 w-6 text-muted-foreground" />
+                            <span className="text-[10px] text-muted-foreground uppercase font-bold text-center">Upload Photo</span>
+                          </>
+                        )}
+                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoSelect} />
+                      </div>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 items-center gap-4">
-                    <Label htmlFor="repeatLengthMm" className="text-right">Repeat (mm)</Label>
-                    <Input id="repeatLengthMm" name="repeatLengthMm" type="number" className="col-span-3" defaultValue={editingItem?.repeatLengthMm} required />
+
+                  <div className="space-y-2">
+                    <Label htmlFor="operationalNote">Operational Note</Label>
+                    <Input id="operationalNote" name="operationalNote" defaultValue={editingItem?.operationalNote} placeholder="Internal notes..." />
+                  </div>
+                </div>
+              ) : dialogType === "materials" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Material Name</Label>
+                    <Input id="name" name="name" defaultValue={editingItem?.name} required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="gsm">GSM</Label>
+                      <Input id="gsm" name="gsm" type="number" defaultValue={editingItem?.gsm} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ratePerSqMeter">Rate/sqm</Label>
+                      <Input id="ratePerSqMeter" name="ratePerSqMeter" type="number" step="0.01" defaultValue={editingItem?.ratePerSqMeter} required />
+                    </div>
+                  </div>
+                </>
+              ) : dialogType === "machines" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Machine Name</Label>
+                    <Input id="name" name="name" defaultValue={editingItem?.name} required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="maxPrintingWidthMm">Max Width (mm)</Label>
+                      <Input id="maxPrintingWidthMm" name="maxPrintingWidthMm" type="number" defaultValue={editingItem?.maxPrintingWidthMm} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="costPerHour">Cost/hr (₹)</Label>
+                      <Input id="costPerHour" name="costPerHour" type="number" defaultValue={editingItem?.costPerHour} required />
+                    </div>
+                  </div>
+                </>
+              ) : dialogType === "suppliers" ? (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Company Name</Label>
+                    <Input id="name" name="name" defaultValue={editingItem?.name} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="gstNumber">GST Number</Label>
+                    <Input id="gstNumber" name="gstNumber" defaultValue={editingItem?.gstNumber} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input id="email" name="email" type="email" defaultValue={editingItem?.email} required />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Name</Label>
+                    <Input id="name" name="name" defaultValue={editingItem?.name} required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="repeatLengthMm">Repeat Length (mm)</Label>
+                    <Input id="repeatLengthMm" name="repeatLengthMm" type="number" defaultValue={editingItem?.repeatLengthMm} required />
                   </div>
                 </>
               )}
             </div>
+
             <DialogFooter>
-              <Button type="submit">{editingItem ? 'Save Changes' : 'Create Record'}</Button>
+              <Button type="submit" className="w-full">{editingItem ? 'Save Changes' : 'Create Record'}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Viewing Details Dialog */}
+      <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5 text-primary" /> Client Specification
+            </DialogTitle>
+          </DialogHeader>
+          {viewingItem && (
+            <div className="space-y-6 py-4">
+              <div className="flex items-center gap-4 p-4 bg-primary/5 rounded-lg">
+                <div className="relative h-16 w-16 rounded-full overflow-hidden border bg-background flex items-center justify-center">
+                  {viewingItem.photoUrl ? (
+                    <Image src={viewingItem.photoUrl} alt="Logo" fill className="object-cover" />
+                  ) : (
+                    <Users className="h-8 w-8 text-muted-foreground/40" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">{viewingItem.companyName}</h3>
+                  <p className="text-sm text-muted-foreground">{viewingItem.clientPersonName}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 text-sm">
+                <div className="grid grid-cols-3 gap-2">
+                  <span className="text-muted-foreground font-bold uppercase text-[10px]">GST Number</span>
+                  <span className="col-span-2 font-mono">{viewingItem.gstNumber}</span>
+                </div>
+                <Separator />
+                <div className="space-y-2">
+                  <span className="text-muted-foreground font-bold uppercase text-[10px] flex items-center gap-1">
+                    <MapPin className="h-3 w-3" /> Registered Address
+                  </span>
+                  <p className="leading-relaxed bg-muted/30 p-3 rounded">{viewingItem.fullAddress}</p>
+                </div>
+                <div className="space-y-2">
+                  <span className="text-muted-foreground font-bold uppercase text-[10px] flex items-center gap-1">
+                    <Info className="h-3 w-3" /> Operational Notes
+                  </span>
+                  <p className="italic text-muted-foreground bg-muted/30 p-3 rounded">{viewingItem.operationalNote || "No notes recorded."}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" className="w-full" onClick={() => setIsDetailsOpen(false)}>Close Summary</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -277,13 +451,6 @@ export default function MasterDataPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!materials || materials.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        {materialsLoading ? "Loading..." : "No materials found. Click Add to create one."}
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -318,13 +485,6 @@ export default function MasterDataPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!suppliers || suppliers.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        {suppliersLoading ? "Loading..." : "No suppliers found. Click Add to create one."}
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -359,13 +519,6 @@ export default function MasterDataPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!machines || machines.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                        {machinesLoading ? "Loading..." : "No machines found. Click Add to create one."}
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -398,13 +551,6 @@ export default function MasterDataPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!cylinders || cylinders.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
-                        {cylindersLoading ? "Loading..." : "No cylinders found. Click Add to create one."}
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -424,7 +570,9 @@ export default function MasterDataPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Company Name</TableHead>
+                    <TableHead>Contact Person</TableHead>
                     <TableHead>GST No.</TableHead>
+                    <TableHead>WhatsApp</TableHead>
                     <TableHead>Email</TableHead>
                     {hasPermission('client_credit_edit') && <TableHead>Credit (Days)</TableHead>}
                     <TableHead>Status</TableHead>
@@ -432,37 +580,32 @@ export default function MasterDataPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {customers?.map((c) => (
-                    <TableRow key={c.id} className={c.isActive === false ? 'opacity-60 grayscale' : ''}>
-                      <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell className="font-mono text-xs">{c.gstNumber}</TableCell>
+                  {customersLoading ? (
+                    <TableRow><TableCell colSpan={8} className="text-center py-10"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
+                  ) : customers?.map((c) => (
+                    <TableRow key={c.id} className={c.status === 'Inactive' || c.isActive === false ? 'opacity-60 grayscale' : ''}>
+                      <TableCell className="font-bold text-primary">{c.companyName}</TableCell>
+                      <TableCell className="text-xs">{c.clientPersonName}</TableCell>
+                      <TableCell className="font-mono text-[10px]">{c.gstNumber}</TableCell>
+                      <TableCell className="text-xs flex items-center gap-1"><Phone className="h-3 w-3 text-emerald-600" /> {c.whatsapp}</TableCell>
                       <TableCell className="text-xs">{c.email}</TableCell>
-                      {hasPermission('client_credit_edit') && <TableCell className="font-bold">{c.creditPeriod || '0'}</TableCell>}
+                      {hasPermission('client_credit_edit') && <TableCell className="font-bold">{c.creditDays || 0}</TableCell>}
                       <TableCell>
-                        <Badge className={c.isActive !== false ? 'bg-emerald-500' : 'bg-muted'}>
-                          {c.isActive !== false ? 'Active' : 'Inactive'}
+                        <Badge className={(c.status === 'Active' || c.isActive !== false) ? 'bg-emerald-500' : 'bg-muted'}>
+                          {(c.status === 'Active' || c.isActive !== false) ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openDetails(c)}><Eye className="h-4 w-4" /></Button>
                         {hasPermission('client_edit') && (
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog("customers", c)}><Pencil className="h-4 w-4" /></Button>
                         )}
                         {hasPermission('client_delete') && (
-                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("customers", c.id, c.name)}><Trash2 className="h-4 w-4" /></Button>
-                        )}
-                        {!hasPermission('client_edit') && !hasPermission('client_delete') && (
-                          <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">View Only</span>
+                          <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("customers", c.id, c.companyName)}><Trash2 className="h-4 w-4" /></Button>
                         )}
                       </TableCell>
                     </TableRow>
                   ))}
-                  {(!customers || customers.length === 0) && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                        {customersLoading ? "Loading..." : "No customers found."}
-                      </TableCell>
-                    </TableRow>
-                  )}
                 </TableBody>
               </Table>
             </CardContent>

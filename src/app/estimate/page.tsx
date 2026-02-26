@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send, UserPlus, Image as ImageIcon, Plus } from "lucide-react"
+import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send, UserPlus, Image as ImageIcon, Plus, Upload, X } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, runTransaction } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -25,6 +25,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
+import Image from "next/image"
 
 export default function EstimatePage() {
   const { toast } = useToast()
@@ -34,6 +35,8 @@ export default function EstimatePage() {
   const { hasPermission } = usePermissions()
 
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -66,7 +69,7 @@ export default function EstimatePage() {
   const { data: machines } = useCollection(machinesQuery)
   const { data: cylinders } = useCollection(cylindersQuery)
 
-  const activeCustomers = customers?.filter(c => c.isActive !== false) || []
+  const activeCustomers = customers?.filter(c => c.status === 'Active' || c.isActive !== false) || []
 
   const [inputs, setInputs] = useState<EstimateInputs>({
     labelLength: 50,
@@ -104,6 +107,17 @@ export default function EstimatePage() {
     }))
   }
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setPhotoPreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleQuickAddClient = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
@@ -111,15 +125,17 @@ export default function EstimatePage() {
     const formData = new FormData(e.currentTarget)
     const clientData = {
       id: crypto.randomUUID(),
-      name: formData.get("clientName") as string,
+      clientPersonName: formData.get("clientPersonName") as string,
       companyName: formData.get("companyName") as string,
-      address: formData.get("address") as string,
+      fullAddress: formData.get("fullAddress") as string,
       whatsapp: formData.get("whatsapp") as string,
       email: formData.get("email") as string,
       website: formData.get("website") as string,
       gstNumber: formData.get("gstNumber") as string,
-      note: formData.get("note") as string,
-      isActive: true,
+      operationalNote: formData.get("operationalNote") as string,
+      photoUrl: photoPreview || null,
+      creditDays: 0,
+      status: "Active",
       createdAt: new Date().toISOString(),
       createdById: user.uid
     }
@@ -128,9 +144,10 @@ export default function EstimatePage() {
     
     toast({
       title: "Client Added",
-      description: `${clientData.name} has been created and is now available for selection.`,
+      description: `${clientData.companyName} has been created and is now available.`,
     })
     setIsQuickAddOpen(false)
+    setPhotoPreview(null)
   }
 
   const handleSave = () => {
@@ -151,7 +168,7 @@ export default function EstimatePage() {
       ...metadata,
       ...results,
       estimateNumber: `EST-${Date.now().toString().slice(-6)}`,
-      customerName: activeCustomers?.find(c => c.id === metadata.customerId)?.name || "Unknown",
+      customerName: activeCustomers?.find(c => c.id === metadata.customerId)?.companyName || "Unknown",
       status: "Approved",
       createdById: user.uid,
       createdAt: new Date().toISOString(),
@@ -178,7 +195,7 @@ export default function EstimatePage() {
     const quotationData = {
       quotationNumber: quoteNum,
       customerId: metadata.customerId,
-      customerName: customer?.name || "Unknown Client",
+      customerName: customer?.companyName || "Unknown Client",
       customerEmail: customer?.email || "",
       productCode: metadata.productCode,
       ...inputs,
@@ -241,7 +258,7 @@ export default function EstimatePage() {
                     <SelectValue placeholder="Select Customer" />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeCustomers?.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    {activeCustomers?.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -367,7 +384,7 @@ export default function EstimatePage() {
 
       {/* Quick Add Client Dialog */}
       <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleQuickAddClient}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 uppercase font-black">
@@ -378,24 +395,24 @@ export default function EstimatePage() {
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="clientName" className="text-[10px] font-bold uppercase">Client Person Name</Label>
-                  <Input id="clientName" name="clientName" placeholder="e.g. John Doe" required />
-                </div>
-                <div className="space-y-2">
                   <Label htmlFor="companyName" className="text-[10px] font-bold uppercase">Company Name</Label>
                   <Input id="companyName" name="companyName" placeholder="e.g. Acme Labels Ltd." required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="clientPersonName" className="text-[10px] font-bold uppercase">Client Person Name</Label>
+                  <Input id="clientPersonName" name="clientPersonName" placeholder="e.g. John Doe" required />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="address" className="text-[10px] font-bold uppercase">Full Address</Label>
-                <Textarea id="address" name="address" placeholder="Registered office address..." required />
+                <Label htmlFor="fullAddress" className="text-[10px] font-bold uppercase">Full Address</Label>
+                <Textarea id="fullAddress" name="fullAddress" placeholder="Registered office address..." required />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="whatsapp" className="text-[10px] font-bold uppercase">WhatsApp</Label>
-                  <Input id="whatsapp" name="whatsapp" placeholder="+91..." />
+                  <Input id="whatsapp" name="whatsapp" placeholder="+91..." required />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-[10px] font-bold uppercase">Email</Label>
@@ -413,17 +430,44 @@ export default function EstimatePage() {
                   <Input id="website" name="website" placeholder="www.company.com" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-bold uppercase">Photo / Logo</Label>
-                  <div className="flex items-center gap-2 p-2 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors">
-                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-[10px] text-muted-foreground uppercase font-bold">not working upload photo</span>
+                  <Label className="text-[10px] font-bold uppercase">Client Photo / Logo</Label>
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 p-4 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors relative h-32"
+                  >
+                    {photoPreview ? (
+                      <div className="relative w-full h-full">
+                        <Image src={photoPreview} alt="Preview" fill className="object-contain" />
+                        <Button 
+                          type="button" 
+                          variant="destructive" 
+                          size="icon" 
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                          onClick={(e) => { e.stopPropagation(); setPhotoPreview(null); }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="h-6 w-6 text-muted-foreground" />
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold text-center">Click to upload photo</span>
+                      </>
+                    )}
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={handlePhotoSelect} 
+                    />
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="note" className="text-[10px] font-bold uppercase">Operational Note</Label>
-                <Input id="note" name="note" placeholder="Any specific billing or contact notes..." />
+                <Label htmlFor="operationalNote" className="text-[10px] font-bold uppercase">Operational Note</Label>
+                <Input id="operationalNote" name="operationalNote" placeholder="Any specific billing or contact notes..." />
               </div>
             </div>
             <DialogFooter>
