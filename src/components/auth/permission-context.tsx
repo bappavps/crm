@@ -36,10 +36,14 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const { data: profile, isLoading: isProfileLoading } = useDoc(userRef);
 
   // 2. Fetch All Roles
+  /**
+   * CRITICAL: Only query roles if the user is authenticated to prevent security rule violations.
+   * The rules for the 'roles' collection require an authenticated session.
+   */
   const rolesQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'roles');
-  }, [firestore]);
+  }, [firestore, user]);
   const { data: allRoles, isLoading: isRolesLoading } = useCollection(rolesQuery);
 
   const permissions = useMemo(() => {
