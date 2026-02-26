@@ -37,7 +37,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
-import { collection, doc, runTransaction, query, where, getDocs } from "firebase/firestore"
+import { collection, doc, runTransaction, query, where, getDocs, orderBy } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
@@ -358,6 +358,7 @@ export default function GRNPage() {
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Weight (KG)</span>
             <span className="text-2xl font-black text-primary">{stats.totalWeight.toLocaleString()}</span>
           </CardContent>
+        </Card>
         <Card className="bg-primary/5 border-primary/10">
           <CardContent className="p-4 flex flex-col">
             <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Inventory Value</span>
