@@ -173,11 +173,14 @@ export default function UserManagementPage() {
     if (!firestore || !currentUser) return
 
     const formData = new FormData(e.currentTarget)
-    const email = formData.get("email") as string
+    const email = (formData.get("email") as string).toLowerCase()
     const firstName = formData.get("firstName") as string
     const lastName = formData.get("lastName") as string
     
-    const userId = editingUser?.id || crypto.randomUUID()
+    // Prototype workflow: If adding a new user, use email as the ID for pre-provisioning
+    // AuthInitializer will migrate this to UID upon their first login.
+    const userId = editingUser?.id || email;
+    
     const userData = {
       id: userId,
       email,
@@ -201,7 +204,7 @@ export default function UserManagementPage() {
     }
 
     setIsUserDialogOpen(false)
-    toast({ title: editingUser ? "User Updated" : "User Created", description: `${firstName} saved successfully.` })
+    toast({ title: editingUser ? "User Updated" : "User Pre-Provisioned", description: `${firstName} saved successfully. Access keyed to email.` })
   }
 
   const handleToggleUserStatus = (user: any) => {
@@ -218,15 +221,14 @@ export default function UserManagementPage() {
   }
 
   const handleResetPassword = (user: any) => {
-    // In this prototype, we just set the mustChangePassword flag
     if (!firestore) return
     updateDocumentNonBlocking(doc(firestore, 'users', user.id), {
       mustChangePassword: true,
       updatedAt: new Date().toISOString()
     })
     toast({
-      title: "Password Reset Triggered",
-      description: `${user.firstName} will be required to change their password on next login.`
+      title: "Password Reset Required",
+      description: `${user.firstName} must use admin@123 then reset their password on next login.`
     })
   }
 
@@ -298,7 +300,7 @@ export default function UserManagementPage() {
   }, []);
 
   if (adminCheckLoading) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
-  if (!adminData) return <div className="p-20 text-center">Access Denied.</div>
+  if (!adminData) return <div className="p-20 text-center">Access Denied. Admin Privileges Required.</div>
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">

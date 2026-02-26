@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { FileText, Loader2, Lock, Mail, ArrowRight } from "lucide-react"
-import { useAuth, useUser, initiateEmailSignIn, initiateAnonymousSignIn } from "@/firebase"
+import { useAuth, useUser, initiateEmailSignIn, initiateAnonymousSignIn, errorEmitter } from "@/firebase"
 import { useToast } from "@/hooks/use-toast"
 
 export default function LoginPage() {
@@ -18,6 +18,21 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isGuestLoading, setIsGuestLoading] = useState(false)
 
+  // Listen for login errors
+  useEffect(() => {
+    const handleAuthError = (err: { title: string; message: string }) => {
+      setIsLoading(false)
+      setIsGuestLoading(false)
+      toast({
+        variant: "destructive",
+        title: err.title,
+        description: err.message
+      })
+    }
+    errorEmitter.on('auth-error', handleAuthError)
+    return () => errorEmitter.off('auth-error', handleAuthError)
+  }, [toast])
+
   // Redirect if already logged in
   useEffect(() => {
     if (!isUserLoading && user) {
@@ -25,7 +40,7 @@ export default function LoginPage() {
     }
   }, [user, isUserLoading, router])
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!auth) return
 
@@ -34,17 +49,8 @@ export default function LoginPage() {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
 
-    try {
-      initiateEmailSignIn(auth, email, password)
-      // Success is handled by onAuthStateChanged in AuthInitializer/FirebaseProvider
-    } catch (error: any) {
-      setIsLoading(false)
-      toast({
-        variant: "destructive",
-        title: "Login Failed",
-        description: "Invalid email or password. For this prototype, use Guest Access."
-      })
-    }
+    // initiateEmailSignIn is non-blocking. Error handled via listener above.
+    initiateEmailSignIn(auth, email, password)
   }
 
   const handleGuestLogin = () => {
@@ -123,9 +129,9 @@ export default function LoginPage() {
             )}
           </Button>
         </CardContent>
-        <CardFooter className="flex flex-col space-y-4 pt-0">
-          <p className="text-center text-xs text-muted-foreground">
-            Specialized ERP for Narrow Web Flexo Printing Operations.
+        <CardFooter className="flex flex-col space-y-4 pt-0 text-center">
+          <p className="text-xs text-muted-foreground italic">
+            New employees: Use your work email and <strong>admin@123</strong> to initialize your account.
           </p>
         </CardFooter>
       </Card>

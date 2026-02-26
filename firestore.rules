@@ -3,16 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V4)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V5)
      * 
      * Core Philosophy:
      * Implements Role-Based Access Control (RBAC) and Database-Backed Access Control (DBAC).
-     * 
-     * Key Security Decisions:
-     * 1. Authorization Independence: Admin status is determined by the existence of a document in 
-     *    the /adminUsers collection.
-     * 2. Account Status Gatekeeping: Access to system resources is predicated on the user 
-     *    having 'isActive: true' in their profile.
      */
 
     // --- Global Helper Functions ---
@@ -28,22 +22,30 @@ service cloud.firestore {
 
     /** Special override for prototype seeding/initial setup */
     function isTargetAdmin() {
-      return isSignedIn() && request.auth.token.email == 'gm.shreelabel@gmail.com';
+      return isSignedIn() && (request.auth.token.email == 'gm.shreelabel@gmail.com');
     }
 
     /** 
      * Checks if the authenticated user is a designated system administrator.
      * Uses the exists() check on the marker collection.
+     * Supports both UID and Email keys during transition.
      */
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)) ||
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.token.email))
+      );
     }
 
     /** Checks if the authenticated user's account status is currently 'active'. */
     function isUserActive() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      // Ensure the document exists before checking data to avoid evaluation errors
-      return exists(userPath) && get(userPath).data.isActive == true;
+      // Fallback check for email path during provisioning transition
+      let emailPath = /databases/$(database)/documents/users/$(request.auth.token.email);
+      
+      return (exists(userPath) && get(userPath).data.isActive == true) ||
+             (exists(emailPath) && get(emailPath).data.isActive == true) ||
+             isTargetAdmin();
     }
 
     // --- Collection Rules ---
@@ -52,7 +54,8 @@ service cloud.firestore {
      * User Profiles: Unified management.
      */
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
+      // Allow user to get their own doc by UID OR by email (during provisioning)
+      allow get: if isOwner(userId) || userId == request.auth.token.email || isAdmin();
       allow list: if isAdmin() || isTargetAdmin();
       allow create: if isTargetAdmin() || isAdmin();
       allow update: if isAdmin() || (isOwner(userId) && isUserActive());
@@ -71,45 +74,44 @@ service cloud.firestore {
      * Admin Markers: DBAC marker documents.
      */
     match /adminUsers/{adminUid} {
-      allow get: if isOwner(adminUid) || isTargetAdmin();
+      allow get: if isOwner(adminUid) || adminUid == request.auth.token.email || isTargetAdmin();
       allow list: if isAdmin() || isTargetAdmin();
-      // Allow target admin to bootstrap their own record, and admins to manage others
-      allow write: if (isOwner(adminUid) && isTargetAdmin()) || isAdmin() || isTargetAdmin();
+      allow write: if isOwner(adminUid) || isAdmin() || isTargetAdmin();
     }
 
     /**
      * ERP Operational Modules
      */
     match /jobs/{jobId} {
-      allow read, write: if isSignedIn() && (isUserActive() || isTargetAdmin());
+      allow read, write: if isSignedIn() && isUserActive();
       
-      match /technical/{docId} { allow read, write: if isSignedIn(); }
-      match /financial/{docId} { allow read, write: if isSignedIn(); }
-      match /files/{docId} { allow read, write: if isSignedIn(); }
+      match /technical/{docId} { allow read, write: if isSignedIn() && isUserActive(); }
+      match /financial/{docId} { allow read, write: if isSignedIn() && isUserActive(); }
+      match /files/{docId} { allow read, write: if isSignedIn() && isUserActive(); }
     }
 
-    match /estimates/{id} { allow read, write: if isSignedIn(); }
-    match /salesOrders/{id} { allow read, write: if isSignedIn(); }
-    match /customers/{id} { allow read, write: if isSignedIn(); }
-    match /materials/{id} { allow read, write: if isSignedIn(); }
-    match /machines/{id} { allow read, write: if isSignedIn(); }
-    match /cylinders/{id} { allow read, write: if isSignedIn(); }
-    match /suppliers/{id} { allow read, write: if isSignedIn(); }
-    match /jumbo_stock/{id} { allow read, write: if isSignedIn(); }
-    match /inventoryItems/{id} { allow read, write: if isSignedIn(); }
-    match /jobCards/{id} { allow read, write: if isSignedIn(); }
-    match /boms/{id} { allow read, write: if isSignedIn(); }
-    match /workOrders/{id} { allow read, write: if isSignedIn(); }
-    match /qualityChecks/{id} { allow read, write: if isSignedIn(); }
-    match /dispatchChallans/{id} { allow read, write: if isSignedIn(); }
-    match /invoices/{id} { allow read, write: if isSignedIn(); }
-    match /artworks/{id} { allow read, write: if isSignedIn(); }
-    match /counters/{id} { allow read, write: if isSignedIn(); }
-    match /system_settings/{id} { allow read, write: if isSignedIn(); }
-    match /roll_settings/{id} { allow read, write: if isSignedIn(); }
-    match /job_settings/{id} { allow read, write: if isSignedIn(); }
-    match /alerts/{id} { allow read, write: if isSignedIn(); }
-    match /notifications/{id} { allow read, write: if isSignedIn(); }
+    match /estimates/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /salesOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /customers/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /machines/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /cylinders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /suppliers/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /jumbo_stock/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /inventoryItems/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /jobCards/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /boms/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /workOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /qualityChecks/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /dispatchChallans/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /invoices/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /artworks/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /counters/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /system_settings/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /roll_settings/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /job_settings/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /alerts/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /notifications/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     
     match /system_logs/{path=**} {
       allow read, write: if isAdmin();
