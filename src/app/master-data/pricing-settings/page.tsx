@@ -17,10 +17,10 @@ export default function PricingSettingsPage() {
   const { user } = useUser()
   const firestore = useFirestore()
 
-  // Authorization check
+  // Authorization Check - Use correct even-segmented path
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return doc(firestore, '_system_roles/admins', user.uid);
+    return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 

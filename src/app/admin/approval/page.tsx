@@ -2,7 +2,7 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,8 +15,10 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, updateDoc } from "firebase/firestore"
+import { collection, doc } from "firebase/firestore"
 import { updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
@@ -28,10 +30,10 @@ export default function AdminApprovalPage() {
   const [selectedJob, setSelectedJob] = useState<any>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
 
-  // Authorization Check
+  // Authorization Check - Use correct even-segmented path
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return doc(firestore, '_system_roles/admins', user.uid);
+    return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 

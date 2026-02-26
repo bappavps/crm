@@ -8,14 +8,14 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/_system_roles/admins/$(request.auth.uid));
+      return isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    match /_system_roles/admins/{userId} {
+    match /adminUsers/{userId} {
       allow get, list: if isSignedIn();
       allow write: if isAdmin();
     }
@@ -37,12 +37,22 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /job_settings/unique-id-config {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /roll_settings/global_config {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /counters/{id} {
       allow get: if isSignedIn();
       allow write: if isSignedIn();
     }
 
-    // Generic fallback for master data
+    // Generic fallback for master data and other collections
     match /{collectionName}/{docId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
