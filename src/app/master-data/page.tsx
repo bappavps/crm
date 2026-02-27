@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -232,6 +232,11 @@ export default function MasterDataPage() {
     const updated = [...bomMaterials]
     updated[index] = { ...updated[index], [field]: value }
     setBomMaterials(updated)
+  }
+
+  const openDetails = (c: any) => {
+    setViewingItem(c)
+    setIsDetailsOpen(true)
   }
 
   return (
@@ -547,7 +552,6 @@ export default function MasterDataPage() {
           </Card>
         </TabsContent>
 
-        {/* Other existing tabs (suppliers, machines, cylinders, clients) remain as they were but wrapped in TabsContent */}
         <TabsContent value="suppliers">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -582,8 +586,6 @@ export default function MasterDataPage() {
           </Card>
         </TabsContent>
 
-        {/* machines, cylinders, clients logic goes here... (truncated for brevity but preserved) */}
-        {/* Preserving machines tab */}
         <TabsContent value="machines">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -618,7 +620,6 @@ export default function MasterDataPage() {
           </Card>
         </TabsContent>
 
-        {/* cylinders tab */}
         <TabsContent value="cylinders">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
