@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
@@ -32,7 +33,8 @@ import {
   History,
   RotateCcw,
   FileText,
-  Users
+  Users,
+  IdCard
 } from "lucide-react"
 import { 
   Dialog, 
@@ -179,6 +181,7 @@ export default function UserManagementPage() {
     const email = (formData.get("email") as string).toLowerCase()
     const firstName = formData.get("firstName") as string
     const lastName = formData.get("lastName") as string
+    const salesCode = formData.get("salesCode") as string
     
     const userId = editingUser?.id || email;
     
@@ -187,6 +190,7 @@ export default function UserManagementPage() {
       email,
       firstName,
       lastName,
+      salesCode: salesCode || null,
       roles: selectedRoles,
       isActive: editingUser ? editingUser.isActive : true,
       mustChangePassword: editingUser ? (editingUser.mustChangePassword || false) : true,
@@ -333,6 +337,7 @@ export default function UserManagementPage() {
                 <TableHeader>
                   <TableRow className="bg-muted/30">
                     <TableHead className="font-black text-[10px] uppercase">Employee</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Sales Code</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Assigned Roles</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Access Status</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Security</TableHead>
@@ -341,7 +346,7 @@ export default function UserManagementPage() {
                 </TableHeader>
                 <TableBody>
                   {usersLoading ? (
-                    <TableRow><TableCell colSpan={5} className="text-center py-20"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={6} className="text-center py-20"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
                   ) : users?.map((u) => (
                     <TableRow key={u.id} className={`hover:bg-muted/10 ${!u.isActive ? 'opacity-60 grayscale' : ''}`}>
                       <TableCell className="py-4">
@@ -356,6 +361,11 @@ export default function UserManagementPage() {
                             <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-tighter">{u.email}</span>
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-[10px] font-bold">
+                          {u.salesCode || '—'}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1.5">
@@ -521,6 +531,14 @@ export default function UserManagementPage() {
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase">Work Email</Label>
                 <Input name="email" type="email" defaultValue={editingUser?.email} required />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase flex items-center gap-1">
+                  <IdCard className="h-3 w-3" /> Individual Sales Code
+                </Label>
+                <Input name="salesCode" defaultValue={editingUser?.salesCode} placeholder="e.g. SL-A01" />
+                <p className="text-[9px] text-muted-foreground italic">* Required for automatic client ownership attribution.</p>
               </div>
               
               <div className="space-y-3">

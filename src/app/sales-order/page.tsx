@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
@@ -19,7 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, query, where } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 
@@ -41,22 +42,38 @@ export default function SalesOrderPage() {
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+  const isAdmin = !!adminData;
 
   // Fetching Data from Firestore - Guarded by adminData
   const ordersQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'salesOrders');
-  }, [firestore, user, adminData])
+    const base = collection(firestore, 'salesOrders');
+    // SALES OWNERSHIP FILTER
+    if (!isAdmin) {
+      return query(base, where("sales_owner_id", "==", user.uid));
+    }
+    return base;
+  }, [firestore, user, adminData, isAdmin])
 
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'customers');
-  }, [firestore, user, adminData])
+    const base = collection(firestore, 'customers');
+    // SALES OWNERSHIP FILTER
+    if (!isAdmin) {
+      return query(base, where("sales_owner_id", "==", user.uid));
+    }
+    return base;
+  }, [firestore, user, adminData, isAdmin])
 
   const estimatesQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'estimates');
-  }, [firestore, user, adminData])
+    const base = collection(firestore, 'estimates');
+    // SALES OWNERSHIP FILTER
+    if (!isAdmin) {
+      return query(base, where("sales_owner_id", "==", user.uid));
+    }
+    return base;
+  }, [firestore, user, adminData, isAdmin])
 
   const { data: orders, isLoading: ordersLoading } = useCollection(ordersQuery)
   const { data: customers } = useCollection(customersQuery)
@@ -88,7 +105,7 @@ export default function SalesOrderPage() {
     const selectedCustomer = customers?.find(c => c.id === customerId)
     const selectedEstimate = estimates?.find(e => e.id === estimateId)
 
-    if (!customerId) {
+    if (!selectedCustomer) {
       toast({ variant: "destructive", title: "Validation Error", description: "Customer is required." })
       return
     }
@@ -96,16 +113,20 @@ export default function SalesOrderPage() {
     const orderData = {
       orderNumber: `SO-${Date.now().toString().slice(-6)}`,
       customerId,
-      customerName: selectedCustomer?.companyName || "New Customer",
+      customerName: selectedCustomer.companyName,
       estimateId: estimateId || "Direct Entry",
       productCode: selectedEstimate?.productCode || formData.get("productCode") || "Custom Label",
       poNumber: poNumber || "N/A",
       orderDate: new Date().toISOString(),
       deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: "Confirmed",
-      creditHoldWarning: isOverdue || !!selectedCustomer?.isCreditBlocked,
+      creditHoldWarning: isOverdue || !!selectedCustomer.isCreditBlocked,
       totalAmount: selectedEstimate?.totalSellingPrice || Number(formData.get("totalAmount")) || 0,
       qty: selectedEstimate?.orderQuantity || Number(formData.get("qty")) || 0,
+      // INHERIT OWNERSHIP FROM CLIENT
+      sales_owner_id: selectedCustomer.sales_owner_id,
+      sales_owner_name: selectedCustomer.sales_owner_name,
+      sales_owner_code: selectedCustomer.sales_owner_code,
       createdById: user.uid,
       createdAt: new Date().toISOString()
     }

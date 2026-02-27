@@ -1,6 +1,7 @@
+
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -40,10 +41,11 @@ import {
   Loader2,
   FlaskConical,
   Layers,
-  ChevronRight
+  ChevronRight,
+  ShieldAlert
 } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, query, where } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { usePermissions } from "@/components/auth/permission-context"
 import { Switch } from "@/components/ui/switch"
@@ -56,7 +58,7 @@ export default function MasterDataPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, roles: userRoles } = usePermissions()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders" | "suppliers" | "raw_materials" | "boms">("materials")
@@ -66,6 +68,15 @@ export default function MasterDataPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const isAdmin = userRoles.includes('Admin')
+
+  // Get current user profile for ownership attribution
+  const profileRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [firestore, user]);
+  const { data: profile } = useDoc(profileRef);
+
   // BOM Materials Local State
   const [bomMaterials, setBomMaterials] = useState<any[]>([])
 
@@ -74,7 +85,6 @@ export default function MasterDataPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  
   const { data: adminData } = useDoc(adminDocRef);
 
   // Firestore Queries
@@ -100,8 +110,13 @@ export default function MasterDataPage() {
 
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'customers');
-  }, [firestore, user, adminData])
+    const base = collection(firestore, 'customers');
+    // SALES OWNERSHIP FILTER
+    if (!isAdmin && user) {
+      return query(base, where("sales_owner_id", "==", user.uid));
+    }
+    return base;
+  }, [firestore, user, adminData, isAdmin])
 
   const cylindersQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
@@ -135,7 +150,7 @@ export default function MasterDataPage() {
     const formData = new FormData(e.currentTarget)
     const rawData = Object.fromEntries(formData.entries())
     
-    if (!firestore || !user) return
+    if (!firestore || !user || !profile) return
 
     let finalData: any = { ...rawData };
 
@@ -155,7 +170,11 @@ export default function MasterDataPage() {
         creditLimit: Number(rawData.creditLimit) || 0,
         status: rawData.status === 'on' ? 'Active' : 'Inactive',
         isCreditBlocked: rawData.isCreditBlocked === 'on',
-        photoUrl: photoPreview || editingItem?.photoUrl || null
+        photoUrl: photoPreview || editingItem?.photoUrl || null,
+        // AUTOMATIC SALES OWNERSHIP
+        sales_owner_id: editingItem?.sales_owner_id || user.uid,
+        sales_owner_name: editingItem?.sales_owner_name || profile.firstName,
+        sales_owner_code: editingItem?.sales_owner_code || profile.salesCode || 'Admin'
       }
     } else if (dialogType === 'raw_materials') {
       finalData = {
@@ -697,6 +716,7 @@ export default function MasterDataPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Company Name</TableHead>
+                    <TableHead>Sales Owner</TableHead>
                     <TableHead>Contact Person</TableHead>
                     <TableHead>GST No.</TableHead>
                     <TableHead>WhatsApp</TableHead>
@@ -708,15 +728,21 @@ export default function MasterDataPage() {
                 </TableHeader>
                 <TableBody>
                   {customersLoading ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-10"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center py-10"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
                   ) : customers?.map((c) => (
                     <TableRow key={c.id} className={c.status === 'Inactive' || c.isActive === false ? 'opacity-60 grayscale' : ''}>
                       <TableCell className="font-bold text-primary">{c.companyName}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-black uppercase text-accent leading-none">{c.sales_owner_code || 'ADM'}</span>
+                          <span className="text-[11px] font-bold text-muted-foreground">{c.sales_owner_name || 'Admin'}</span>
+                        </div>
+                      </TableCell>
                       <TableCell className="text-xs">{c.clientPersonName}</TableCell>
                       <TableCell className="font-mono text-[10px]">{c.gstNumber}</TableCell>
                       <TableCell className="text-xs flex items-center gap-1"><Phone className="h-3 w-3 text-emerald-600" /> {c.whatsapp}</TableCell>
                       <TableCell className="text-xs">{c.email}</TableCell>
-                      {hasPermission('client_credit_edit') && <TableCell className="font-bold">{c.creditDays || 0}</TableCell>}
+                      {hasPermission('client_credit_edit') && <TableHead>{c.creditDays || 0}</TableHead>}
                       <TableCell>
                         <Badge className={(c.status === 'Active' || c.isActive !== false) ? (checkIsOverdue(c) ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-muted'}>
                           {(c.status === 'Active' || c.isActive !== false) ? (checkIsOverdue(c) ? 'OVERDUE' : 'ACTIVE') : 'INACTIVE'}
@@ -758,8 +784,11 @@ export default function MasterDataPage() {
                     <Users className="h-8 w-8 text-muted-foreground/40" />
                   )}
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold">{viewingItem.companyName}</h3>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <h3 className="text-xl font-bold">{viewingItem.companyName}</h3>
+                    <Badge variant="outline" className="text-[10px] border-accent text-accent font-black">OWNER: {viewingItem.sales_owner_code || 'ADMIN'}</Badge>
+                  </div>
                   <p className="text-sm text-muted-foreground">{viewingItem.clientPersonName}</p>
                 </div>
               </div>

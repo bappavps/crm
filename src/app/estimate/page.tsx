@@ -34,7 +34,9 @@ export default function EstimatePage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const router = useRouter()
-  const { hasPermission } = usePermissions()
+  const { hasPermission, roles: userRoles } = usePermissions()
+
+  const isAdmin = userRoles.includes('Admin')
 
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
@@ -49,6 +51,13 @@ export default function EstimatePage() {
   // DYNAMIC BOM LOGIC STATE
   const [selectedBomId, setSelectedBomId] = useState<string>("manual")
 
+  // Current User Profile for Ownership Attribution
+  const profileRef = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return doc(firestore, 'users', user.uid);
+  }, [firestore, user]);
+  const { data: profile } = useDoc(profileRef);
+
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
@@ -57,8 +66,13 @@ export default function EstimatePage() {
 
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    return collection(firestore, 'customers');
-  }, [firestore, user])
+    const base = collection(firestore, 'customers');
+    // SALES OWNERSHIP FILTER
+    if (!isAdmin) {
+      return query(base, where("sales_owner_id", "==", user.uid));
+    }
+    return base;
+  }, [firestore, user, isAdmin])
 
   const bomsQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -150,7 +164,7 @@ export default function EstimatePage() {
 
   const handleQuickClientSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!firestore || !user) return
+    if (!firestore || !user || !profile) return
 
     const formData = new FormData(e.currentTarget)
     const companyName = formData.get("companyName") as string
@@ -170,7 +184,11 @@ export default function EstimatePage() {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       createdById: user.uid,
-      id: crypto.randomUUID()
+      id: crypto.randomUUID(),
+      // AUTOMATIC SALES OWNERSHIP
+      sales_owner_id: user.uid,
+      sales_owner_name: profile.firstName,
+      sales_owner_code: profile.salesCode || 'Admin'
     }
 
     try {
@@ -179,7 +197,7 @@ export default function EstimatePage() {
         transaction.set(docRef, clientData);
       });
       setMetadata(prev => ({ ...prev, customerId: docRef.id }))
-      toast({ title: "Client Added", description: `${companyName} has been registered and selected.` })
+      toast({ title: "Client Added", description: `${companyName} registered and assigned to you.` })
       setIsQuickAddOpen(false)
       setPhotoPreview(null)
     } catch (err) {
@@ -190,7 +208,8 @@ export default function EstimatePage() {
   const handleSave = async () => {
     if (!firestore || !user) return
     
-    if (!metadata.customerId) {
+    const selectedCustomer = activeCustomers.find(c => c.id === metadata.customerId)
+    if (!selectedCustomer) {
       toast({ variant: "destructive", title: "Validation Error", description: "Please select a Customer." })
       return
     }
@@ -228,7 +247,11 @@ export default function EstimatePage() {
           bomId: selectedBomId,
           isRepeatJob,
           sourceJobId: selectedRepeatJobId || null,
-          customerName: activeCustomers?.find(c => c.id === metadata.customerId)?.companyName || "Unknown",
+          customerName: selectedCustomer.companyName,
+          // INHERIT OWNERSHIP FROM CLIENT
+          sales_owner_id: selectedCustomer.sales_owner_id,
+          sales_owner_name: selectedCustomer.sales_owner_name,
+          sales_owner_code: selectedCustomer.sales_owner_code,
           status: "Draft",
           createdById: user.uid,
           createdAt: serverTimestamp(),

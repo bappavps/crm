@@ -47,9 +47,13 @@ export default function EstimatesRegistryPage() {
   // Data Fetching
   const estimatesQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
-    let base = collection(firestore, 'estimates');
+    const base = collection(firestore, 'estimates');
+    // SALES OWNERSHIP FILTER
+    if (!isAdmin) {
+      return query(base, where("sales_owner_id", "==", user.uid), orderBy('createdAt', 'desc'));
+    }
     return query(base, orderBy('createdAt', 'desc'));
-  }, [firestore, user]);
+  }, [firestore, user, isAdmin]);
 
   const { data: allEstimates, isLoading } = useCollection(estimatesQuery);
 
@@ -57,11 +61,6 @@ export default function EstimatesRegistryPage() {
     if (!allEstimates) return [];
     
     let result = allEstimates;
-
-    // Security Filter: Sales see own, Admin sees all
-    if (!isAdmin && user) {
-      result = result.filter(e => e.createdById === user.uid);
-    }
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -77,7 +76,7 @@ export default function EstimatesRegistryPage() {
     }
 
     return result;
-  }, [allEstimates, searchQuery, statusFilter, isAdmin, user]);
+  }, [allEstimates, searchQuery, statusFilter]);
 
   const stats = useMemo(() => {
     if (!filteredEstimates) return { total: 0, approved: 0, converted: 0 };
