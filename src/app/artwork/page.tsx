@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Palette, Upload, CheckCircle2, Clock, AlertCircle, Loader2, Download, ExternalLink, ZoomIn, Maximize2 } from "lucide-react"
+import { Palette, Upload, CheckCircle2, Clock, AlertCircle, Loader2, Download, ExternalLink, ZoomIn, Maximize2, X, Plus, Minus } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
@@ -162,9 +162,13 @@ export default function ArtworkPage() {
                 </DialogDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.5))}><X className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.5))}>
+                  <Minus className="h-4 w-4" />
+                </Button>
                 <span className="text-xs font-bold w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
-                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.min(5, prev + 0.5))}><Plus className="h-4 w-4" /></Button>
+                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.min(5, prev + 0.5))}>
+                  <Plus className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" onClick={() => setZoomLevel(1)}>Reset</Button>
               </div>
             </div>
