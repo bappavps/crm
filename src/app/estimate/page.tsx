@@ -27,6 +27,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import Image from "next/image"
+import { cn } from "@/lib/utils"
 
 export default function EstimatePage() {
   const { toast } = useToast()
@@ -282,7 +283,12 @@ export default function EstimatePage() {
                 <div className="flex justify-between items-end">
                   <Label>Customer</Label>
                   {selectedCustomerData && (
-                    <Badge variant={isOverdue ? "destructive" : "secondary"} className="text-[9px] h-5 uppercase">
+                    <Badge 
+                      className={cn(
+                        "text-[9px] h-5 uppercase border-none text-white",
+                        isOverdue ? "bg-destructive hover:bg-destructive/90" : "bg-emerald-500 hover:bg-emerald-600"
+                      )}
+                    >
                       {isOverdue ? 'Overdue' : 'Credit OK'}
                     </Badge>
                   )}
