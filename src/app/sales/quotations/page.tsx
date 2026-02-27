@@ -19,7 +19,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, updateDoc, query, where } from "firebase/firestore"
+import { collection, doc, updateDoc, query, where, addDoc, serverTimestamp } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -31,6 +31,7 @@ export default function QuotationRegistryPage() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [selectedQuote, setSelectedQuote] = useState<any>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("")
+  const [isProcessing, setIsProcessing] = useState(false)
 
   // Authorization check - wait for resolved state
   const adminDocRef = useMemoFirebase(() => {
@@ -85,6 +86,45 @@ export default function QuotationRegistryPage() {
     toast({ title: "Status Updated", description: `Quotation is now ${newStatus}.` })
   }
 
+  const handleConvertToOrder = async () => {
+    if (!firestore || !user || !selectedQuote) return
+    setIsProcessing(true)
+    try {
+      const orderData = {
+        orderNumber: `SO-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        quotationId: selectedQuote.id,
+        estimateId: selectedQuote.estimateId || "Direct Entry",
+        customerId: selectedQuote.customerId,
+        customerName: selectedQuote.customerName,
+        productCode: selectedQuote.productCode,
+        totalAmount: selectedQuote.totalSellingPrice,
+        qty: selectedQuote.orderQuantity,
+        orderDate: new Date().toISOString(),
+        deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        status: "Confirmed",
+        // INHERIT OWNERSHIP FROM QUOTATION
+        sales_owner_id: selectedQuote.sales_owner_id || user.uid,
+        sales_owner_name: selectedQuote.sales_owner_name || "Unknown Owner",
+        sales_owner_code: selectedQuote.sales_owner_code || "N/A",
+        createdById: user.uid,
+        createdAt: serverTimestamp()
+      }
+      
+      await addDoc(collection(firestore, 'salesOrders'), orderData)
+      await updateDoc(doc(firestore, 'quotations', selectedQuote.id), { 
+        status: 'Converted',
+        updatedAt: new Date().toISOString()
+      })
+      
+      toast({ title: "Quotation Converted", description: "Sales Order generated successfully." })
+      setIsPreviewOpen(false)
+    } catch (e) {
+      toast({ variant: "destructive", title: "Conversion Failed", description: "Check permissions or connectivity." })
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   const isLoading = authLoading || quotesLoading;
 
   return (
@@ -128,6 +168,7 @@ export default function QuotationRegistryPage() {
                       q.status === 'Approved' ? 'bg-emerald-500' :
                       q.status === 'Sent' ? 'bg-blue-500' :
                       q.status === 'Rejected' ? 'bg-destructive' :
+                      q.status === 'Converted' ? 'bg-primary' :
                       'bg-amber-500'
                     )}>
                       {q.status.toUpperCase()}
@@ -182,14 +223,18 @@ export default function QuotationRegistryPage() {
             <div dangerouslySetInnerHTML={{ __html: renderTemplateContent(activeTemplate?.footer_html) }} />
           </div>
 
-          <DialogFooter className="print:hidden">
-            <div className="flex justify-between w-full">
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => handleStatusUpdate(selectedQuote.id, 'Sent')} className="text-blue-600">Send to Client</Button>
-                <Button variant="outline" size="sm" onClick={() => handleStatusUpdate(selectedQuote.id, 'Approved')} className="text-emerald-600">Mark Approved</Button>
-              </div>
-              <Button onClick={() => window.print()} className="gap-2"><Printer className="h-4 w-4" /> Print PDF</Button>
+          <DialogFooter className="print:hidden flex justify-between items-center w-full mt-4">
+            <div className="flex gap-2">
+              {selectedQuote?.status !== 'Converted' && (
+                <Button variant="default" className="bg-primary hover:bg-primary/90 font-bold" onClick={handleConvertToOrder} disabled={isProcessing}>
+                  {isProcessing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShoppingCart className="mr-2 h-4 w-4" />}
+                  Convert to Sales Order
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => handleStatusUpdate(selectedQuote.id, 'Sent')} className="text-blue-600">Send to Client</Button>
+              <Button variant="outline" size="sm" onClick={() => handleStatusUpdate(selectedQuote.id, 'Approved')} className="text-emerald-600">Mark Approved</Button>
             </div>
+            <Button onClick={() => window.print()} className="gap-2"><Printer className="h-4 w-4" /> Print PDF</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
