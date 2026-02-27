@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
@@ -268,7 +267,7 @@ export default function EstimatePage() {
       router.push('/estimates')
     } catch (e: any) {
       console.error("Firestore Save Error:", e);
-      toast({ variant: "destructive", title: "Save Failed", description: e.message || "Firestore operation error." })
+      toast({ variant: "destructive", title: "Save Failed", description: e.message || "Firestore operation error. Check permissions or network." })
     } finally {
       setIsSaving(false)
     }
