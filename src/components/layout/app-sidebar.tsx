@@ -37,6 +37,7 @@ import {
   SidebarMenuItem,
   SidebarGroup,
   SidebarGroupLabel,
+  useSidebar
 } from "@/components/ui/sidebar"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -122,11 +123,18 @@ const adminNavigation = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { hasPermission } = usePermissions()
+  const { setOpenMobile, isMobile } = useSidebar()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  const handleNavClick = () => {
+    if (isMobile) {
+      setOpenMobile(false)
+    }
+  }
 
   if (!mounted) return (
     <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl">
@@ -161,7 +169,7 @@ export function AppSidebar() {
           <SidebarMenu>
             <SidebarMenuItem>
               {hasPermission('dashboard') && (
-                <SidebarMenuButton asChild isActive={pathname === '/'}>
+                <SidebarMenuButton asChild isActive={pathname === '/'} onClick={handleNavClick}>
                   <Link href="/">
                     <LayoutDashboard className="mr-3" />
                     <span>Dashboard</span>
@@ -188,6 +196,7 @@ export function AppSidebar() {
                       asChild 
                       isActive={pathname === item.href}
                       className="px-4 py-1.5 transition-all duration-200 h-9"
+                      onClick={handleNavClick}
                     >
                       <Link href={item.href}>
                         <item.icon className="mr-3 h-4 w-4" />
@@ -211,6 +220,7 @@ export function AppSidebar() {
                     asChild 
                     isActive={pathname === item.href}
                     className="px-4 py-1.5 transition-all duration-200 h-9"
+                    onClick={handleNavClick}
                   >
                     <Link href={item.href}>
                       <item.icon className="mr-3 h-4 w-4" />
