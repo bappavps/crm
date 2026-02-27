@@ -67,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4 hidden md:block" />
             <div className="flex-1 truncate">
-              <h1 className="text-sm md:text-xl font-bold text-primary truncate">Shree Label Creation CRM</h1>
+              <h1 className="text-xs md:text-xl font-bold text-primary truncate">Shree Label Creation CRM</h1>
             </div>
             <div className="flex items-center gap-1 md:gap-4">
               <NotificationBell />
@@ -76,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </header>
           
           <main className="flex-1 p-4 md:p-6 lg:p-8">
-            <div className="max-w-7xl mx-auto w-full min-h-full pb-20">
+            <div className="max-w-7xl mx-auto w-full pb-32">
               {isUnauthorizedPage ? (
                 children
               ) : (

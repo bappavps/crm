@@ -41,7 +41,7 @@
   }
   body {
     @apply bg-background text-foreground min-h-screen;
-    width: 100vw;
+    max-width: 100%;
   }
 }
 

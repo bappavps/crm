@@ -29,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={cn(inter.className, "antialiased bg-background overflow-hidden")}>
+      <body className={cn(inter.className, "antialiased bg-background")}>
         <FirebaseClientProvider>
           {/* AuthInitializer handles redirection and profile provisioning */}
           <AuthInitializer />
