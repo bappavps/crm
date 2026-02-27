@@ -104,7 +104,8 @@ async function seedSystemRoles(db: any) {
         stockDashboard: true, stockRegistry: true, slitting: true, finishedGoods: true,
         dieManagement: true, jobCards: true, bom: true, workOrders: true, liveFloor: true,
         qualityControl: true, dispatch: true, billing: true, reports: true, admin: true,
-        client_add: true, client_edit: true, client_delete: true, client_credit_edit: true
+        client_add: true, client_edit: true, client_delete: true, client_credit_edit: true,
+        rawMaterials: true, bomMaster: true, quotationTemplates: true
       }
     },
     {
@@ -112,7 +113,7 @@ async function seedSystemRoles(db: any) {
       name: 'Sales Executive',
       permissions: {
         dashboard: true, estimates: true, quotations: true, salesOrders: true, createJob: true,
-        artwork: true, reports: true, client_add: true
+        artwork: true, reports: true, client_add: true, quotationTemplates: false
       }
     },
     {

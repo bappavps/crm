@@ -26,7 +26,9 @@ import {
   FileUp,
   LineChart,
   Lock,
-  FileText
+  FileText,
+  FileJson,
+  FlaskConical
 } from "lucide-react"
 import {
   Sidebar,
@@ -115,6 +117,7 @@ const adminNavigation = [
   { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
   { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
   { name: 'Stock Import', icon: FileUp, href: '/admin/stock-import', permission: 'admin' as PermissionKey },
+  { name: 'Quot. Templates', icon: FileJson, href: '/admin/quotation-templates', permission: 'admin' as PermissionKey },
   { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
   { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings', permission: 'admin' as PermissionKey },
   { name: 'DB Migration', icon: Database, href: '/admin/migrate', permission: 'admin' as PermissionKey },

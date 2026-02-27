@@ -10,7 +10,8 @@ export type PermissionKey =
   | 'stockDashboard' | 'stockRegistry' | 'slitting' | 'finishedGoods' | 'dieManagement'
   | 'jobCards' | 'bom' | 'workOrders' | 'liveFloor'
   | 'qualityControl' | 'dispatch' | 'billing' | 'reports' | 'admin'
-  | 'client_add' | 'client_edit' | 'client_delete' | 'client_credit_edit';
+  | 'client_add' | 'client_edit' | 'client_delete' | 'client_credit_edit'
+  | 'rawMaterials' | 'bomMaster' | 'quotationTemplates';
 
 export interface PermissionsMap {
   [key: string]: boolean;
