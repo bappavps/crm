@@ -1,8 +1,7 @@
-
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -62,17 +61,17 @@ export default function EstimatePage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { isLoading: authLoading } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'customers');
     // SALES OWNERSHIP FILTER
-    if (!isAdmin) {
+    if (!adminData) {
       return query(base, where("sales_owner_id", "==", user.uid));
     }
     return base;
-  }, [firestore, user, isAdmin, authLoading])
+  }, [firestore, user, adminData, authLoading])
 
   const bomsQuery = useMemoFirebase(() => {
     if (!firestore || !user || authLoading) return null;
@@ -474,7 +473,8 @@ export default function EstimatePage() {
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">WhatsApp / Phone</Label(Input name="whatsapp" placeholder="9876543210" required />
+                  <Label className="text-[10px] font-black uppercase">WhatsApp / Phone</Label>
+                  <Input name="whatsapp" placeholder="9876543210" required />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase">Email Address</Label>
