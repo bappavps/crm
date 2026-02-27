@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
@@ -146,6 +145,15 @@ export default function EstimatePage() {
     }))
   }
 
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => setPhotoPreview(reader.result as string)
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleQuickClientSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
@@ -156,6 +164,8 @@ export default function EstimatePage() {
     const whatsapp = formData.get("whatsapp") as string
     const email = formData.get("email") as string
     const gstNumber = formData.get("gstNumber") as string
+    const fullAddress = formData.get("fullAddress") as string
+    const operationalNote = formData.get("operationalNote") as string
 
     const clientData = {
       companyName,
@@ -163,7 +173,9 @@ export default function EstimatePage() {
       whatsapp,
       email,
       gstNumber,
-      fullAddress: "Quick Entry",
+      fullAddress,
+      operationalNote,
+      photoUrl: photoPreview || null,
       creditDays: 0,
       status: "Active",
       isActive: true,
@@ -180,6 +192,7 @@ export default function EstimatePage() {
         toast({ title: "Client Added", description: `${companyName} has been registered and selected.` })
       }
       setIsQuickAddOpen(false)
+      setPhotoPreview(null)
     } catch (err) {
       // Error emitted by utility
     }
@@ -211,6 +224,18 @@ export default function EstimatePage() {
 
     toast({ title: "Estimate Saved", description: `Estimate for ${metadata.productCode} stored.` })
   }
+
+  const selectedCustomerData = useMemo(() => 
+    activeCustomers?.find(c => c.id === metadata.customerId), 
+    [activeCustomers, metadata.customerId]
+  )
+
+  const isOverdue = useMemo(() => {
+    if (!selectedCustomerData?.lastInvoiceDate || !selectedCustomerData?.creditDays) return false
+    const lastInvoice = new Date(selectedCustomerData.lastInvoiceDate)
+    const dueDate = new Date(lastInvoice.getTime() + selectedCustomerData.creditDays * 24 * 60 * 60 * 1000)
+    return new Date() > dueDate
+  }, [selectedCustomerData])
 
   if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>
 
@@ -247,11 +272,24 @@ export default function EstimatePage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Customer</Label>
+                <div className="flex justify-between items-end">
+                  <Label>Customer</Label>
+                  {selectedCustomerData && (
+                    <Badge variant={isOverdue ? "destructive" : "secondary"} className="text-[9px] h-5 uppercase">
+                      {isOverdue ? 'Overdue' : 'Credit OK'}
+                    </Badge>
+                  )}
+                </div>
                 <Select value={metadata.customerId} onValueChange={(val) => setMetadata(p => ({...p, customerId: val}))}>
-                  <SelectTrigger><SelectValue placeholder="Select Customer" /></SelectTrigger>
+                  <SelectTrigger className={isOverdue ? 'border-destructive' : ''}>
+                    <SelectValue placeholder="Select Customer" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {activeCustomers?.map(c => <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>)}
+                    {activeCustomers?.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.companyName} {c.isCreditBlocked ? '(Blocked)' : ''}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -352,38 +390,84 @@ export default function EstimatePage() {
       </div>
 
       <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleQuickClientSave}>
             <DialogHeader>
               <DialogTitle>Quick Client Registration</DialogTitle>
-              <DialogDescription>Add a basic client profile. You can update full details in Master Data later.</DialogDescription>
+              <DialogDescription>Add a basic client profile. You can update financial terms in Master Data later.</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="companyName">Company Name</Label>
-                <Input id="companyName" name="companyName" placeholder="e.g. Acme Labels Ltd" required />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="clientPersonName">Contact Person</Label>
-                <Input id="clientPersonName" name="clientPersonName" placeholder="e.g. John Doe" required />
-              </div>
+            <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
+                <div className="space-y-2">
+                  <Label htmlFor="companyName">Company Name</Label>
+                  <Input id="companyName" name="companyName" placeholder="e.g. Acme Labels Ltd" required />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="clientPersonName">Contact Person</Label>
+                  <Input id="clientPersonName" name="clientPersonName" placeholder="e.g. John Doe" required />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label htmlFor="whatsapp">WhatsApp / Phone</Label>
                   <Input id="whatsapp" name="whatsapp" placeholder="9876543210" required />
                 </div>
-                <div className="grid gap-2">
+                <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
                   <Input id="email" name="email" type="email" placeholder="client@example.com" required />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="gstNumber">GST Number (Optional)</Label>
+
+              <div className="space-y-2">
+                <Label htmlFor="gstNumber">GST Number</Label>
                 <Input id="gstNumber" name="gstNumber" placeholder="22AAAAA0000A1Z5" />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="fullAddress">Company Address</Label>
+                <Textarea id="fullAddress" name="fullAddress" placeholder="Full registered address..." className="h-20" required />
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label htmlFor="operationalNote">Internal Notes</Label>
+                  <Textarea id="operationalNote" name="operationalNote" placeholder="Special delivery instructions or technical preferences..." className="h-32" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Company Photo / Logo</Label>
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center gap-2 p-4 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors relative h-32"
+                  >
+                    {photoPreview ? (
+                      <div className="relative w-full h-full">
+                        <Image src={photoPreview} alt="Logo Preview" fill className="object-contain" />
+                        <Button 
+                          type="button" 
+                          variant="destructive" 
+                          size="icon" 
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+                          onClick={(e) => { e.stopPropagation(); setPhotoPreview(null); }}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Upload className="h-6 w-6 text-muted-foreground" />
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold text-center">Upload Logo</span>
+                      </>
+                    )}
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoSelect} />
+                  </div>
+                </div>
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full">Create & Select Client</Button>
+              <Button type="submit" className="w-full h-12 font-bold uppercase tracking-wider">
+                Create & Select Client
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>

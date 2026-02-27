@@ -151,7 +151,10 @@ export default function MasterDataPage() {
         gstNumber: rawData.gstNumber,
         operationalNote: rawData.operationalNote,
         creditDays: Number(rawData.creditDays) || 0,
+        outstandingAmount: Number(rawData.outstandingAmount) || 0,
+        creditLimit: Number(rawData.creditLimit) || 0,
         status: rawData.status === 'on' ? 'Active' : 'Inactive',
+        isCreditBlocked: rawData.isCreditBlocked === 'on',
         photoUrl: photoPreview || editingItem?.photoUrl || null
       }
     } else if (dialogType === 'raw_materials') {
@@ -237,6 +240,13 @@ export default function MasterDataPage() {
   const openDetails = (c: any) => {
     setViewingItem(c)
     setIsDetailsOpen(true)
+  }
+
+  const checkIsOverdue = (c: any) => {
+    if (!c.lastInvoiceDate || !c.creditDays) return false
+    const lastInvoice = new Date(c.lastInvoiceDate)
+    const dueDate = new Date(lastInvoice.getTime() + c.creditDays * 24 * 60 * 60 * 1000)
+    return new Date() > dueDate
   }
 
   return (
@@ -394,12 +404,34 @@ export default function MasterDataPage() {
                         <Label htmlFor="website">Website</Label>
                         <Input id="website" name="website" defaultValue={editingItem?.website} />
                       </div>
-                      {hasPermission('client_credit_edit') && (
-                        <div className="space-y-2">
-                          <Label htmlFor="creditDays">Credit Period (Days)</Label>
-                          <Input id="creditDays" name="creditDays" type="number" defaultValue={editingItem?.creditDays || 0} />
+                      
+                      {hasPermission('client_credit_edit') ? (
+                        <div className="grid grid-cols-2 gap-4 p-4 border rounded-lg bg-primary/5">
+                          <div className="space-y-2">
+                            <Label htmlFor="creditDays">Credit Days</Label>
+                            <Input id="creditDays" name="creditDays" type="number" defaultValue={editingItem?.creditDays || 0} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="outstandingAmount">Outstanding (₹)</Label>
+                            <Input id="outstandingAmount" name="outstandingAmount" type="number" defaultValue={editingItem?.outstandingAmount || 0} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="creditLimit">Credit Limit (₹)</Label>
+                            <Input id="creditLimit" name="creditLimit" type="number" defaultValue={editingItem?.creditLimit || 0} />
+                          </div>
+                          <div className="flex flex-col justify-end space-y-2">
+                            <Label htmlFor="isCreditBlocked">Block Client</Label>
+                            <Switch id="isCreditBlocked" name="isCreditBlocked" defaultChecked={!!editingItem?.isCreditBlocked} />
+                          </div>
+                        </div>
+                      ) : editingItem && (
+                        <div className="p-4 border rounded-lg bg-muted/20 space-y-2 text-xs">
+                          <p className="font-bold text-primary uppercase">Financial Summary</p>
+                          <div className="flex justify-between"><span>Credit:</span> <span>{editingItem.creditDays || 0} Days</span></div>
+                          <div className="flex justify-between"><span>Outstanding:</span> <span>₹{editingItem.outstandingAmount?.toLocaleString() || 0}</span></div>
                         </div>
                       )}
+
                       <div className="flex items-center gap-4 p-3 border rounded-lg bg-muted/30">
                         <Label htmlFor="status">Account Active</Label>
                         <Switch id="status" name="status" defaultChecked={editingItem ? (editingItem.status === 'Active' || editingItem.isActive !== false) : true} />
@@ -686,8 +718,8 @@ export default function MasterDataPage() {
                       <TableCell className="text-xs">{c.email}</TableCell>
                       {hasPermission('client_credit_edit') && <TableCell className="font-bold">{c.creditDays || 0}</TableCell>}
                       <TableCell>
-                        <Badge className={(c.status === 'Active' || c.isActive !== false) ? 'bg-emerald-500' : 'bg-muted'}>
-                          {(c.status === 'Active' || c.isActive !== false) ? 'ACTIVE' : 'INACTIVE'}
+                        <Badge className={(c.status === 'Active' || c.isActive !== false) ? (checkIsOverdue(c) ? 'bg-amber-500' : 'bg-emerald-500') : 'bg-muted'}>
+                          {(c.status === 'Active' || c.isActive !== false) ? (checkIsOverdue(c) ? 'OVERDUE' : 'ACTIVE') : 'INACTIVE'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right flex justify-end gap-2">

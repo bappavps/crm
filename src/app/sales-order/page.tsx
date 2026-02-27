@@ -1,12 +1,11 @@
-
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ShoppingCart, Plus, Search, Loader2, Info, Calendar, User, Hash, Wallet } from "lucide-react"
+import { ShoppingCart, Plus, Search, Loader2, Info, Calendar, User, Hash, Wallet, AlertTriangle } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { 
   Dialog, 
@@ -32,6 +31,9 @@ export default function SalesOrderPage() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [selectedOrder, setSelectedOrder] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  
+  // Selection state for validation
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("")
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -60,12 +62,26 @@ export default function SalesOrderPage() {
   const { data: customers } = useCollection(customersQuery)
   const { data: estimates } = useCollection(estimatesQuery)
 
+  const selectedCustomerData = useMemo(() => 
+    customers?.find(c => c.id === selectedCustomerId), 
+    [customers, selectedCustomerId]
+  )
+
+  const checkIsOverdue = (c: any) => {
+    if (!c || !c.lastInvoiceDate || !c.creditDays) return false
+    const lastInvoice = new Date(c.lastInvoiceDate)
+    const dueDate = new Date(lastInvoice.getTime() + c.creditDays * 24 * 60 * 60 * 1000)
+    return new Date() > dueDate
+  }
+
+  const isOverdue = useMemo(() => checkIsOverdue(selectedCustomerData), [selectedCustomerData])
+
   const handleCreateOrder = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
 
     const formData = new FormData(e.currentTarget)
-    const customerId = formData.get("customerId") as string
+    const customerId = selectedCustomerId
     const estimateId = formData.get("estimateId") as string
     const poNumber = formData.get("poNumber") as string
     
@@ -80,13 +96,14 @@ export default function SalesOrderPage() {
     const orderData = {
       orderNumber: `SO-${Date.now().toString().slice(-6)}`,
       customerId,
-      customerName: selectedCustomer?.name || "New Customer",
+      customerName: selectedCustomer?.companyName || "New Customer",
       estimateId: estimateId || "Direct Entry",
       productCode: selectedEstimate?.productCode || formData.get("productCode") || "Custom Label",
       poNumber: poNumber || "N/A",
       orderDate: new Date().toISOString(),
       deliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: "Confirmed",
+      creditHoldWarning: isOverdue || !!selectedCustomer?.isCreditBlocked,
       totalAmount: selectedEstimate?.totalSellingPrice || Number(formData.get("totalAmount")) || 0,
       qty: selectedEstimate?.orderQuantity || Number(formData.get("qty")) || 0,
       createdById: user.uid,
@@ -96,9 +113,12 @@ export default function SalesOrderPage() {
     addDocumentNonBlocking(collection(firestore, 'salesOrders'), orderData)
 
     setIsDialogOpen(false)
+    setSelectedCustomerId("")
     toast({
       title: "Sales Order Created",
-      description: `New order ${orderData.orderNumber} has been generated.`,
+      description: orderData.creditHoldWarning 
+        ? `Order ${orderData.orderNumber} created with CREDIT HOLD flag.`
+        : `New order ${orderData.orderNumber} has been generated.`,
     })
   }
 
@@ -132,7 +152,7 @@ export default function SalesOrderPage() {
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="sm:max-w-[450px]">
           <form onSubmit={handleCreateOrder}>
             <DialogHeader>
               <DialogTitle>New Sales Order</DialogTitle>
@@ -141,17 +161,30 @@ export default function SalesOrderPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="customerId">Select Customer</Label>
-                <Select name="customerId" required>
-                  <SelectTrigger>
+                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId} required>
+                  <SelectTrigger className={isOverdue ? 'border-destructive' : ''}>
                     <SelectValue placeholder="Choose a Customer" />
                   </SelectTrigger>
                   <SelectContent>
                     {customers?.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.companyName} {checkIsOverdue(c) ? '(OVERDUE)' : ''}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {isOverdue && (
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md flex items-start gap-2 animate-in fade-in slide-in-from-top-1">
+                  <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
+                  <div className="text-xs text-destructive font-bold uppercase space-y-1">
+                    <p>Credit Period Exceeded</p>
+                    <p className="text-[9px] font-medium normal-case">Please inform Accounts/Admin. Order will be marked with a hold flag.</p>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-2">
                 <Label htmlFor="estimateId">Approved Estimate (Optional)</Label>
                 <Select name="estimateId">
@@ -175,7 +208,9 @@ export default function SalesOrderPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit">Confirm Order</Button>
+              <Button type="submit" className={isOverdue ? 'bg-destructive hover:bg-destructive/90' : ''}>
+                Confirm Order {isOverdue && '(Hold Warning)'}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -200,9 +235,14 @@ export default function SalesOrderPage() {
                   <p className="font-bold text-base">{selectedOrder?.customerName}</p>
                 </div>
               </div>
-              <Badge className={selectedOrder?.status === 'Confirmed' ? 'bg-blue-500' : 'bg-primary'}>
-                {selectedOrder?.status}
-              </Badge>
+              <div className="flex flex-col items-end gap-1">
+                <Badge className={selectedOrder?.status === 'Confirmed' ? 'bg-blue-500' : 'bg-primary'}>
+                  {selectedOrder?.status}
+                </Badge>
+                {selectedOrder?.creditHoldWarning && (
+                  <Badge variant="destructive" className="text-[8px] h-4">CREDIT HOLD</Badge>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
@@ -285,8 +325,13 @@ export default function SalesOrderPage() {
                   </TableCell>
                 </TableRow>
               ) : filteredOrders?.map((order) => (
-                <TableRow key={order.id}>
-                  <TableCell className="font-bold font-mono text-xs">{order.orderNumber}</TableCell>
+                <TableRow key={order.id} className={order.creditHoldWarning ? 'bg-destructive/5' : ''}>
+                  <TableCell className="font-bold font-mono text-xs">
+                    <div className="flex items-center gap-2">
+                      {order.creditHoldWarning && <AlertTriangle className="h-3 w-3 text-destructive" />}
+                      {order.orderNumber}
+                    </div>
+                  </TableCell>
                   <TableCell className="font-medium">{order.customerName}</TableCell>
                   <TableCell className="text-xs">{new Date(order.orderDate).toLocaleDateString()}</TableCell>
                   <TableCell>{order.qty?.toLocaleString()}</TableCell>

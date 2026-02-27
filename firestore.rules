@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V9.1)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V9.5)
      */
 
     function isSignedIn() {
@@ -50,7 +50,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    match /customers/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /customers/{id} { 
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isUserActive(); 
+      allow update, delete: if isAdmin(); 
+    }
+    
     match /jobs/{path=**} { allow read, write: if isSignedIn() && isUserActive(); }
     match /purchaseOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /dies/{id} { allow read, write: if isSignedIn() && isUserActive(); }
