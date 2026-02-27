@@ -48,10 +48,17 @@ export default function EstimatesRegistryPage() {
   const estimatesQuery = useMemoFirebase(() => {
     if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'estimates');
+    
     // SALES OWNERSHIP FILTER
+    // If not an admin, we MUST apply the sales_owner_id filter to satisfy security rules
     if (!isAdmin) {
-      return query(base, where("sales_owner_id", "==", user.uid), orderBy('createdAt', 'desc'));
+      return query(
+        base, 
+        where("sales_owner_id", "==", user.uid), 
+        orderBy('createdAt', 'desc')
+      );
     }
+    
     return query(base, orderBy('createdAt', 'desc'));
   }, [firestore, user, isAdmin, authLoading]);
 

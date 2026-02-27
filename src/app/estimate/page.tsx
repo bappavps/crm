@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
@@ -64,19 +65,19 @@ export default function EstimatePage() {
   const { isLoading: authLoading } = useDoc(adminDocRef);
 
   const customersQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'customers');
     // SALES OWNERSHIP FILTER
     if (!isAdmin) {
       return query(base, where("sales_owner_id", "==", user.uid));
     }
     return base;
-  }, [firestore, user, isAdmin])
+  }, [firestore, user, isAdmin, authLoading])
 
   const bomsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || authLoading) return null;
     return collection(firestore, 'boms');
-  }, [firestore, user])
+  }, [firestore, user, authLoading])
 
   const { data: customers } = useCollection(customersQuery)
   const { data: boms } = useCollection(bomsQuery)
@@ -473,8 +474,7 @@ export default function EstimatePage() {
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">WhatsApp / Phone</Label>
-                  <Input name="whatsapp" placeholder="9876543210" required />
+                  <Label className="text-[10px] font-black uppercase">WhatsApp / Phone</Label(Input name="whatsapp" placeholder="9876543210" required />
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase">Email Address</Label>
