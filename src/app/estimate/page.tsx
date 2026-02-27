@@ -132,8 +132,6 @@ export default function EstimatePage() {
   }
 
   const results = useMemo(() => {
-    // If dynamic BOM selected, we might override materialRate logic here in future
-    // For now, keep the core flexo calculation
     return calculateFlexoLayout(inputs)
   }, [inputs])
 
@@ -201,8 +199,16 @@ export default function EstimatePage() {
   const handleSave = () => {
     if (!firestore || !user) return
     
-    if (!metadata.customerId || !metadata.productCode) {
-      toast({ variant: "destructive", title: "Validation Error", description: "Please select a Customer and enter a Product Code." })
+    const isManual = selectedBomId === "manual";
+    
+    if (!metadata.customerId) {
+      toast({ variant: "destructive", title: "Validation Error", description: "Please select a Customer." })
+      return
+    }
+
+    // Require Product Code if using BOM (Manual mode is optional)
+    if (!isManual && !metadata.productCode) {
+      toast({ variant: "destructive", title: "Validation Error", description: "Product Code is required for BOM-linked estimates." })
       return
     }
 
@@ -211,6 +217,7 @@ export default function EstimatePage() {
       ...inputs,
       ...metadata,
       ...results,
+      productCode: metadata.productCode || "Manual Estimate",
       bomId: selectedBomId,
       isRepeatJob,
       sourceJobId: selectedRepeatJobId || null,
@@ -222,7 +229,7 @@ export default function EstimatePage() {
       estimateDate: new Date().toISOString()
     })
 
-    toast({ title: "Estimate Saved", description: `Estimate for ${metadata.productCode} stored.` })
+    toast({ title: "Estimate Saved", description: `Estimate stored successfully.` })
   }
 
   const selectedCustomerData = useMemo(() => 
@@ -266,7 +273,7 @@ export default function EstimatePage() {
                 </div>
                 {hasPermission('client_add') && (
                   <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1" onClick={() => setIsQuickAddOpen(true)}>
-                    <Plus className="h-3 w-3" /> Quick Client
+                    <Plus className="h-3 w-3" /> Quick Add Client
                   </Button>
                 )}
               </div>
@@ -292,6 +299,15 @@ export default function EstimatePage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Product Code / Job Name</Label>
+                <Input 
+                  value={metadata.productCode} 
+                  onChange={(e) => setMetadata(p => ({...p, productCode: e.target.value}))}
+                  placeholder={selectedBomId === 'manual' ? 'Optional for Manual' : 'e.g. LAB-50100-CH'}
+                />
               </div>
 
               {isRepeatJob && metadata.customerId && (
