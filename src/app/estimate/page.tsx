@@ -171,12 +171,12 @@ export default function EstimatePage() {
     
     const clientData = {
       companyName,
-      clientPersonName: formData.get("clientPersonName"),
-      whatsapp: formData.get("whatsapp"),
-      email: formData.get("email"),
-      gstNumber: formData.get("gstNumber"),
-      fullAddress: formData.get("fullAddress"),
-      operationalNote: formData.get("operationalNote"),
+      clientPersonName: formData.get("clientPersonName") || "N/A",
+      whatsapp: formData.get("whatsapp") || "N/A",
+      email: formData.get("email") || "N/A",
+      gstNumber: formData.get("gstNumber") || "N/A",
+      fullAddress: formData.get("fullAddress") || "N/A",
+      operationalNote: formData.get("operationalNote") || "N/A",
       photoUrl: photoPreview || null,
       creditDays: 0,
       status: "Active",
@@ -187,7 +187,7 @@ export default function EstimatePage() {
       id: crypto.randomUUID(),
       // AUTOMATIC SALES OWNERSHIP
       sales_owner_id: user.uid,
-      sales_owner_name: profile.firstName,
+      sales_owner_name: profile.firstName || "Unknown",
       sales_owner_code: profile.salesCode || 'Admin'
     }
 
@@ -200,8 +200,8 @@ export default function EstimatePage() {
       toast({ title: "Client Added", description: `${companyName} registered and assigned to you.` })
       setIsQuickAddOpen(false)
       setPhotoPreview(null)
-    } catch (err) {
-      toast({ variant: "destructive", title: "Error", description: "Could not save client." })
+    } catch (err: any) {
+      toast({ variant: "destructive", title: "Error", description: err.message || "Could not save client." })
     }
   }
 
@@ -230,7 +230,9 @@ export default function EstimatePage() {
 
         if (counterSnap.exists()) {
           const data = counterSnap.data();
-          if (data.year === year) currentNumber = data.current_number + 1;
+          if (data.year === year) {
+            currentNumber = (data.current_number || 0) + 1;
+          }
         }
 
         const formattedNum = currentNumber.toString().padStart(4, "0");
@@ -238,31 +240,35 @@ export default function EstimatePage() {
         const newEstimateRef = doc(collection(firestore, 'estimates'));
 
         transaction.set(counterRef, { year, current_number: currentNumber }, { merge: true });
-        transaction.set(newEstimateRef, {
+        
+        const estimateData = {
           ...inputs,
           ...metadata,
           ...results,
           estimateNumber,
           productCode: metadata.productCode || "Manual Estimate",
-          bomId: selectedBomId,
-          isRepeatJob,
+          bomId: selectedBomId || "manual",
+          isRepeatJob: !!isRepeatJob,
           sourceJobId: selectedRepeatJobId || null,
-          customerName: selectedCustomer.companyName,
-          // INHERIT OWNERSHIP FROM CLIENT
-          sales_owner_id: selectedCustomer.sales_owner_id,
-          sales_owner_name: selectedCustomer.sales_owner_name,
-          sales_owner_code: selectedCustomer.sales_owner_code,
+          customerName: selectedCustomer.companyName || "Unknown Client",
+          // INHERIT OWNERSHIP FROM CLIENT WITH FALLBACKS
+          sales_owner_id: selectedCustomer.sales_owner_id || user.uid,
+          sales_owner_name: selectedCustomer.sales_owner_name || user.displayName || "Unknown",
+          sales_owner_code: selectedCustomer.sales_owner_code || "N/A",
           status: "Draft",
           createdById: user.uid,
           createdAt: serverTimestamp(),
           estimateDate: new Date().toISOString()
-        });
+        };
+
+        transaction.set(newEstimateRef, estimateData);
       });
 
       toast({ title: "Estimate Created", description: `Record saved as Draft.` })
       router.push('/estimates')
-    } catch (e) {
-      toast({ variant: "destructive", title: "Save Failed", description: "Firestore operation error." })
+    } catch (e: any) {
+      console.error("Firestore Save Error:", e);
+      toast({ variant: "destructive", title: "Save Failed", description: e.message || "Firestore operation error." })
     } finally {
       setIsSaving(false)
     }
