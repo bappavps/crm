@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
@@ -145,6 +146,45 @@ export default function EstimatePage() {
     }))
   }
 
+  const handleQuickClientSave = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!firestore || !user) return
+
+    const formData = new FormData(e.currentTarget)
+    const companyName = formData.get("companyName") as string
+    const clientPersonName = formData.get("clientPersonName") as string
+    const whatsapp = formData.get("whatsapp") as string
+    const email = formData.get("email") as string
+    const gstNumber = formData.get("gstNumber") as string
+
+    const clientData = {
+      companyName,
+      clientPersonName,
+      whatsapp,
+      email,
+      gstNumber,
+      fullAddress: "Quick Entry",
+      creditDays: 0,
+      status: "Active",
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdById: user.uid,
+      id: crypto.randomUUID()
+    }
+
+    try {
+      const docRef = await addDocumentNonBlocking(collection(firestore, 'customers'), clientData)
+      if (docRef) {
+        setMetadata(prev => ({ ...prev, customerId: docRef.id }))
+        toast({ title: "Client Added", description: `${companyName} has been registered and selected.` })
+      }
+      setIsQuickAddOpen(false)
+    } catch (err) {
+      // Error emitted by utility
+    }
+  }
+
   const handleSave = () => {
     if (!firestore || !user) return
     
@@ -199,7 +239,11 @@ export default function EstimatePage() {
                   <Switch checked={isRepeatJob} onCheckedChange={setIsRepeatJob} />
                   <Label className="text-xs font-bold uppercase">Repeat Job</Label>
                 </div>
-                <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1" onClick={() => setIsQuickAddOpen(true)}><Plus className="h-3 w-3" /> Quick Client</Button>
+                {hasPermission('client_add') && (
+                  <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1" onClick={() => setIsQuickAddOpen(true)}>
+                    <Plus className="h-3 w-3" /> Quick Client
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -308,13 +352,39 @@ export default function EstimatePage() {
       </div>
 
       <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <form onSubmit={() => setIsQuickAddOpen(false)}>
-            <DialogHeader><DialogTitle>Quick Client Registration</DialogTitle></DialogHeader>
-            <div className="py-4 space-y-4">
-              <Label>Redirecting to client master...</Label>
-              <Button onClick={() => router.push('/master-data')}>Manage Master Data</Button>
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleQuickClientSave}>
+            <DialogHeader>
+              <DialogTitle>Quick Client Registration</DialogTitle>
+              <DialogDescription>Add a basic client profile. You can update full details in Master Data later.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="companyName">Company Name</Label>
+                <Input id="companyName" name="companyName" placeholder="e.g. Acme Labels Ltd" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="clientPersonName">Contact Person</Label>
+                <Input id="clientPersonName" name="clientPersonName" placeholder="e.g. John Doe" required />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="whatsapp">WhatsApp / Phone</Label>
+                  <Input id="whatsapp" name="whatsapp" placeholder="9876543210" required />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input id="email" name="email" type="email" placeholder="client@example.com" required />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="gstNumber">GST Number (Optional)</Label>
+                <Input id="gstNumber" name="gstNumber" placeholder="22AAAAA0000A1Z5" />
+              </div>
             </div>
+            <DialogFooter>
+              <Button type="submit" className="w-full">Create & Select Client</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
