@@ -1,9 +1,10 @@
+
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V9.5)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V9.6)
      */
 
     function isSignedIn() {
@@ -61,7 +62,14 @@ service cloud.firestore {
     match /dies/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     
     match /quotations/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /estimates/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    
+    match /estimates/{id} { 
+      allow read: if isSignedIn() && (isAdmin() || resource.data.createdById == request.auth.uid);
+      allow create: if isSignedIn() && isUserActive();
+      allow update: if isSignedIn() && (isAdmin() || resource.data.createdById == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
     match /salesOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /machines/{id} { allow read, write: if isSignedIn() && isUserActive(); }

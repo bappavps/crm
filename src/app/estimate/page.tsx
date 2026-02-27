@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
@@ -11,9 +12,8 @@ import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
 import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send, UserPlus, Image as ImageIcon, Plus, Upload, X, History, Layers } from "lucide-react"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, query, where, getDocs, orderBy, limit } from "firebase/firestore"
-import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
+import { collection, doc, query, where, getDocs, orderBy, limit, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
 import { usePermissions } from "@/components/auth/permission-context"
 import { 
@@ -39,6 +39,7 @@ export default function EstimatePage() {
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   // REPEAT JOB LOGIC STATE
   const [isRepeatJob, setIsRepeatJob] = useState(false)
@@ -64,14 +65,8 @@ export default function EstimatePage() {
     return collection(firestore, 'boms');
   }, [firestore, user])
 
-  const rawMaterialsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return collection(firestore, 'raw_materials');
-  }, [firestore, user])
-
   const { data: customers } = useCollection(customersQuery)
   const { data: boms } = useCollection(bomsQuery)
-  const { data: rawMaterials } = useCollection(rawMaterialsQuery)
 
   const activeCustomers = customers?.filter(c => c.status === 'Active' || c.isActive !== false) || []
 
@@ -159,78 +154,95 @@ export default function EstimatePage() {
 
     const formData = new FormData(e.currentTarget)
     const companyName = formData.get("companyName") as string
-    const clientPersonName = formData.get("clientPersonName") as string
-    const whatsapp = formData.get("whatsapp") as string
-    const email = formData.get("email") as string
-    const gstNumber = formData.get("gstNumber") as string
-    const fullAddress = formData.get("fullAddress") as string
-    const operationalNote = formData.get("operationalNote") as string
-
+    
     const clientData = {
       companyName,
-      clientPersonName,
-      whatsapp,
-      email,
-      gstNumber,
-      fullAddress,
-      operationalNote,
+      clientPersonName: formData.get("clientPersonName"),
+      whatsapp: formData.get("whatsapp"),
+      email: formData.get("email"),
+      gstNumber: formData.get("gstNumber"),
+      fullAddress: formData.get("fullAddress"),
+      operationalNote: formData.get("operationalNote"),
       photoUrl: photoPreview || null,
       creditDays: 0,
       status: "Active",
       isActive: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
       createdById: user.uid,
       id: crypto.randomUUID()
     }
 
     try {
-      const docRef = await addDocumentNonBlocking(collection(firestore, 'customers'), clientData)
-      if (docRef) {
-        setMetadata(prev => ({ ...prev, customerId: docRef.id }))
-        toast({ title: "Client Added", description: `${companyName} has been registered and selected.` })
-      }
+      const docRef = doc(collection(firestore, 'customers'));
+      await runTransaction(firestore, async (transaction) => {
+        transaction.set(docRef, clientData);
+      });
+      setMetadata(prev => ({ ...prev, customerId: docRef.id }))
+      toast({ title: "Client Added", description: `${companyName} has been registered and selected.` })
       setIsQuickAddOpen(false)
       setPhotoPreview(null)
     } catch (err) {
-      // Error emitted by utility
+      toast({ variant: "destructive", title: "Error", description: "Could not save client." })
     }
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!firestore || !user) return
-    
-    const isManual = selectedBomId === "manual";
     
     if (!metadata.customerId) {
       toast({ variant: "destructive", title: "Validation Error", description: "Please select a Customer." })
       return
     }
 
-    // Require Product Code if using BOM (Manual mode is optional)
-    if (!isManual && !metadata.productCode) {
+    if (selectedBomId !== "manual" && !metadata.productCode) {
       toast({ variant: "destructive", title: "Validation Error", description: "Product Code is required for BOM-linked estimates." })
       return
     }
 
-    const estimatesRef = collection(firestore, 'estimates')
-    addDocumentNonBlocking(estimatesRef, {
-      ...inputs,
-      ...metadata,
-      ...results,
-      productCode: metadata.productCode || "Manual Estimate",
-      bomId: selectedBomId,
-      isRepeatJob,
-      sourceJobId: selectedRepeatJobId || null,
-      estimateNumber: `EST-${Date.now().toString().slice(-6)}`,
-      customerName: activeCustomers?.find(c => c.id === metadata.customerId)?.companyName || "Unknown",
-      status: "Approved",
-      createdById: user.uid,
-      createdAt: new Date().toISOString(),
-      estimateDate: new Date().toISOString()
-    })
+    setIsSaving(true)
 
-    toast({ title: "Estimate Saved", description: `Estimate stored successfully.` })
+    try {
+      await runTransaction(firestore, async (transaction) => {
+        const counterRef = doc(firestore, 'counters', 'estimate_counter');
+        const counterSnap = await transaction.get(counterRef);
+        const year = new Date().getFullYear().toString();
+        let currentNumber = 1;
+
+        if (counterSnap.exists()) {
+          const data = counterSnap.data();
+          if (data.year === year) currentNumber = data.current_number + 1;
+        }
+
+        const formattedNum = currentNumber.toString().padStart(4, "0");
+        const estimateNumber = `EST-${year}-${formattedNum}`;
+        const newEstimateRef = doc(collection(firestore, 'estimates'));
+
+        transaction.set(counterRef, { year, current_number: currentNumber }, { merge: true });
+        transaction.set(newEstimateRef, {
+          ...inputs,
+          ...metadata,
+          ...results,
+          estimateNumber,
+          productCode: metadata.productCode || "Manual Estimate",
+          bomId: selectedBomId,
+          isRepeatJob,
+          sourceJobId: selectedRepeatJobId || null,
+          customerName: activeCustomers?.find(c => c.id === metadata.customerId)?.companyName || "Unknown",
+          status: "Draft",
+          createdById: user.uid,
+          createdAt: serverTimestamp(),
+          estimateDate: new Date().toISOString()
+        });
+      });
+
+      toast({ title: "Estimate Created", description: `Record saved as Draft.` })
+      router.push('/estimates')
+    } catch (e) {
+      toast({ variant: "destructive", title: "Save Failed", description: "Firestore operation error." })
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const selectedCustomerData = useMemo(() => 
@@ -248,32 +260,37 @@ export default function EstimatePage() {
   if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Label Estimator</h2>
-          <p className="text-muted-foreground">Dynamic BOM & Repeat Job Integrated Flow</p>
+          <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Label Estimator</h2>
+          <p className="text-muted-foreground font-medium">Precision calculation engine for flexo printing quotes.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print</Button>
-          <Button onClick={handleSave} className="bg-primary hover:bg-primary/90"><Save className="mr-2 h-4 w-4" /> Save Estimate</Button>
+          <Button onClick={handleSave} disabled={isSaving} className="bg-primary hover:bg-primary/90 font-bold uppercase tracking-widest px-8">
+            {isSaving ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2 h-4 w-4" />}
+            Save Estimate
+          </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-6">
-          <Card>
+          <Card className="border-none shadow-lg">
             <CardHeader className="bg-primary/5">
-              <CardTitle className="text-lg flex items-center gap-2"><CalcIcon className="h-5 w-5 text-primary" /> Core Parameters</CardTitle>
+              <CardTitle className="text-sm font-black uppercase flex items-center gap-2 text-primary">
+                <CalcIcon className="h-4 w-4" /> Configuration
+              </CardTitle>
             </CardHeader>
             <CardContent className="pt-6 space-y-4">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Switch checked={isRepeatJob} onCheckedChange={setIsRepeatJob} />
-                  <Label className="text-xs font-bold uppercase">Repeat Job</Label>
+                  <Label className="text-[10px] font-black uppercase text-accent">Repeat Job</Label>
                 </div>
                 {hasPermission('client_add') && (
-                  <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1" onClick={() => setIsQuickAddOpen(true)}>
+                  <Button variant="link" size="sm" className="h-auto p-0 text-[10px] font-black uppercase gap-1" onClick={() => setIsQuickAddOpen(true)}>
                     <Plus className="h-3 w-3" /> Quick Add Client
                   </Button>
                 )}
@@ -281,46 +298,32 @@ export default function EstimatePage() {
 
               <div className="space-y-2">
                 <div className="flex justify-between items-end">
-                  <Label>Customer</Label>
+                  <Label className="text-[10px] font-black uppercase">Customer</Label>
                   {selectedCustomerData && (
-                    <Badge 
-                      className={cn(
-                        "text-[9px] h-5 uppercase border-none text-white",
-                        isOverdue ? "bg-destructive hover:bg-destructive/90" : "bg-emerald-500 hover:bg-emerald-600"
-                      )}
-                    >
+                    <Badge className={cn("text-[8px] h-4 uppercase border-none text-white", isOverdue ? "bg-destructive" : "bg-emerald-500")}>
                       {isOverdue ? 'Overdue' : 'Credit OK'}
                     </Badge>
                   )}
                 </div>
                 <Select value={metadata.customerId} onValueChange={(val) => setMetadata(p => ({...p, customerId: val}))}>
-                  <SelectTrigger className={isOverdue ? 'border-destructive' : ''}>
+                  <SelectTrigger className={isOverdue ? 'border-destructive' : 'bg-muted/20 border-none'}>
                     <SelectValue placeholder="Select Customer" />
                   </SelectTrigger>
                   <SelectContent>
                     {activeCustomers?.map(c => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.companyName} {c.isCreditBlocked ? '(Blocked)' : ''}
-                      </SelectItem>
+                      <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Product Code / Job Name</Label>
-                <Input 
-                  value={metadata.productCode} 
-                  onChange={(e) => setMetadata(p => ({...p, productCode: e.target.value}))}
-                  placeholder={selectedBomId === 'manual' ? 'Optional for Manual' : 'e.g. LAB-50100-CH'}
-                />
-              </div>
-
               {isRepeatJob && metadata.customerId && (
-                <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
-                  <Label className="text-accent font-bold text-[10px] uppercase">Select Previous Reference</Label>
+                <div className="space-y-2 p-3 bg-accent/5 border border-accent/20 rounded-md animate-in slide-in-from-top-2">
+                  <Label className="text-[9px] font-black uppercase text-accent">Last Order Ref</Label>
                   <Select value={selectedRepeatJobId} onValueChange={handleRepeatJobSelect}>
-                    <SelectTrigger className="border-accent/30"><SelectValue placeholder="Choose past job" /></SelectTrigger>
+                    <SelectTrigger className="bg-background border-accent/30 h-8 text-xs font-bold">
+                      <SelectValue placeholder="Choose past job" />
+                    </SelectTrigger>
                     <SelectContent>
                       {previousJobs.map(j => <SelectItem key={j.id} value={j.id}>{j.jobNumber} - {j.itemNameSummary}</SelectItem>)}
                     </SelectContent>
@@ -329,31 +332,41 @@ export default function EstimatePage() {
               )}
 
               <div className="space-y-2">
-                <Label>BOM Calculation Type</Label>
+                <Label className="text-[10px] font-black uppercase">Product Code</Label>
+                <Input 
+                  value={metadata.productCode} 
+                  onChange={(e) => setMetadata(p => ({...p, productCode: e.target.value}))}
+                  placeholder="e.g. LAB-50100-CH"
+                  className="bg-muted/20 border-none font-bold"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase">BOM Mode</Label>
                 <Select value={selectedBomId} onValueChange={setSelectedBomId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="bg-muted/20 border-none"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="manual">Manual Rates (Legacy)</SelectItem>
-                    {boms?.map(b => <SelectItem key={b.id} value={b.id}>BOM: {b.product_name}</SelectItem>)}
+                    {boms?.map(b => <SelectItem key={b.id} value={b.id}>{b.product_name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
-              <Separator />
+              <Separator className="my-4" />
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Length (mm)</Label>
-                  <Input name="labelLength" type="number" value={inputs.labelLength} onChange={handleInputChange} />
+                  <Label className="text-[10px] font-black uppercase">Length (mm)</Label>
+                  <Input name="labelLength" type="number" value={inputs.labelLength} onChange={handleInputChange} className="font-mono font-bold" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Width (mm)</Label>
-                  <Input name="labelWidth" type="number" value={inputs.labelWidth} onChange={handleInputChange} />
+                  <Label className="text-[10px] font-black uppercase">Width (mm)</Label>
+                  <Input name="labelWidth" type="number" value={inputs.labelWidth} onChange={handleInputChange} className="font-mono font-bold" />
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Order Quantity</Label>
-                <Input name="orderQuantity" type="number" value={inputs.orderQuantity} onChange={handleInputChange} />
+                <Label className="text-[10px] font-black uppercase">Order Quantity</Label>
+                <Input name="orderQuantity" type="number" value={inputs.orderQuantity} onChange={handleInputChange} className="text-xl font-black text-primary" />
               </div>
             </CardContent>
           </Card>
@@ -361,49 +374,49 @@ export default function EstimatePage() {
 
         <div className="lg:col-span-2 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card className="border-primary/20 bg-primary/5">
-              <CardHeader><CardTitle className="text-primary text-base">Layout Execution</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-y-3 text-sm">
-                <div className="text-muted-foreground">Labels Across:</div>
-                <div className="font-bold text-right">{results.labelAcross}</div>
-                <div className="text-muted-foreground">Running Meter:</div>
-                <div className="font-bold text-right text-accent">{results.runningMeter.toFixed(2)} m</div>
-                <div className="text-muted-foreground">Total SQM Req:</div>
-                <div className="font-bold text-right">{results.totalMaterialRequiredSqM.toFixed(2)}</div>
+            <Card className="border-none shadow-lg bg-zinc-900 text-white">
+              <CardHeader className="pb-2"><CardTitle className="text-[10px] font-black uppercase text-zinc-400">Layout Metrics</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-2 gap-y-4 text-sm font-bold">
+                <div className="text-zinc-500">Labels Across:</div>
+                <div className="text-right font-mono">{results.labelAcross}</div>
+                <div className="text-zinc-500">Running Meter:</div>
+                <div className="text-right text-primary font-mono">{results.runningMeter.toFixed(2)} m</div>
+                <div className="text-zinc-500">Total SQM Req:</div>
+                <div className="text-right font-mono">{results.totalMaterialRequiredSqM.toFixed(2)}</div>
               </CardContent>
             </Card>
 
-            <Card className="border-accent/20 bg-accent/5">
-              <CardHeader><CardTitle className="text-accent text-base">Costing Matrix</CardTitle></CardHeader>
-              <CardContent className="grid grid-cols-2 gap-y-3 text-sm">
-                <div className="text-muted-foreground">Estimated Cost:</div>
-                <div className="font-bold text-right">₹{results.totalCost.toFixed(2)}</div>
-                <div className="text-lg font-bold text-accent">Total Sales Value:</div>
-                <div className="text-lg font-bold text-right text-accent">₹{results.totalSellingPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+            <Card className="border-none shadow-lg bg-zinc-900 text-white">
+              <CardHeader className="pb-2"><CardTitle className="text-[10px] font-black uppercase text-zinc-400">Cost Breakdown</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-2 gap-y-4 text-sm font-bold">
+                <div className="text-zinc-500">Production Cost:</div>
+                <div className="text-right font-mono text-emerald-400">₹{results.totalCost.toFixed(2)}</div>
+                <div className="text-xl font-black text-white">Grand Total:</div>
+                <div className="text-2xl font-black text-right text-primary">₹{results.totalSellingPrice.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
               </CardContent>
             </Card>
           </div>
 
-          <Card className="border-primary shadow-lg overflow-hidden">
-            <CardHeader className="bg-primary text-white py-4">
-              <CardTitle className="flex items-center justify-between text-lg">
-                <span>Final Profit Analysis</span>
-                <Badge className="bg-white text-primary">QTY: {inputs.orderQuantity.toLocaleString()}</Badge>
+          <Card className="border-none shadow-2xl overflow-hidden bg-primary">
+            <CardHeader className="py-4 border-b border-white/10">
+              <CardTitle className="flex items-center justify-between text-white font-black uppercase tracking-widest text-lg">
+                <span>Contract Analysis</span>
+                <Badge className="bg-white text-primary font-black">QTY: {inputs.orderQuantity.toLocaleString()}</Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="pt-8 flex flex-col items-center justify-center space-y-6">
-              <div className="grid grid-cols-3 gap-8 w-full text-center">
+            <CardContent className="pt-8 pb-12 flex flex-col items-center justify-center space-y-8 bg-white/5 backdrop-blur-sm">
+              <div className="grid grid-cols-3 gap-12 w-full text-center text-white">
                 <div className="space-y-1">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Price / Label</p>
-                  <p className="text-3xl font-black text-primary">₹{results.sellingPricePerLabel.toFixed(3)}</p>
+                  <p className="text-[9px] font-black uppercase opacity-70 tracking-widest">Price / Label</p>
+                  <p className="text-4xl font-black tracking-tighter">₹{results.sellingPricePerLabel.toFixed(3)}</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Profit %</p>
-                  <p className="text-3xl font-black text-emerald-600">{results.profitPercent.toFixed(1)}%</p>
+                  <p className="text-[9px] font-black uppercase opacity-70 tracking-widest">Profit %</p>
+                  <p className="text-4xl font-black tracking-tighter">{results.profitPercent.toFixed(1)}%</p>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Net Margin</p>
-                  <p className="text-3xl font-black text-foreground">₹{results.profit.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
+                  <p className="text-[9px] font-black uppercase opacity-70 tracking-widest">Net Margin</p>
+                  <p className="text-4xl font-black tracking-tighter">₹{results.profit.toLocaleString(undefined, {maximumFractionDigits: 0})}</p>
                 </div>
               </div>
             </CardContent>
@@ -415,70 +428,64 @@ export default function EstimatePage() {
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleQuickClientSave}>
             <DialogHeader>
-              <DialogTitle>Quick Client Registration</DialogTitle>
-              <DialogDescription>Add a basic client profile. You can update financial terms in Master Data later.</DialogDescription>
+              <DialogTitle className="text-xl font-black uppercase">Client Fast-Track Registry</DialogTitle>
+              <DialogDescription>Add basic operational details. Financial boundaries can be adjusted later.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="companyName">Company Name</Label>
-                  <Input id="companyName" name="companyName" placeholder="e.g. Acme Labels Ltd" required />
+                  <Label className="text-[10px] font-black uppercase">Company Name</Label>
+                  <Input name="companyName" placeholder="e.g. Acme Labels Ltd" required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="clientPersonName">Contact Person</Label>
-                  <Input id="clientPersonName" name="clientPersonName" placeholder="e.g. John Doe" required />
+                  <Label className="text-[10px] font-black uppercase">Contact Person</Label>
+                  <Input name="clientPersonName" placeholder="e.g. John Doe" required />
                 </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="whatsapp">WhatsApp / Phone</Label>
-                  <Input id="whatsapp" name="whatsapp" placeholder="9876543210" required />
+                  <Label className="text-[10px] font-black uppercase">WhatsApp / Phone</Label>
+                  <Input name="whatsapp" placeholder="9876543210" required />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
-                  <Input id="email" name="email" type="email" placeholder="client@example.com" required />
+                  <Label className="text-[10px] font-black uppercase">Email Address</Label>
+                  <Input name="email" type="email" placeholder="client@example.com" required />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="gstNumber">GST Number</Label>
-                <Input id="gstNumber" name="gstNumber" placeholder="22AAAAA0000A1Z5" />
+                <Label className="text-[10px] font-black uppercase">GST Number</Label>
+                <Input name="gstNumber" placeholder="22AAAAA0000A1Z5" />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="fullAddress">Company Address</Label>
-                <Textarea id="fullAddress" name="fullAddress" placeholder="Full registered address..." className="h-20" required />
+                <Label className="text-[10px] font-black uppercase">Company Address</Label>
+                <Textarea name="fullAddress" placeholder="Full registered address..." className="h-20 bg-muted/20" required />
               </div>
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="operationalNote">Internal Notes</Label>
-                  <Textarea id="operationalNote" name="operationalNote" placeholder="Special delivery instructions or technical preferences..." className="h-32" />
+                  <Label className="text-[10px] font-black uppercase">Internal Notes</Label>
+                  <Textarea name="operationalNote" placeholder="Special requirements..." className="h-32 bg-muted/20" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Company Photo / Logo</Label>
+                  <Label className="text-[10px] font-black uppercase">Logo / Photo</Label>
                   <div 
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-2 p-4 border rounded-md bg-muted/20 border-dashed cursor-pointer hover:bg-muted/40 transition-colors relative h-32"
+                    className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md bg-muted/20 hover:bg-muted/40 transition-colors relative h-32 cursor-pointer"
                   >
                     {photoPreview ? (
                       <div className="relative w-full h-full">
-                        <Image src={photoPreview} alt="Logo Preview" fill className="object-contain" />
-                        <Button 
-                          type="button" 
-                          variant="destructive" 
-                          size="icon" 
-                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
-                          onClick={(e) => { e.stopPropagation(); setPhotoPreview(null); }}
-                        >
+                        <Image src={photoPreview} alt="Preview" fill className="object-contain" />
+                        <Button type="button" variant="destructive" size="icon" className="absolute -top-2 -right-2 h-6 w-6 rounded-full" onClick={(e) => { e.stopPropagation(); setPhotoPreview(null); }}>
                           <X className="h-3 w-3" />
                         </Button>
                       </div>
                     ) : (
                       <>
-                        <Upload className="h-6 w-6 text-muted-foreground" />
-                        <span className="text-[10px] text-muted-foreground uppercase font-bold text-center">Upload Logo</span>
+                        <Upload className="h-6 w-6 text-muted-foreground opacity-40" />
+                        <span className="text-[9px] text-muted-foreground uppercase font-black">Upload Logo</span>
                       </>
                     )}
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoSelect} />
@@ -487,9 +494,7 @@ export default function EstimatePage() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="submit" className="w-full h-12 font-bold uppercase tracking-wider">
-                Create & Select Client
-              </Button>
+              <Button type="submit" className="w-full h-12 font-black uppercase tracking-widest shadow-lg">Create & Select Entity</Button>
             </DialogFooter>
           </form>
         </DialogContent>

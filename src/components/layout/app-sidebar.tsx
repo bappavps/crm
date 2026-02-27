@@ -1,3 +1,4 @@
+
 "use client"
 
 import { 
@@ -28,7 +29,8 @@ import {
   Lock,
   FileText,
   FileJson,
-  FlaskConical
+  FlaskConical,
+  ClipboardType
 } from "lucide-react"
 import {
   Sidebar,
@@ -57,7 +59,8 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Sales & Estimating",
     items: [
-      { name: 'Estimates', icon: Calculator, href: '/estimate', permission: 'estimates' },
+      { name: 'Calculator', icon: Calculator, href: '/estimate', permission: 'estimates' },
+      { name: 'Estimates', icon: ClipboardType, href: '/estimates', permission: 'estimates' },
       { name: 'Quotations', icon: FileText, href: '/sales/quotations', permission: 'quotations' },
       { name: 'Sales Orders', icon: ShoppingCart, href: '/sales-order', permission: 'salesOrders' },
       { name: 'Create Job', icon: FileUp, href: '/sales/create-job', permission: 'createJob' },

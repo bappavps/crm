@@ -1,3 +1,4 @@
+
 "use client"
 
 import { usePathname } from "next/navigation"
@@ -13,6 +14,7 @@ import { Separator } from "@/components/ui/separator"
 const routePermissionMap: Record<string, PermissionKey> = {
   "/": "dashboard",
   "/estimate": "estimates",
+  "/estimates": "estimates",
   "/sales/quotations": "quotations",
   "/sales-order": "salesOrders",
   "/sales/create-job": "createJob",
@@ -67,7 +69,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4 hidden md:block" />
             <div className="flex-1 truncate">
-              <h1 className="text-xs md:text-xl font-bold text-primary truncate">Shree Label Creation CRM</h1>
+              <h1 className="text-xs md:text-xl font-bold text-primary truncate uppercase tracking-tighter">Shree Label Creation CRM</h1>
             </div>
             <div className="flex items-center gap-1 md:gap-4">
               <NotificationBell />
