@@ -1,12 +1,13 @@
 "use client"
 
 import { usePathname } from "next/navigation"
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { UserNav } from "@/components/layout/user-nav"
 import { NotificationBell } from "@/components/notifications/notification-bell"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { PermissionKey } from "@/components/auth/permission-context"
+import { Separator } from "@/components/ui/separator"
 
 // Map of routes to permission keys
 const routePermissionMap: Record<string, PermissionKey> = {
@@ -59,18 +60,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex h-screen w-full sidebar-wrapper overflow-hidden">
+      <div className="flex min-h-screen w-full sidebar-wrapper bg-background">
         <AppSidebar />
-        <SidebarInset className="flex flex-col flex-1 overflow-hidden bg-background">
-          <header className="h-16 shrink-0 border-b bg-card flex items-center px-6 sticky top-0 z-20 gap-4 shadow-sm">
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-primary">Shree Label Creation CRM</h1>
+        <SidebarInset className="flex flex-col flex-1 min-w-0">
+          <header className="h-16 shrink-0 border-b bg-card flex items-center px-4 md:px-6 sticky top-0 z-20 gap-2 md:gap-4 shadow-sm">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4 hidden md:block" />
+            <div className="flex-1 truncate">
+              <h1 className="text-sm md:text-xl font-bold text-primary truncate">Shree Label Creation CRM</h1>
             </div>
-            <NotificationBell />
-            <UserNav />
+            <div className="flex items-center gap-1 md:gap-4">
+              <NotificationBell />
+              <UserNav />
+            </div>
           </header>
           
-          <main className="flex-1 overflow-y-auto overflow-x-hidden p-6 lg:p-8">
+          <main className="flex-1 p-4 md:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto w-full min-h-full pb-20">
               {isUnauthorizedPage ? (
                 children
