@@ -36,7 +36,7 @@ export default function SalesOrderPage() {
   // Selection state for validation
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("")
 
-  // Authorization check
+  // Authorization check - Wait for resolved state
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
@@ -44,36 +44,36 @@ export default function SalesOrderPage() {
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Fetching Data from Firestore - Guarded by adminData
+  // Fetching Data from Firestore - Guarded by resolved auth status
   const ordersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'salesOrders');
     // SALES OWNERSHIP FILTER
     if (!isAdmin) {
       return query(base, where("sales_owner_id", "==", user.uid));
     }
     return base;
-  }, [firestore, user, adminData, isAdmin])
+  }, [firestore, user, isAdmin, authLoading])
 
   const customersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'customers');
     // SALES OWNERSHIP FILTER
     if (!isAdmin) {
       return query(base, where("sales_owner_id", "==", user.uid));
     }
     return base;
-  }, [firestore, user, adminData, isAdmin])
+  }, [firestore, user, isAdmin, authLoading])
 
   const estimatesQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
+    if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'estimates');
     // SALES OWNERSHIP FILTER
     if (!isAdmin) {
       return query(base, where("sales_owner_id", "==", user.uid));
     }
     return base;
-  }, [firestore, user, adminData, isAdmin])
+  }, [firestore, user, isAdmin, authLoading])
 
   const { data: orders, isLoading: ordersLoading } = useCollection(ordersQuery)
   const { data: customers } = useCollection(customersQuery)
@@ -124,9 +124,9 @@ export default function SalesOrderPage() {
       totalAmount: selectedEstimate?.totalSellingPrice || Number(formData.get("totalAmount")) || 0,
       qty: selectedEstimate?.orderQuantity || Number(formData.get("qty")) || 0,
       // INHERIT OWNERSHIP FROM CLIENT
-      sales_owner_id: selectedCustomer.sales_owner_id,
-      sales_owner_name: selectedCustomer.sales_owner_name,
-      sales_owner_code: selectedCustomer.sales_owner_code,
+      sales_owner_id: selectedCustomer.sales_owner_id || user.uid,
+      sales_owner_name: selectedCustomer.sales_owner_name || user.displayName || "Unknown",
+      sales_owner_code: selectedCustomer.sales_owner_code || "N/A",
       createdById: user.uid,
       createdAt: new Date().toISOString()
     }
@@ -149,18 +149,11 @@ export default function SalesOrderPage() {
   }
 
   const filteredOrders = orders?.filter(order => 
-    order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    order.customerName?.toLowerCase().includes(searchQuery.toLowerCase())
+    (order.orderNumber || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (order.customerName || "").toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  if (authLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin mb-4 text-primary" />
-        <p>Syncing order books...</p>
-      </div>
-    )
-  }
+  const isLoading = authLoading || ordersLoading;
 
   return (
     <div className="space-y-6">
@@ -338,7 +331,7 @@ export default function SalesOrderPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {ordersLoading ? (
+              {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-10">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
@@ -371,7 +364,7 @@ export default function SalesOrderPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {(!filteredOrders || filteredOrders.length === 0) && !ordersLoading && (
+              {(!filteredOrders || filteredOrders.length === 0) && !isLoading && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                     No active sales orders found. Use the "Create" button to add one.

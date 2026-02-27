@@ -36,26 +36,26 @@ export default function EstimatesRegistryPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
 
-  // Authorization check
+  // Authorization check - wait for loading to finish
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Data Fetching
+  // Data Fetching - Only run query once auth state is resolved
   const estimatesQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'estimates');
     // SALES OWNERSHIP FILTER
     if (!isAdmin) {
       return query(base, where("sales_owner_id", "==", user.uid), orderBy('createdAt', 'desc'));
     }
     return query(base, orderBy('createdAt', 'desc'));
-  }, [firestore, user, isAdmin]);
+  }, [firestore, user, isAdmin, authLoading]);
 
-  const { data: allEstimates, isLoading } = useCollection(estimatesQuery);
+  const { data: allEstimates, isLoading: estimatesLoading } = useCollection(estimatesQuery);
 
   const filteredEstimates = useMemo(() => {
     if (!allEstimates) return [];
@@ -98,6 +98,8 @@ export default function EstimatesRegistryPage() {
       }
     }
   };
+
+  const isLoading = authLoading || estimatesLoading;
 
   return (
     <div className="space-y-6">

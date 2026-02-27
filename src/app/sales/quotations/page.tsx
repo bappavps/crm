@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useRef, useMemo } from "react"
@@ -18,7 +19,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, updateDoc } from "firebase/firestore"
+import { collection, doc, updateDoc, query, where } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -31,16 +32,22 @@ export default function QuotationRegistryPage() {
   const [selectedQuote, setSelectedQuote] = useState<any>(null)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("")
 
+  // Authorization check - wait for resolved state
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+  const isAdmin = !!adminData;
 
   const quotationsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'quotations');
-  }, [firestore, user, adminData])
+    if (!firestore || !user || authLoading) return null;
+    const base = collection(firestore, 'quotations');
+    if (!isAdmin) {
+      return query(base, where("sales_owner_id", "==", user.uid));
+    }
+    return base;
+  }, [firestore, user, isAdmin, authLoading])
 
   const templatesQuery = useMemoFirebase(() => {
     if (!firestore || !user) return null;
@@ -78,7 +85,7 @@ export default function QuotationRegistryPage() {
     toast({ title: "Status Updated", description: `Quotation is now ${newStatus}.` })
   }
 
-  if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>
+  const isLoading = authLoading || quotesLoading;
 
   return (
     <div className="space-y-6">
@@ -108,7 +115,7 @@ export default function QuotationRegistryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {quotesLoading ? (
+              {isLoading ? (
                 <TableRow><TableCell colSpan={6} className="text-center py-10"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
               ) : quotations?.map((q) => (
                 <TableRow key={q.id}>
@@ -132,6 +139,13 @@ export default function QuotationRegistryPage() {
                   </TableCell>
                 </TableRow>
               ))}
+              {(!quotations || quotations.length === 0) && !isLoading && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-20 text-muted-foreground italic">
+                    No quotations found in your registry.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
