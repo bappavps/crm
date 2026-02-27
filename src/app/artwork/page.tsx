@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState } from "react"
@@ -17,7 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc } from "firebase/firestore"
+import { collection, doc, updateDoc, serverTimestamp } from "firebase/firestore"
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
@@ -30,6 +31,7 @@ export default function ArtworkPage() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [selectedPreview, setSelectedPreview] = useState<any>(null)
   const [zoomLevel, setZoomLevel] = useState(1)
+  const [isProcessing, setIsProcessing] = useState(false)
 
   // Authorization check
   const adminDocRef = useMemoFirebase(() => {
@@ -44,31 +46,30 @@ export default function ArtworkPage() {
     return collection(firestore, 'artworks');
   }, [firestore, user, adminData])
 
-  const estimatesQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'estimates');
-  }, [firestore, user, adminData])
+  const customersQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return collection(firestore, 'customers');
+  }, [firestore, user])
 
   const { data: artworks, isLoading: artworksLoading } = useCollection(artworksQuery)
-  const { data: estimates } = useCollection(estimatesQuery)
+  const { data: customers } = useCollection(customersQuery)
 
   const handleUploadArtwork = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!firestore || !user) return
 
     const formData = new FormData(e.currentTarget)
-    const estimateId = formData.get("estimateId") as string
+    const customerId = formData.get("customerId") as string
     const name = formData.get("name") as string
-    const version = formData.get("version") as string
     
-    const selectedEstimate = estimates?.find(est => est.id === estimateId)
+    const selectedCustomer = customers?.find(c => c.id === customerId)
 
     const artworkData = {
       id: crypto.randomUUID(),
       name,
-      estimateId,
-      clientName: selectedEstimate?.customerName || "Unknown Client",
-      version: version || "1.0",
+      estimateId: customerId, // Using client reference for initial design phase
+      clientName: selectedCustomer?.companyName || "Unknown Client",
+      version: formData.get("version") || "1.0",
       filePath: `https://picsum.photos/seed/${Math.floor(Math.random() * 1000)}/1200/1200`,
       thumbnailUrl: `https://picsum.photos/seed/${Math.floor(Math.random() * 1000)}/300/300`,
       status: "In Review",
@@ -81,12 +82,26 @@ export default function ArtworkPage() {
     }
 
     addDocumentNonBlocking(collection(firestore, 'artworks'), artworkData)
-
     setIsDialogOpen(false)
-    toast({
-      title: "Artwork Uploaded",
-      description: `New version for ${name} has been queued for review.`
-    })
+    toast({ title: "Artwork Submitted", description: `Design for ${name} uploaded for approval.` })
+  }
+
+  const handleApprove = async (art: any) => {
+    if (!firestore) return
+    setIsProcessing(true)
+    try {
+      await updateDoc(doc(firestore, 'artworks', art.id), { 
+        status: "Approved",
+        approvedAt: serverTimestamp(),
+        approvedBy: user?.uid
+      })
+      toast({ title: "Design Released", description: "This artwork can now be used for estimation and production." })
+      setIsPreviewOpen(false)
+    } catch (e) {
+      toast({ variant: "destructive", title: "Error", description: "Approval failed." })
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const handlePreview = (art: any) => {
@@ -100,108 +115,76 @@ export default function ArtworkPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">Technical Artwork Control</h2>
-          <p className="text-muted-foreground">Pharma-grade versioning and design approval workflow.</p>
+          <p className="text-muted-foreground">Manage design approvals before estimation starts.</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}><Upload className="mr-2 h-4 w-4" /> Upload Design</Button>
+        <Button onClick={() => setIsDialogOpen(true)}><Upload className="mr-2 h-4 w-4" /> Upload New Design</Button>
       </div>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <form onSubmit={handleUploadArtwork}>
             <DialogHeader>
-              <DialogTitle>New Technical Drawing</DialogTitle>
-              <DialogDescription>Link design specs to an approved estimate.</DialogDescription>
+              <DialogTitle>New Prepress Entry</DialogTitle>
+              <DialogDescription>Submit technical drawings for client approval.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="estimateId">Source Estimate</Label>
-                <Select name="estimateId" required>
-                  <SelectTrigger><SelectValue placeholder="Select Job" /></SelectTrigger>
+                <Label htmlFor="customerId">Client Entity</Label>
+                <Select name="customerId" required>
+                  <SelectTrigger><SelectValue placeholder="Select Client" /></SelectTrigger>
                   <SelectContent>
-                    {estimates?.map((est) => (
-                      <SelectItem key={est.id} value={est.id}>{est.estimateNumber} - {est.productCode}</SelectItem>
+                    {customers?.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.companyName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="name">Design Title</Label>
+                <Label htmlFor="name">Job Name / Product</Label>
                 <Input id="name" name="name" placeholder="e.g. Front Label - v1" required />
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="width">Width (mm)</Label>
-                  <Input id="width" name="width" type="number" defaultValue="50" />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="height">Height (mm)</Label>
-                  <Input id="height" name="height" type="number" defaultValue="100" />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="version">Version</Label>
-                  <Input id="version" name="version" placeholder="1.0" defaultValue="1.0" />
-                </div>
+                <div className="grid gap-2"><Label>Width (mm)</Label><Input name="width" type="number" defaultValue="50" /></div>
+                <div className="grid gap-2"><Label>Height (mm)</Label><Input name="height" type="number" defaultValue="100" /></div>
+                <div className="grid gap-2"><Label>Version</Label><Input name="version" defaultValue="1.0" /></div>
               </div>
             </div>
-            <DialogFooter>
-              <Button type="submit" className="w-full">Initialize Design Approval</Button>
-            </DialogFooter>
+            <DialogFooter><Button type="submit" className="w-full">Initiate Prepress Approval</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Preview Dialog with ZOOM */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
         <DialogContent className="sm:max-w-[90vw] h-[90vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 border-b shrink-0">
             <div className="flex justify-between items-center pr-10">
               <div>
                 <DialogTitle className="text-2xl font-black">{selectedPreview?.name}</DialogTitle>
-                <DialogDescription>
-                  VER {selectedPreview?.version} • {selectedPreview?.width}x{selectedPreview?.height}mm • {selectedPreview?.clientName}
-                </DialogDescription>
+                <DialogDescription>VER {selectedPreview?.version} • {selectedPreview?.width}x{selectedPreview?.height}mm • {selectedPreview?.clientName}</DialogDescription>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.5))}>
-                  <Minus className="h-4 w-4" />
-                </Button>
+                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.5))}><Minus className="h-4 w-4" /></Button>
                 <span className="text-xs font-bold w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
-                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.min(5, prev + 0.5))}>
-                  <Plus className="h-4 w-4" />
-                </Button>
+                <Button variant="outline" size="icon" onClick={() => setZoomLevel(prev => Math.min(5, prev + 0.5))}><Plus className="h-4 w-4" /></Button>
                 <Button variant="outline" onClick={() => setZoomLevel(1)}>Reset</Button>
               </div>
             </div>
           </DialogHeader>
-          
-          <div className="flex-1 bg-neutral-900 relative overflow-auto flex items-center justify-center p-10 cursor-grab active:cursor-grabbing">
-            <div 
-              className="relative transition-transform duration-200 shadow-2xl bg-white"
-              style={{ 
-                transform: `scale(${zoomLevel})`,
-                width: '100%',
-                maxWidth: '800px',
-                aspectRatio: selectedPreview?.width / selectedPreview?.height || 1
-              }}
-            >
-              {selectedPreview?.filePath && (
-                <Image 
-                  src={selectedPreview.filePath} 
-                  alt="Artwork Master" 
-                  fill 
-                  className="object-contain"
-                  data-ai-hint="label artwork"
-                />
-              )}
+          <div className="flex-1 bg-neutral-900 overflow-auto flex items-center justify-center p-10">
+            <div className="relative transition-transform duration-200 shadow-2xl bg-white" style={{ transform: `scale(${zoomLevel})`, width: '100%', maxWidth: '800px', aspectRatio: selectedPreview?.width / selectedPreview?.height || 1 }}>
+              {selectedPreview?.filePath && <Image src={selectedPreview.filePath} alt="Artwork Master" fill className="object-contain" data-ai-hint="label artwork" />}
             </div>
           </div>
-
           <DialogFooter className="p-6 border-t shrink-0 bg-background">
             <div className="flex justify-between w-full items-center">
-              <p className="text-xs text-muted-foreground italic max-w-md truncate">{selectedPreview?.description || "No technical flags for this version."}</p>
+              <p className="text-xs text-muted-foreground italic">{selectedPreview?.description || "No technical flags."}</p>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => toast({ title: "Downloading High-Res...", description: "Master PDF queued." })}><Download className="mr-2 h-4 w-4" /> Download Master</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => toast({ title: "Approved", description: "Design released for production." })}><CheckCircle2 className="mr-2 h-4 w-4" /> Approve Design</Button>
+                <Button variant="outline" onClick={() => toast({ title: "Downloading..." })}><Download className="mr-2 h-4 w-4" /> Download PDF</Button>
+                {selectedPreview?.status !== 'Approved' && (
+                  <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => handleApprove(selectedPreview)} disabled={isProcessing}>
+                    <CheckCircle2 className="mr-2 h-4 w-4" /> Approve Design
+                  </Button>
+                )}
               </div>
             </div>
           </DialogFooter>
@@ -212,25 +195,17 @@ export default function ArtworkPage() {
         {artworksLoading ? (
           <div className="col-span-full py-20 text-center"><Loader2 className="animate-spin mx-auto" /></div>
         ) : artworks?.map((art) => (
-          <Card key={art.id} className="overflow-hidden group hover:border-primary transition-all shadow-md">
+          <Card key={art.id} className="overflow-hidden group hover:border-primary transition-all">
             <div className="aspect-square bg-muted flex items-center justify-center relative border-b">
-              {art.thumbnailUrl ? (
-                <Image 
-                  src={art.thumbnailUrl} 
-                  alt={art.name} 
-                  fill 
-                  className="object-cover opacity-80 group-hover:opacity-100 transition-opacity"
-                  data-ai-hint="artwork thumbnail"
-                />
-              ) : <Palette className="h-12 w-12 text-muted-foreground/20" />}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 backdrop-blur-sm">
+              {art.thumbnailUrl ? <Image src={art.thumbnailUrl} alt={art.name} fill className="object-cover opacity-80 group-hover:opacity-100 transition-opacity" data-ai-hint="artwork thumbnail" /> : <Palette className="h-12 w-12 text-muted-foreground/20" />}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
                 <Button variant="secondary" size="sm" onClick={() => handlePreview(art)}><ZoomIn className="h-4 w-4 mr-1" /> Inspect</Button>
               </div>
             </div>
             <CardHeader className="p-4">
               <div className="flex justify-between items-start mb-1">
                 <span className="text-[10px] font-mono font-bold text-muted-foreground">V-{art.version}</span>
-                <Badge variant="outline" className="text-[9px] uppercase">{art.status}</Badge>
+                <Badge variant={art.status === 'Approved' ? 'default' : 'secondary'} className={art.status === 'Approved' ? 'bg-emerald-500' : ''}>{art.status}</Badge>
               </div>
               <CardTitle className="text-sm truncate font-black">{art.name}</CardTitle>
               <p className="text-[10px] text-primary font-bold">{art.clientName}</p>

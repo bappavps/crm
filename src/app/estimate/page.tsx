@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useRef, useEffect } from "react"
@@ -10,7 +11,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { calculateFlexoLayout, EstimateInputs } from "@/lib/flexo-utils"
-import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send, UserPlus, Image as ImageIcon, Plus, Upload, X, History, Layers } from "lucide-react"
+import { Save, Printer, Calculator as CalcIcon, Loader2, FileText, Send, UserPlus, Image as ImageIcon, Plus, Upload, X, History, Layers, Palette, AlertTriangle } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, query, where, getDocs, orderBy, limit, runTransaction, serverTimestamp } from "firebase/firestore"
 import { useRouter } from "next/navigation"
@@ -47,8 +48,8 @@ export default function EstimatePage() {
   const [previousJobs, setPreviousJobs] = useState<any[]>([])
   const [selectedRepeatJobId, setSelectedRepeatJobId] = useState<string>("")
 
-  // DYNAMIC BOM LOGIC STATE
-  const [selectedBomId, setSelectedBomId] = useState<string>("manual")
+  // DESIGN GATE STATE
+  const [selectedDesignId, setSelectedDesignId] = useState<string>("")
 
   // Current User Profile for Ownership Attribution
   const profileRef = useMemoFirebase(() => {
@@ -66,20 +67,19 @@ export default function EstimatePage() {
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'customers');
-    // SALES OWNERSHIP FILTER
     if (!adminData) {
       return query(base, where("sales_owner_id", "==", user.uid));
     }
     return base;
   }, [firestore, user, adminData, authLoading])
 
-  const bomsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || authLoading) return null;
-    return collection(firestore, 'boms');
-  }, [firestore, user, authLoading])
+  const artworksQuery = useMemoFirebase(() => {
+    if (!firestore || !user) return null;
+    return query(collection(firestore, 'artworks'), where("status", "==", "Approved"));
+  }, [firestore, user])
 
   const { data: customers } = useCollection(customersQuery)
-  const { data: boms } = useCollection(bomsQuery)
+  const { data: approvedArtworks } = useCollection(artworksQuery)
 
   const activeCustomers = customers?.filter(c => c.status === 'Active' || c.isActive !== false) || []
 
@@ -124,22 +124,6 @@ export default function EstimatePage() {
     }
   }, [metadata.customerId, isRepeatJob, firestore])
 
-  // Handle Repeat Job Selection
-  const handleRepeatJobSelect = (jobId: string) => {
-    const job = previousJobs.find(j => j.id === jobId)
-    if (job) {
-      setSelectedRepeatJobId(jobId)
-      setMetadata(p => ({ ...p, productCode: job.itemNameSummary || job.productCode }))
-      setInputs(p => ({
-        ...p,
-        labelLength: job.heightMM || 50,
-        labelWidth: job.widthMM || 100,
-        repeatLength: job.repeatLength || 508
-      }))
-      toast({ title: "Job Details Loaded", description: "Previous specs and artwork linked." })
-    }
-  }
-
   const results = useMemo(() => {
     return calculateFlexoLayout(inputs)
   }, [inputs])
@@ -152,58 +136,6 @@ export default function EstimatePage() {
     }))
   }
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => setPhotoPreview(reader.result as string)
-      reader.readAsDataURL(file)
-    }
-  }
-
-  const handleQuickClientSave = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!firestore || !user || !profile) return
-
-    const formData = new FormData(e.currentTarget)
-    const companyName = formData.get("companyName") as string
-    
-    const clientData = {
-      companyName,
-      clientPersonName: formData.get("clientPersonName") || "N/A",
-      whatsapp: formData.get("whatsapp") || "N/A",
-      email: formData.get("email") || "N/A",
-      gstNumber: formData.get("gstNumber") || "N/A",
-      fullAddress: formData.get("fullAddress") || "N/A",
-      operationalNote: formData.get("operationalNote") || "N/A",
-      photoUrl: photoPreview || null,
-      creditDays: 0,
-      status: "Active",
-      isActive: true,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      createdById: user.uid,
-      id: crypto.randomUUID(),
-      // AUTOMATIC SALES OWNERSHIP
-      sales_owner_id: user.uid,
-      sales_owner_name: profile.firstName || "Unknown",
-      sales_owner_code: profile.salesCode || 'Admin'
-    }
-
-    try {
-      const docRef = doc(collection(firestore, 'customers'));
-      await runTransaction(firestore, async (transaction) => {
-        transaction.set(docRef, clientData);
-      });
-      setMetadata(prev => ({ ...prev, customerId: docRef.id }))
-      toast({ title: "Client Added", description: `${companyName} registered and assigned to you.` })
-      setIsQuickAddOpen(false)
-      setPhotoPreview(null)
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "Could not save client." })
-    }
-  }
-
   const handleSave = async () => {
     if (!firestore || !user) return
     
@@ -213,8 +145,13 @@ export default function EstimatePage() {
       return
     }
 
-    if (selectedBomId !== "manual" && !metadata.productCode) {
-      toast({ variant: "destructive", title: "Validation Error", description: "Product Code is required for BOM-linked estimates." })
+    // DESIGN GATE ENFORCEMENT
+    if (!isRepeatJob && !selectedDesignId) {
+      toast({ 
+        variant: "destructive", 
+        title: "Design Approval Required", 
+        description: "For new jobs, an approved design must be selected before estimation." 
+      })
       return
     }
 
@@ -246,11 +183,10 @@ export default function EstimatePage() {
           ...results,
           estimateNumber,
           productCode: metadata.productCode || "Manual Estimate",
-          bomId: selectedBomId || "manual",
+          designId: selectedDesignId || null,
           isRepeatJob: !!isRepeatJob,
           sourceJobId: selectedRepeatJobId || null,
           customerName: selectedCustomer.companyName || "Unknown Client",
-          // INHERIT OWNERSHIP FROM CLIENT WITH FALLBACKS
           sales_owner_id: selectedCustomer.sales_owner_id || user.uid,
           sales_owner_name: selectedCustomer.sales_owner_name || user.displayName || "Unknown",
           sales_owner_code: selectedCustomer.sales_owner_code || "N/A",
@@ -266,8 +202,7 @@ export default function EstimatePage() {
       toast({ title: "Estimate Created", description: `Record saved as Draft.` })
       router.push('/estimates')
     } catch (e: any) {
-      console.error("Firestore Save Error:", e);
-      toast({ variant: "destructive", title: "Save Failed", description: e.message || "Firestore operation error. Check permissions or network." })
+      toast({ variant: "destructive", title: "Save Failed", description: e.message })
     } finally {
       setIsSaving(false)
     }
@@ -284,6 +219,11 @@ export default function EstimatePage() {
     const dueDate = new Date(lastInvoice.getTime() + selectedCustomerData.creditDays * 24 * 60 * 60 * 1000)
     return new Date() > dueDate
   }, [selectedCustomerData])
+
+  const filteredDesigns = useMemo(() => {
+    if (!metadata.customerId) return []
+    return approvedArtworks?.filter(a => a.estimateId === metadata.customerId || a.clientName === selectedCustomerData?.companyName) || []
+  }, [approvedArtworks, metadata.customerId, selectedCustomerData])
 
   if (authLoading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin" /></div>
 
@@ -317,11 +257,6 @@ export default function EstimatePage() {
                   <Switch checked={isRepeatJob} onCheckedChange={setIsRepeatJob} />
                   <Label className="text-[10px] font-black uppercase text-accent">Repeat Job</Label>
                 </div>
-                {hasPermission('client_add') && (
-                  <Button variant="link" size="sm" className="h-auto p-0 text-[10px] font-black uppercase gap-1" onClick={() => setIsQuickAddOpen(true)}>
-                    <Plus className="h-3 w-3" /> Quick Add Client
-                  </Button>
-                )}
               </div>
 
               <div className="space-y-2">
@@ -345,17 +280,23 @@ export default function EstimatePage() {
                 </Select>
               </div>
 
-              {isRepeatJob && metadata.customerId && (
-                <div className="space-y-2 p-3 bg-accent/5 border border-accent/20 rounded-md animate-in slide-in-from-top-2">
-                  <Label className="text-[9px] font-black uppercase text-accent">Last Order Ref</Label>
-                  <Select value={selectedRepeatJobId} onValueChange={handleRepeatJobSelect}>
-                    <SelectTrigger className="bg-background border-accent/30 h-8 text-xs font-bold">
-                      <SelectValue placeholder="Choose past job" />
+              {!isRepeatJob && metadata.customerId && (
+                <div className="space-y-2 p-3 bg-primary/5 border border-primary/20 rounded-md animate-in slide-in-from-top-2">
+                  <Label className="text-[9px] font-black uppercase text-primary flex items-center gap-1">
+                    <Palette className="h-3 w-3" /> Approved Design
+                  </Label>
+                  <Select value={selectedDesignId} onValueChange={setSelectedDesignId}>
+                    <SelectTrigger className="bg-background border-primary/30 h-8 text-xs font-bold">
+                      <SelectValue placeholder="Select Artwork Master" />
                     </SelectTrigger>
                     <SelectContent>
-                      {previousJobs.map(j => <SelectItem key={j.id} value={j.id}>{j.jobNumber} - {j.itemNameSummary}</SelectItem>)}
+                      {filteredDesigns.map(d => <SelectItem key={d.id} value={d.id}>{d.name} (v{d.version})</SelectItem>)}
+                      {filteredDesigns.length === 0 && <SelectItem value="none" disabled>No Approved Designs Found</SelectItem>}
                     </SelectContent>
                   </Select>
+                  {filteredDesigns.length === 0 && (
+                    <p className="text-[8px] text-destructive font-bold uppercase mt-1">Design approval required before estimation.</p>
+                  )}
                 </div>
               )}
 
@@ -367,17 +308,6 @@ export default function EstimatePage() {
                   placeholder="e.g. LAB-50100-CH"
                   className="bg-muted/20 border-none font-bold"
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">BOM Mode</Label>
-                <Select value={selectedBomId} onValueChange={setSelectedBomId}>
-                  <SelectTrigger className="bg-muted/20 border-none"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual Rates (Legacy)</SelectItem>
-                    {boms?.map(b => <SelectItem key={b.id} value={b.id}>{b.product_name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
               </div>
 
               <Separator className="my-4" />
@@ -451,82 +381,6 @@ export default function EstimatePage() {
           </Card>
         </div>
       </div>
-
-      <Dialog open={isQuickAddOpen} onOpenChange={setIsQuickAddOpen}>
-        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <form onSubmit={handleQuickClientSave}>
-            <DialogHeader>
-              <DialogTitle className="text-xl font-black uppercase">Client Fast-Track Registry</DialogTitle>
-              <DialogDescription>Add basic operational details. Financial boundaries can be adjusted later.</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-6 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Company Name</Label>
-                  <Input name="companyName" placeholder="e.g. Acme Labels Ltd" required />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Contact Person</Label>
-                  <Input name="clientPersonName" placeholder="e.g. John Doe" required />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">WhatsApp / Phone</Label>
-                  <Input name="whatsapp" placeholder="9876543210" required />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Email Address</Label>
-                  <Input name="email" type="email" placeholder="client@example.com" required />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">GST Number</Label>
-                <Input name="gstNumber" placeholder="22AAAAA0000A1Z5" />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Company Address</Label>
-                <Textarea name="fullAddress" placeholder="Full registered address..." className="h-20 bg-muted/20" required />
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Internal Notes</Label>
-                  <Textarea name="operationalNote" placeholder="Special requirements..." className="h-32 bg-muted/20" />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Logo / Photo</Label>
-                  <div 
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex flex-col items-center justify-center gap-2 p-4 border-2 border-dashed rounded-md bg-muted/20 hover:bg-muted/40 transition-colors relative h-32 cursor-pointer"
-                  >
-                    {photoPreview ? (
-                      <div className="relative w-full h-full">
-                        <Image src={photoPreview} alt="Preview" fill className="object-contain" />
-                        <Button type="button" variant="destructive" size="icon" className="absolute -top-2 -right-2 h-6 w-6 rounded-full" onClick={(e) => { e.stopPropagation(); setPhotoPreview(null); }}>
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload className="h-6 w-6 text-muted-foreground opacity-40" />
-                        <span className="text-[9px] text-muted-foreground uppercase font-black">Upload Logo</span>
-                      </>
-                    )}
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoSelect} />
-                  </div>
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="submit" className="w-full h-12 font-black uppercase tracking-widest shadow-lg">Create & Select Entity</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

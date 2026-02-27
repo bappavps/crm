@@ -63,14 +63,22 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { name: 'Estimates', icon: ClipboardType, href: '/estimates', permission: 'estimates' },
       { name: 'Quotations', icon: FileText, href: '/sales/quotations', permission: 'quotations' },
       { name: 'Sales Orders', icon: ShoppingCart, href: '/sales-order', permission: 'salesOrders' },
-      { name: 'Create Job', icon: FileUp, href: '/sales/create-job', permission: 'createJob' },
     ]
   },
   {
-    label: "Design & Planning",
+    label: "Design & Prepress",
     items: [
+      { name: 'Artwork Gallery', icon: Palette, href: '/artwork', permission: 'artwork' },
       { name: 'Job Planning', icon: ClipboardList, href: '/design/production-planning', permission: 'jobPlanning' },
-      { name: 'Artwork', icon: Palette, href: '/artwork', permission: 'artwork' },
+    ]
+  },
+  {
+    label: "Production",
+    items: [
+      { name: 'Job Cards', icon: IdCard, href: '/production/job-card', permission: 'jobCards' },
+      { name: 'BOM Master', icon: Layers, href: '/bom', permission: 'bom' },
+      { name: 'Work Orders', icon: ClipboardList, href: '/work-order', permission: 'workOrders' },
+      { name: 'Live Floor', icon: Factory, href: '/production', permission: 'liveFloor' },
     ]
   },
   {
@@ -88,15 +96,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { name: 'Slitting (Conversion)', icon: Scissors, href: '/inventory/slitting', permission: 'slitting' },
       { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods', permission: 'finishedGoods' },
       { name: 'Die Management', icon: Wrench, href: '/die', permission: 'dieManagement' },
-    ]
-  },
-  {
-    label: "Production",
-    items: [
-      { name: 'Job Cards', icon: IdCard, href: '/production/job-card', permission: 'jobCards' },
-      { name: 'BOM', icon: Layers, href: '/bom', permission: 'bom' },
-      { name: 'Work Orders', icon: ClipboardList, href: '/work-order', permission: 'workOrders' },
-      { name: 'Live Floor', icon: Factory, href: '/production', permission: 'liveFloor' },
     ]
   },
   {
