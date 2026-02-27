@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V9)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V9.1)
      */
 
     function isSignedIn() {
@@ -78,6 +78,10 @@ service cloud.firestore {
     match /alerts/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /notifications/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     
+    // New Collections
+    match /raw_materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+    match /quotation_templates/{id} { allow read, write: if isSignedIn() && isUserActive(); }
+
     match /system_logs/{path=**} {
       allow read, write: if isAdmin();
     }
