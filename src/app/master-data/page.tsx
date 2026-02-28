@@ -53,7 +53,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
+import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, QueryDocumentSnapshot, DocumentData, deleteDoc, onSnapshot } from "firebase/firestore"
 import { updateDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
@@ -158,14 +158,34 @@ export default function MasterDataPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  useEffect(() => { setIsMounted(true) }, [])
-
+  // Authorization check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
+
+  // Master Tabs Data Queries
+  const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
+  const { data: rawMaterials } = useCollection(rawMaterialsQuery);
+
+  const suppliersQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'suppliers') : null), [firestore]);
+  const { data: suppliers } = useCollection(suppliersQuery);
+
+  const machinesQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'machines') : null), [firestore]);
+  const { data: machines } = useCollection(machinesQuery);
+
+  const cylindersQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'cylinders') : null), [firestore]);
+  const { data: cylinders } = useCollection(cylindersQuery);
+
+  const customersQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'customers') : null), [firestore]);
+  const { data: customers } = useCollection(customersQuery);
+
+  const bomsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'boms') : null), [firestore]);
+  const { data: boms } = useCollection(bomsQuery);
+
+  useEffect(() => { setIsMounted(true) }, [])
 
   // Real-time unique values for filters
   useEffect(() => {
@@ -218,7 +238,7 @@ export default function MasterDataPage() {
   }
 
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
+    if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
       setIsPageLoading(true);
       try {
@@ -241,7 +261,7 @@ export default function MasterDataPage() {
       }
     };
     load();
-  }, [firestore, isAdmin, filters, sortField, sortOrder, pageSize, currentPage]);
+  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -338,6 +358,25 @@ export default function MasterDataPage() {
     setPageStack([null]);
   }
 
+  const handleSingleDelete = async (item: any) => {
+    if (!firestore || !isAdmin) return;
+    if (confirm("Permanently delete this record?")) {
+      deleteDocumentNonBlocking(doc(firestore, dialogType === 'paper_stock' ? 'jumbo_stock' : dialogType, item.id));
+      toast({ title: "Deleted", description: "Record removed successfully." });
+    }
+  }
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await exportPaperStockToExcel(firestore!, filters as any);
+    } catch (e) {
+      toast({ variant: "destructive", title: "Export Error", description: "Could not generate stock export." });
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
 
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
@@ -370,15 +409,17 @@ export default function MasterDataPage() {
                 )}
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => {
-                  const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
-                  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template");
-                  XLSX.writeFile(wb, "paper_stock_template.xlsx");
-                }}><Download className="h-4 w-4 mr-2" /> Template</Button>
-                <Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button>
-                <Button variant="outline" size="sm" onClick={async () => {
-                  setIsExporting(true); try { await exportPaperStockToExcel(firestore!, filters as any); } finally { setIsExporting(false); }
-                }} disabled={isExporting}>{isExporting ? <Loader2 className="animate-spin h-4 w-4" /> : <FileDown className="h-4 w-4 mr-2" />} Export All</Button>
+                {isAdmin && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => {
+                      const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
+                      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template");
+                      XLSX.writeFile(wb, "paper_stock_template.xlsx");
+                    }}><Download className="h-4 w-4 mr-2" /> Template</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button>
+                  </>
+                )}
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting}>{isExporting ? <Loader2 className="animate-spin h-4 w-4" /> : <FileDown className="h-4 w-4 mr-2" />} Export All</Button>
               </div>
             </div>
 
@@ -461,7 +502,7 @@ export default function MasterDataPage() {
                           <TableCell className="text-[11px]">{j.wastage}%</TableCell>
                           <TableCell className="text-[10px] font-bold">{j.receivedDate}</TableCell>
                           <TableCell className="text-[11px] font-mono font-bold text-accent">{j.lotNo}</TableCell>
-                          <TableCell className="text-right sticky right-0 bg-background z-10 border-l"><Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleSingleDelete(j)}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                          <TableCell className="text-right sticky right-0 bg-background z-10 border-l"><Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => { setDialogType('paper_stock'); handleSingleDelete(j); }}><Trash2 className="h-4 w-4" /></Button></TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -482,7 +523,7 @@ export default function MasterDataPage() {
               <Table>
                 <TableHeader><TableRow><TableHead>Material Name</TableHead><TableHead>Unit</TableHead><TableHead>Rate (₹)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
-                  {useCollection(useMemoFirebase(() => collection(firestore!, 'raw_materials'), [firestore])).data?.map((m) => (
+                  {rawMaterials?.map((m) => (
                     <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit}</TableCell><TableCell>₹{m.rate_per_unit}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("raw_materials"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
@@ -496,7 +537,125 @@ export default function MasterDataPage() {
           </Card>
         </TabsContent>
 
-        {/* Other tabs follow similar simplified implementation... */}
+        <TabsContent value="suppliers">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Vendor Directory</CardTitle><CardDescription>Manage material and substrate suppliers.</CardDescription></div>
+              <Button onClick={() => { setDialogType("suppliers"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Supplier</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Supplier Name</TableHead><TableHead>Category</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {suppliers?.map((s) => (
+                    <TableRow key={s.id}><TableCell className="font-bold">{s.name}</TableCell><TableCell>{s.unit || 'Substrates'}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(s); setDialogType("suppliers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'suppliers', s.id))}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="machines">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Production Lines</CardTitle><CardDescription>Manage machine capacity and technical limits.</CardDescription></div>
+              <Button onClick={() => { setDialogType("machines"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Machine</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Machine Name</TableHead><TableHead>Max Width</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {machines?.map((m) => (
+                    <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit || '250mm'}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("machines"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'machines', m.id))}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cylinders">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Cylinder Library</CardTitle><CardDescription>Tooling registry for plate cylinders and repeat lengths.</CardDescription></div>
+              <Button onClick={() => { setDialogType("cylinders"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Cylinder</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Tool ID</TableHead><TableHead>Repeat Length</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {cylinders?.map((c) => (
+                    <TableRow key={c.id}><TableCell className="font-bold">{c.name}</TableCell><TableCell>{c.unit || '508mm'}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("cylinders"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'cylinders', c.id))}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="customers">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Client Registry</CardTitle><CardDescription>Manage customer profiles and account settings.</CardDescription></div>
+              <Button onClick={() => { setDialogType("customers"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Client</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {customers?.map((c) => (
+                    <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("customers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'customers', c.id))}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="boms">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>BOM Master Templates</CardTitle><CardDescription>Pre-defined technical specifications for standard jobs.</CardDescription></div>
+              <Button onClick={() => { setDialogType("boms"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Template</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Template Name</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {boms?.map((b) => (
+                    <TableRow key={b.id}><TableCell className="font-bold">{b.name || b.bomNumber}</TableCell><TableCell className="text-xs truncate max-w-[200px]">{b.unit || b.description}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(b); setDialogType("boms"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'boms', b.id))}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* UPLOAD DIALOG */}
@@ -533,7 +692,7 @@ export default function MasterDataPage() {
                     <Select value={columnMapping[header] || ""} onValueChange={v => setColumnMapping(p => ({...p, [header]: v}))}>
                       <SelectTrigger className="h-8 text-[10px]"><SelectValue placeholder="Map to..." /></SelectTrigger>
                       <SelectContent>
-                        {SYSTEM_FIELDS.map(sf => <SelectItem key={systemKey} value={sf.value}>{sf.label}</SelectItem>)}
+                        {SYSTEM_FIELDS.map(sf => <SelectItem key={sf.value} value={sf.value}>{sf.label}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -577,8 +736,8 @@ export default function MasterDataPage() {
           }}>
             <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Create'} {dialogType.replace('_', ' ')}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="space-y-2"><Label>Name</Label><Input name="name" defaultValue={editingItem?.name} required /></div>
-              <div className="space-y-2"><Label>Unit/Specs</Label><Input name="unit" defaultValue={editingItem?.unit} /></div>
+              <div className="space-y-2"><Label>Name</Label><Input name="name" defaultValue={editingItem?.name || editingItem?.companyName} required /></div>
+              <div className="space-y-2"><Label>Unit/Specs</Label><Input name="unit" defaultValue={editingItem?.unit || editingItem?.description} /></div>
               <div className="space-y-2"><Label>Rate (₹)</Label><Input name="rate_per_unit" type="number" defaultValue={editingItem?.rate_per_unit} /></div>
             </div>
             <DialogFooter><Button type="submit">Save Record</Button></DialogFooter>
