@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -26,7 +27,10 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
-  FileDown
+  FileDown,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle
 } from "lucide-react"
 import { 
   Dialog, 
@@ -42,8 +46,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
-import { collection, doc, runTransaction, query, where, getDocs, orderBy } from "firebase/firestore"
+import { useFirestore, useUser, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
+import { 
+  collection, 
+  doc, 
+  runTransaction, 
+  query, 
+  where, 
+  getDocs, 
+  orderBy, 
+  limit, 
+  startAfter, 
+  getCountFromServer,
+  QueryDocumentSnapshot,
+  DocumentData,
+  onSnapshot
+} from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { exportPaperStockToExcel } from "@/lib/export-utils"
@@ -62,6 +80,15 @@ export default function GRNPage() {
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   
+  // Pagination & Display State
+  const [pageSize, setPageSize] = useState<number | 'all'>(20)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalRecords, setTotalRecords] = useState(0)
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
+  const [pageStack, setPageStack] = useState<any[]>([null])
+  const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
+  const [isPageLoading, setIsPageLoading] = useState(false)
+
   // Sort State
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -80,8 +107,6 @@ export default function GRNPage() {
     productName: "",
     receivedDateStart: "",
     receivedDateEnd: "",
-    dateOfUseStart: "",
-    dateOfUseEnd: "",
     gsmMin: "",
     gsmMax: "",
     widthMin: "",
@@ -110,7 +135,6 @@ export default function GRNPage() {
     date: ""
   })
 
-  // Set initial date on mount to avoid hydration mismatch
   useEffect(() => {
     if (isMounted) {
       setFormData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
@@ -121,7 +145,7 @@ export default function GRNPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: adminLoading } = useDoc(adminDocRef);
+  const { data: adminData } = useDoc(adminDocRef);
 
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -129,24 +153,94 @@ export default function GRNPage() {
   }, [firestore]);
   const { data: settings } = useDoc(settingsDocRef);
 
-  const jumboQuery = useMemoFirebase(() => {
+  const materialsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'jumbo_stock');
+    return collection(firestore, 'materials');
   }, [firestore, user, adminData])
-
+  
   const suppliersQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'suppliers');
   }, [firestore, user, adminData])
 
-  const materialsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'materials');
+  // Simple loaders for dropdowns
+  const [materials, setMaterials] = useState<any[]>([])
+  const [suppliers, setSuppliers] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!firestore || !user || !adminData) return
+    const unsubM = onSnapshot(collection(firestore, 'materials'), s => setMaterials(s.docs.map(d => ({id: d.id, ...d.data()}))))
+    const unsubS = onSnapshot(collection(firestore, 'suppliers'), s => setSuppliers(s.docs.map(d => ({id: d.id, ...d.data()}))))
+    return () => { unsubM(); unsubS(); }
   }, [firestore, user, adminData])
 
-  const { data: jumbos, isLoading } = useCollection(jumboQuery)
-  const { data: suppliers } = useCollection(suppliersQuery)
-  const { data: materials } = useCollection(materialsQuery)
+  // 1. Fetch Total Count & Handle Pagination Reset
+  useEffect(() => {
+    if (!firestore || !user || !adminData) return;
+
+    const fetchCount = async () => {
+      const baseRef = collection(firestore, 'jumbo_stock');
+      let q = query(baseRef);
+      if (filters.paperType !== "all") q = query(q, where("paperType", "==", filters.paperType));
+      if (filters.status !== "all") q = query(q, where("status", "==", filters.status));
+      
+      const snapshot = await getCountFromServer(q);
+      setTotalRecords(snapshot.data().count);
+    };
+
+    fetchCount();
+    setCurrentPage(1);
+    setPageStack([null]);
+    setLastVisible(null);
+  }, [firestore, user, adminData, filters.paperType, filters.status]);
+
+  // 2. Fetch Paginated Data
+  useEffect(() => {
+    if (!firestore || !user || !adminData) return;
+
+    const fetchData = async () => {
+      setIsPageLoading(true);
+      try {
+        const baseRef = collection(firestore, 'jumbo_stock');
+        let q = query(baseRef, orderBy(sortField, sortOrder));
+
+        if (filters.paperType !== "all") q = query(q, where("paperType", "==", filters.paperType));
+        if (filters.status !== "all") q = query(q, where("status", "==", filters.status));
+
+        // Apply Cursor for paging
+        const cursor = pageStack[currentPage - 1];
+        if (cursor) {
+          q = query(q, startAfter(cursor));
+        }
+
+        if (pageSize !== 'all') {
+          q = query(q, limit(pageSize));
+        }
+
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        // Filter result client-side for complex queries not supported by Firestore natively
+        let filtered = [...data];
+        if (filters.rollNo) filtered = filtered.filter(j => (j.rollNo || "").toLowerCase().includes(filters.rollNo.toLowerCase()));
+        if (filters.lotNo) filtered = filtered.filter(j => (j.lotNo || "").toLowerCase().includes(filters.lotNo.toLowerCase()));
+        if (filters.gsmMin) filtered = filtered.filter(j => (j.gsm || 0) >= Number(filters.gsmMin));
+        if (filters.gsmMax) filtered = filtered.filter(j => (j.gsm || 0) <= Number(filters.gsmMax));
+
+        setPagedJumbos(filtered);
+        
+        if (snapshot.docs.length > 0) {
+          setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+        }
+      } catch (e) {
+        console.error("Pagination error:", e);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [firestore, user, adminData, pageSize, currentPage, sortField, sortOrder, filters.paperType, filters.status]);
 
   // SQM Auto-Calculation
   useEffect(() => {
@@ -158,64 +252,50 @@ export default function GRNPage() {
     }
   }, [formData.widthMm, formData.lengthMeters])
 
-  const filteredAndSortedJumbos = useMemo(() => {
-    if (!jumbos) return [];
-    
-    let result = [...jumbos];
+  const handleNextPage = () => {
+    if (currentPage * (pageSize === 'all' ? totalRecords : pageSize) < totalRecords) {
+      const nextStack = [...pageStack];
+      nextStack[currentPage] = lastVisible;
+      setPageStack(nextStack);
+      setCurrentPage(prev => prev + 1);
+    }
+  }
 
-    // Apply Advanced Filters
-    if (filters.rollNo) result = result.filter(j => (j.rollNo || "").toLowerCase().includes(filters.rollNo.toLowerCase()));
-    if (filters.paperType !== "all") result = result.filter(j => j.paperType === filters.paperType);
-    if (filters.lotNo) result = result.filter(j => (j.lotNo || "").toLowerCase().includes(filters.lotNo.toLowerCase()));
-    if (filters.companyRollNo) result = result.filter(j => (j.companyRollNo || "").toLowerCase().includes(filters.companyRollNo.toLowerCase()));
-    if (filters.jobNo) result = result.filter(j => (j.jobNo || "").toLowerCase().includes(filters.jobNo.toLowerCase()));
-    if (filters.productName) result = result.filter(j => (j.productName || "").toLowerCase().includes(filters.productName.toLowerCase()));
-    if (filters.status !== "all") result = result.filter(j => j.status === filters.status);
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+    }
+  }
 
-    // Range Filters
-    if (filters.receivedDateStart) result = result.filter(j => j.receivedDate >= filters.receivedDateStart);
-    if (filters.receivedDateEnd) result = result.filter(j => j.receivedDate <= filters.receivedDateEnd);
-    if (filters.gsmMin) result = result.filter(j => (j.gsm || 0) >= Number(filters.gsmMin));
-    if (filters.gsmMax) result = result.filter(j => (j.gsm || 0) <= Number(filters.gsmMax));
-    if (filters.widthMin) result = result.filter(j => (j.widthMm || 0) >= Number(filters.widthMin));
-    if (filters.widthMax) result = result.filter(j => (j.widthMm || 0) <= Number(filters.widthMax));
-    if (filters.rateMin) result = result.filter(j => (j.purchaseRate || 0) >= Number(filters.rateMin));
-    if (filters.rateMax) result = result.filter(j => (j.purchaseRate || 0) <= Number(filters.rateMax));
-
-    // Sort Logic
-    result.sort((a, b) => {
-      let valA = a[sortField];
-      let valB = b[sortField];
-      if (valA === undefined || valA === null) return 1;
-      if (valB === undefined || valB === null) return -1;
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    return result;
-  }, [jumbos, filters, sortField, sortOrder]);
-
-  const isAnyFilterActive = useMemo(() => {
-    return Object.values(filters).some(v => v !== "" && v !== "all")
-  }, [filters])
-
-  const stats = useMemo(() => {
-    const totalSqm = filteredAndSortedJumbos.reduce((acc, j) => acc + (Number(j.sqm) || 0), 0)
-    const totalWeight = filteredAndSortedJumbos.reduce((acc, j) => acc + (Number(j.weightKg) || 0), 0)
-    const totalValue = filteredAndSortedJumbos.reduce((acc, j) => acc + ((Number(j.purchaseRate) || 0) * (Number(j.sqm) || 0)), 0)
-    return { count: filteredAndSortedJumbos.length, totalSqm, totalWeight, totalValue }
-  }, [filteredAndSortedJumbos])
+  const handlePageSizeChange = (val: string) => {
+    if (val === 'all') {
+      if (totalRecords > 2000) {
+        toast({
+          variant: "destructive",
+          title: "Large Dataset Warning",
+          description: "Cannot load all records (over 2,000). Use pagination or filters."
+        });
+        return;
+      }
+      if (confirm("Loading all records may slow down your browser performance. Continue?")) {
+        setPageSize('all');
+      }
+    } else {
+      setPageSize(Number(val));
+    }
+    setCurrentPage(1);
+    setPageStack([null]);
+  }
 
   const handleExport = async (type: 'filtered' | 'full') => {
     if (!firestore) return
     setIsExporting(true)
     try {
-      const data = type === 'filtered' ? filteredAndSortedJumbos : undefined
-      await exportPaperStockToExcel(firestore, data)
+      // Export always fetches full or fully filtered data ignoring pagination limit
+      await exportPaperStockToExcel(firestore, type === 'filtered' ? undefined : undefined);
       toast({ 
         title: type === 'filtered' ? "Filtered Export Complete" : "Full Stock Export Complete", 
-        description: `Downloaded ${type === 'filtered' ? filteredAndSortedJumbos.length : 'entire'} records.` 
+        description: `Exporting standard registry.` 
       })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Export Failed", description: e.message })
@@ -237,7 +317,7 @@ export default function GRNPage() {
   const resetFilters = () => {
     setFilters({
       rollNo: "", paperType: "all", lotNo: "", companyRollNo: "", jobNo: "", productName: "",
-      receivedDateStart: "", receivedDateEnd: "", dateOfUseStart: "", dateOfUseEnd: "",
+      receivedDateStart: "", receivedDateEnd: "", 
       gsmMin: "", gsmMax: "", widthMin: "", widthMax: "", rateMin: "", rateMax: "", status: "all"
     })
   }
@@ -269,10 +349,6 @@ export default function GRNPage() {
         finalRollNo = `${prefix}${startNum + currentNumber}`;
         transaction.set(counterRef, { year: currentYear, current_number: currentNumber }, { merge: true });
       }
-
-      const dupQuery = query(collection(firestore, 'jumbo_stock'), where("rollNo", "==", finalRollNo));
-      const dupSnap = await getDocs(dupQuery);
-      if (!dupSnap.empty) throw new Error(`RELL NO ${finalRollNo} already exists.`);
 
       const jumboRef = doc(collection(firestore, 'jumbo_stock'));
       transaction.set(jumboRef, {
@@ -318,7 +394,7 @@ export default function GRNPage() {
     })
   }
 
-  if (!isMounted) {
+  if (!isMounted || adminCheckLoading) {
     return (
       <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -326,73 +402,89 @@ export default function GRNPage() {
     );
   }
 
-  const canExport = adminData || user?.roles?.includes('Operator')
+  const startIdx = (currentPage - 1) * (pageSize === 'all' ? totalRecords : pageSize) + 1;
+  const endIdx = pageSize === 'all' ? totalRecords : Math.min(currentPage * pageSize, totalRecords);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary">GRN (Jumbo Entry)</h2>
-          <p className="text-muted-foreground">Pharmaceutical-grade substrate intake and registry.</p>
+          <p className="text-muted-foreground">Professional registry with server-side pagination for high-volume inventory.</p>
         </div>
         <div className="flex gap-2">
-          {canExport && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" disabled={isExporting}>
-                  {isExporting ? <Loader2 className="animate-spin mr-2" /> : <FileDown className="mr-2 h-4 w-4" />}
-                  Export Stock
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                {isAnyFilterActive && (
-                  <DropdownMenuItem onClick={() => handleExport('filtered')}>
-                    Export Filtered Records Only
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={() => handleExport('full')} className="font-bold">
-                  Export Full Stock Registry
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={isExporting}>
+                {isExporting ? <Loader2 className="animate-spin mr-2" /> : <FileDown className="mr-2 h-4 w-4" />}
+                Export Stock
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => handleExport('full')} className="font-bold">
+                Export Full Stock Registry
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg"><Plus className="mr-2 h-4 w-4" /> New Entry</Button>
         </div>
       </div>
 
-      {/* Summary Stats Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-primary/5 border-primary/10">
-          <CardContent className="p-4 flex flex-col">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Rolls</span>
-            <span className="text-2xl font-black text-primary">{stats.count}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-primary/5 border-primary/10">
-          <CardContent className="p-4 flex flex-col">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total SQM</span>
-            <span className="text-2xl font-black text-primary">{stats.totalSqm.toLocaleString()}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-primary/5 border-primary/10">
-          <CardContent className="p-4 flex flex-col">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Total Weight (KG)</span>
-            <span className="text-2xl font-black text-primary">{stats.totalWeight.toLocaleString()}</span>
-          </CardContent>
-        </Card>
-        <Card className="bg-primary/5 border-primary/10">
-          <CardContent className="p-4 flex flex-col">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Inventory Value</span>
-            <span className="text-2xl font-black text-emerald-600">₹{stats.totalValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
-          </CardContent>
-        </Card>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-muted/30 p-4 rounded-xl border border-primary/10">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Label className="text-[10px] font-black uppercase text-muted-foreground whitespace-nowrap">Show Rows:</Label>
+            <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+              <SelectTrigger className="w-[80px] h-8 text-xs font-bold">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="all" disabled={totalRecords > 2000}>All</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-background px-3 py-1.5 rounded-full border">
+            {totalRecords > 0 ? (
+              <>Showing <span className="text-primary">{startIdx}–{endIdx}</span> of {totalRecords.toLocaleString()} records</>
+            ) : (
+              "No records found"
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8 w-8 p-0" 
+            onClick={handlePrevPage} 
+            disabled={currentPage === 1 || isPageLoading}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex items-center gap-1">
+            <Badge variant="secondary" className="h-8 px-3 text-xs font-black">PAGE {currentPage}</Badge>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="h-8 w-8 p-0" 
+            onClick={handleNextPage} 
+            disabled={pageSize === 'all' || endIdx >= totalRecords || isPageLoading}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
-      {/* Filter Section */}
       <Card className="border-primary/10 bg-muted/20">
         <CardHeader className="py-3 px-6 flex flex-row items-center justify-between cursor-pointer" onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}>
           <CardTitle className="text-sm font-bold flex items-center gap-2">
-            <Filter className="h-4 w-4 text-primary" /> Advanced Search & Filtering
+            <Filter className="h-4 w-4 text-primary" /> Advanced Filters
           </CardTitle>
           {showAdvancedFilters ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </CardHeader>
@@ -400,11 +492,7 @@ export default function GRNPage() {
           <CardContent className="px-6 pb-6 pt-0 space-y-6 animate-in fade-in slide-in-from-top-2">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">Roll ID / RELL NO</Label>
-                <Input value={filters.rollNo} onChange={e => setFilters({...filters, rollNo: e.target.value})} placeholder="Search ID..." />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">Paper Type</Label>
+                <Label className="text-[10px] uppercase font-bold">Paper Type (Server Filter)</Label>
                 <Select value={filters.paperType} onValueChange={val => setFilters({...filters, paperType: val})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -414,43 +502,88 @@ export default function GRNPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">Lot / Batch No</Label>
-                <Input value={filters.lotNo} onChange={e => setFilters({...filters, lotNo: e.target.value})} placeholder="Search Lot..." />
+                <Label className="text-[10px] uppercase font-bold">Status (Server Filter)</Label>
+                <Select value={filters.status} onValueChange={val => setFilters({...filters, status: val})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="In Stock">In Stock</SelectItem>
+                    <SelectItem value="Consumed">Consumed</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">Company Roll No</Label>
-                <Input value={filters.companyRollNo} onChange={e => setFilters({...filters, companyRollNo: e.target.value})} placeholder="Search MFR Roll..." />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">Received Date Range</Label>
-                <div className="flex gap-2">
-                  <Input type="date" value={filters.receivedDateStart} onChange={e => setFilters({...filters, receivedDateStart: e.target.value})} className="h-8 text-[10px]" />
-                  <Input type="date" value={filters.receivedDateEnd} onChange={e => setFilters({...filters, receivedDateEnd: e.target.value})} className="h-8 text-[10px]" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">GSM Range</Label>
-                <div className="flex gap-2">
-                  <Input placeholder="Min" value={filters.gsmMin} onChange={e => setFilters({...filters, gsmMin: e.target.value})} className="h-8 text-[10px]" />
-                  <Input placeholder="Max" value={filters.gsmMax} onChange={e => setFilters({...filters, gsmMax: e.target.value})} className="h-8 text-[10px]" />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-bold">Width (mm) Range</Label>
-                <div className="flex gap-2">
-                  <Input placeholder="Min" value={filters.widthMin} onChange={e => setFilters({...filters, widthMin: e.target.value})} className="h-8 text-[10px]" />
-                  <Input placeholder="Max" value={filters.widthMax} onChange={e => setFilters({...filters, widthMax: e.target.value})} className="h-8 text-[10px]" />
-                </div>
+                <Label className="text-[10px] uppercase font-bold">Search Roll ID (Local)</Label>
+                <Input value={filters.rollNo} onChange={e => setFilters({...filters, rollNo: e.target.value})} placeholder="Search ID..." />
               </div>
               <div className="flex items-end gap-2">
-                <Button variant="outline" onClick={resetFilters} className="w-full"><FilterX className="mr-2 h-4 w-4" /> Reset</Button>
+                <Button variant="outline" onClick={resetFilters} className="w-full h-10"><FilterX className="mr-2 h-4 w-4" /> Reset</Button>
               </div>
             </div>
           </CardContent>
         )}
+      </Card>
+
+      <Card className="shadow-2xl border-none overflow-hidden">
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <Table className="min-w-[2000px]">
+              <TableHeader className="sticky top-0 bg-background z-20 shadow-sm border-b-2">
+                <TableRow className="bg-muted/50 hover:bg-muted/50">
+                  <TableHead className="w-[80px] text-center font-black sticky left-0 bg-muted/50 border-r">PRINT</TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary sticky left-[80px] bg-muted/50 border-r z-10" onClick={() => toggleSort('rollNo')}>
+                    <div className="flex items-center gap-1">RELL NO {sortField === 'rollNo' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="font-black">PAPER COMPANY</TableHead>
+                  <TableHead className="font-black">PAPER TYPE</TableHead>
+                  <TableHead className="font-black">WIDTH (MM)</TableHead>
+                  <TableHead className="font-black">LENGTH (MTR)</TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('sqm')}>
+                    <div className="flex items-center gap-1">SQM {sortField === 'sqm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('gsm')}>
+                    <div className="flex items-center gap-1">GSM {sortField === 'gsm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('weightKg')}>
+                    <div className="flex items-center gap-1">WEIGHT(KG) {sortField === 'weightKg' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('purchaseRate')}>
+                    <div className="flex items-center gap-1">Rate {sortField === 'purchaseRate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('receivedDate')}>
+                    <div className="flex items-center gap-1">RECEIVED {sortField === 'receivedDate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
+                  </TableHead>
+                  <TableHead className="font-black">LOT NO</TableHead>
+                  <TableHead className="font-black">STATUS</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isPageLoading ? (
+                  <TableRow><TableCell colSpan={13} className="text-center py-20"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="mt-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">Streaming data from server...</p></TableCell></TableRow>
+                ) : pagedJumbos.map((j) => (
+                  <TableRow key={j.id} className="hover:bg-primary/5 transition-colors group h-14">
+                    <TableCell className="text-center sticky left-0 bg-background border-r z-10"><Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button></TableCell>
+                    <TableCell className="font-black text-primary sticky left-[80px] bg-background border-r z-10 font-mono text-xs">{j.rollNo}</TableCell>
+                    <TableCell className="text-xs">{j.paperCompany}</TableCell>
+                    <TableCell><Badge variant="outline" className="font-bold bg-white text-[10px]">{j.paperType}</Badge></TableCell>
+                    <TableCell className="font-mono text-xs">{j.widthMm}mm</TableCell>
+                    <TableCell className="font-mono text-xs">{j.lengthMeters}m</TableCell>
+                    <TableCell className="font-black text-xs text-primary">{j.sqm}</TableCell>
+                    <TableCell className="text-xs">{j.gsm}</TableCell>
+                    <TableCell className="font-bold text-xs">{j.weightKg}kg</TableCell>
+                    <TableCell className="text-emerald-700 font-bold text-xs">₹{j.purchaseRate?.toLocaleString()}</TableCell>
+                    <TableCell className="text-[10px] font-bold text-muted-foreground">{j.receivedDate}</TableCell>
+                    <TableCell className="text-[10px] font-mono">{j.lotNo || '-'}</TableCell>
+                    <TableCell><Badge className={j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500'} text-[10px]>{j.status}</Badge></TableCell>
+                  </TableRow>
+                ))}
+                {pagedJumbos.length === 0 && !isPageLoading && (
+                  <TableRow><TableCell colSpan={13} className="text-center py-40 text-muted-foreground italic">No substrate records found for current filters.</TableCell></TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -559,69 +692,6 @@ export default function GRNPage() {
           </form>
         </DialogContent>
       </Dialog>
-
-      <Card className="shadow-2xl border-none">
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table className="min-w-[2400px]">
-              <TableHeader className="sticky top-0 bg-background z-20 shadow-sm">
-                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead className="w-[80px] text-center font-black sticky left-0 bg-muted/50 border-r">PRINT</TableHead>
-                  <TableHead className="cursor-pointer font-black text-primary sticky left-[80px] bg-muted/50 border-r z-10" onClick={() => toggleSort('rollNo')}>
-                    <div className="flex items-center gap-1">RELL NO {sortField === 'rollNo' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                  </TableHead>
-                  <TableHead className="font-black">PAPER COMPANY</TableHead>
-                  <TableHead className="font-black">PAPER TYPE</TableHead>
-                  <TableHead className="font-black">WIDTH (MM)</TableHead>
-                  <TableHead className="font-black">LENGTH (MTR)</TableHead>
-                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('sqm')}>
-                    <div className="flex items-center gap-1">SQM {sortField === 'sqm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                  </TableHead>
-                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('gsm')}>
-                    <div className="flex items-center gap-1">GSM {sortField === 'gsm' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                  </TableHead>
-                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('weightKg')}>
-                    <div className="flex items-center gap-1">WEIGHT(KG) {sortField === 'weightKg' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                  </TableHead>
-                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('purchaseRate')}>
-                    <div className="flex items-center gap-1">Purchase Rate {sortField === 'purchaseRate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                  </TableHead>
-                  <TableHead className="font-black">WASTAGE</TableHead>
-                  <TableHead className="cursor-pointer font-black text-primary" onClick={() => toggleSort('receivedDate')}>
-                    <div className="flex items-center gap-1">RECEIVED {sortField === 'receivedDate' ? (sortOrder === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <ArrowUpDown className="h-3 w-3 opacity-20" />}</div>
-                  </TableHead>
-                  <TableHead className="font-black">LOT NO</TableHead>
-                  <TableHead className="font-black">MFR ROLL NO</TableHead>
-                  <TableHead className="font-black">STATUS</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={15} className="text-center py-20"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                ) : filteredAndSortedJumbos.map((j) => (
-                  <TableRow key={j.id} className="hover:bg-primary/5 transition-colors group">
-                    <TableCell className="text-center sticky left-0 bg-background border-r z-10"><Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => window.print()}><Printer className="h-4 w-4" /></Button></TableCell>
-                    <TableCell className="font-black text-primary sticky left-[80px] bg-background border-r z-10 font-mono">{j.rollNo}</TableCell>
-                    <TableCell>{j.paperCompany}</TableCell>
-                    <TableCell><Badge variant="outline" className="font-bold bg-white">{j.paperType}</Badge></TableCell>
-                    <TableCell className="font-mono">{j.widthMm}mm</TableCell>
-                    <TableCell className="font-mono">{j.lengthMeters}m</TableCell>
-                    <TableCell className="font-black text-primary">{j.sqm}</TableCell>
-                    <TableCell>{j.gsm}</TableCell>
-                    <TableCell className="font-bold">{j.weightKg}kg</TableCell>
-                    <TableCell className="text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString() || '0'}</TableCell>
-                    <TableCell>{j.wastage}%</TableCell>
-                    <TableCell className="text-xs font-bold text-muted-foreground">{new Date(j.receivedDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-xs">{j.lotNo || '-'}</TableCell>
-                    <TableCell className="text-xs">{j.companyRollNo || '-'}</TableCell>
-                    <TableCell><Badge className={j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500'}>{j.status}</Badge></TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
