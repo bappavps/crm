@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -26,7 +25,8 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
-  Download
+  Download,
+  FileDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -36,11 +36,17 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, runTransaction, query, where, getDocs, orderBy } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import * as XLSX from 'xlsx'
+import { exportPaperStockToExcel } from "@/lib/export-utils"
 
 type SortField = 'rollNo' | 'receivedDate' | 'purchaseRate' | 'gsm' | 'sqm' | 'weightKg';
 type SortOrder = 'asc' | 'desc';
@@ -54,6 +60,7 @@ export default function GRNPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isManualId, setIsManualId] = useState(false)
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   
   // Sort State
   const [sortField, setSortField] = useState<SortField>('receivedDate')
@@ -189,6 +196,10 @@ export default function GRNPage() {
     return result;
   }, [jumbos, filters, sortField, sortOrder]);
 
+  const isAnyFilterActive = useMemo(() => {
+    return Object.values(filters).some(v => v !== "" && v !== "all")
+  }, [filters])
+
   const stats = useMemo(() => {
     const totalSqm = filteredAndSortedJumbos.reduce((acc, j) => acc + (Number(j.sqm) || 0), 0)
     const totalWeight = filteredAndSortedJumbos.reduce((acc, j) => acc + (Number(j.weightKg) || 0), 0)
@@ -196,28 +207,21 @@ export default function GRNPage() {
     return { count: filteredAndSortedJumbos.length, totalSqm, totalWeight, totalValue }
   }, [filteredAndSortedJumbos])
 
-  const handleExport = () => {
-    const data = filteredAndSortedJumbos.map(j => ({
-      "RELL NO": j.rollNo,
-      "PAPER COMPANY": j.paperCompany,
-      "PAPER TYPE": j.paperType,
-      "WIDTH (MM)": j.widthMm,
-      "LENGTH (MTR)": j.lengthMeters,
-      "SQM": j.sqm,
-      "GSM": j.gsm,
-      "WEIGHT(KG)": j.weightKg,
-      "Purchase Rate": j.purchaseRate,
-      "WASTAGE": j.wastage,
-      "DATE OF RECEIVED": j.receivedDate,
-      "Lot no/BATCH NO": j.lotNo,
-      "Company Rell no": j.companyRollNo,
-      "Status": j.status
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "GRN Registry");
-    XLSX.writeFile(wb, `GRN_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast({ title: "Export Complete", description: `Downloaded ${data.length} records.` });
+  const handleExport = async (type: 'filtered' | 'full') => {
+    if (!firestore) return
+    setIsExporting(true)
+    try {
+      const data = type === 'filtered' ? filteredAndSortedJumbos : undefined
+      await exportPaperStockToExcel(firestore, data)
+      toast({ 
+        title: type === 'filtered' ? "Filtered Export Complete" : "Full Stock Export Complete", 
+        description: `Downloaded ${type === 'filtered' ? filteredAndSortedJumbos.length : 'entire'} records.` 
+      })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: e.message })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const toggleSort = (field: SortField) => {
@@ -322,9 +326,7 @@ export default function GRNPage() {
     );
   }
 
-  if (!adminData && !adminLoading) {
-    return <div className="p-20 text-center text-muted-foreground">Admin access required.</div>
-  }
+  const canExport = adminData || user?.roles?.includes('Operator')
 
   return (
     <div className="space-y-6">
@@ -334,7 +336,26 @@ export default function GRNPage() {
           <p className="text-muted-foreground">Pharmaceutical-grade substrate intake and registry.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExport}><Download className="mr-2 h-4 w-4" /> Export Excel</Button>
+          {canExport && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={isExporting}>
+                  {isExporting ? <Loader2 className="animate-spin mr-2" /> : <FileDown className="mr-2 h-4 w-4" />}
+                  Export Stock
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {isAnyFilterActive && (
+                  <DropdownMenuItem onClick={() => handleExport('filtered')}>
+                    Export Filtered Records Only
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => handleExport('full')} className="font-bold">
+                  Export Full Stock Registry
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg"><Plus className="mr-2 h-4 w-4" /> New Entry</Button>
         </div>
       </div>

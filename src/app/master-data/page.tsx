@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useRef, useMemo } from "react"
@@ -42,16 +41,19 @@ import {
   FlaskConical,
   Layers,
   ChevronRight,
-  ShieldAlert
+  ShieldAlert,
+  FileDown,
+  Package
 } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
-import { collection, doc, query, where } from "firebase/firestore"
+import { collection, doc, query, where, orderBy } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { usePermissions } from "@/components/auth/permission-context"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { exportPaperStockToExcel } from "@/lib/export-utils"
 import Image from "next/image"
 
 export default function MasterDataPage() {
@@ -64,6 +66,7 @@ export default function MasterDataPage() {
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders" | "suppliers" | "raw_materials" | "boms">("materials")
   const [editingItem, setEditingItem] = useState<any>(null)
   const [viewingItem, setViewingItem] = useState<any>(null)
+  const [isExporting, setIsExporting] = useState(false)
   
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -128,6 +131,11 @@ export default function MasterDataPage() {
     return collection(firestore, 'suppliers');
   }, [firestore, user, adminData])
 
+  const jumboStockQuery = useMemoFirebase(() => {
+    if (!firestore || !user || !adminData) return null;
+    return query(collection(firestore, 'jumbo_stock'), orderBy('receivedDate', 'desc'));
+  }, [firestore, user, adminData])
+
   const { data: materials } = useCollection(materialsQuery)
   const { data: rawMaterials, isLoading: rawLoading } = useCollection(rawMaterialsQuery)
   const { data: boms, isLoading: bomsLoading } = useCollection(bomsQuery)
@@ -135,6 +143,7 @@ export default function MasterDataPage() {
   const { data: customers, isLoading: customersLoading } = useCollection(customersQuery)
   const { data: cylinders } = useCollection(cylindersQuery)
   const { data: suppliers } = useCollection(suppliersQuery)
+  const { data: jumboStock, isLoading: jumboLoading } = useCollection(jumboStockQuery)
 
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -266,6 +275,19 @@ export default function MasterDataPage() {
     const lastInvoice = new Date(c.lastInvoiceDate)
     const dueDate = new Date(lastInvoice.getTime() + c.creditDays * 24 * 60 * 60 * 1000)
     return new Date() > dueDate
+  }
+
+  const handleFullStockExport = async () => {
+    if (!firestore) return
+    setIsExporting(true)
+    try {
+      await exportPaperStockToExcel(firestore)
+      toast({ title: "Export Successful", description: "Full paper stock registry has been downloaded." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: e.message })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -505,6 +527,7 @@ export default function MasterDataPage() {
       <Tabs defaultValue="raw_materials" className="w-full">
         <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto">
           <TabsTrigger value="raw_materials" className="gap-2"><FlaskConical className="h-4 w-4" /> Raw Materials</TabsTrigger>
+          <TabsTrigger value="paper_stock" className="gap-2"><Package className="h-4 w-4" /> Paper Stock</TabsTrigger>
           <TabsTrigger value="boms" className="gap-2"><Layers className="h-4 w-4" /> BOM Master</TabsTrigger>
           <TabsTrigger value="suppliers" className="gap-2"><Truck className="h-4 w-4" /> Suppliers</TabsTrigger>
           <TabsTrigger value="machines" className="gap-2"><Box className="h-4 w-4" /> Machines</TabsTrigger>
@@ -551,6 +574,60 @@ export default function MasterDataPage() {
                       </TableCell>
                     </TableRow>
                   ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="paper_stock">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Paper Stock Master</CardTitle>
+                <CardDescription>Comprehensive registry of all jumbo substrates in the system.</CardDescription>
+              </div>
+              {isAdmin && (
+                <Button variant="outline" onClick={handleFullStockExport} disabled={isExporting}>
+                  {isExporting ? <Loader2 className="animate-spin mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
+                  Export Full Stock
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Roll ID</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>GSM</TableHead>
+                    <TableHead>Dimensions</TableHead>
+                    <TableHead>SQM</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jumboLoading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-10"><Loader2 className="animate-spin mx-auto" /></TableCell></TableRow>
+                  ) : jumboStock?.slice(0, 50).map((j) => (
+                    <TableRow key={j.id}>
+                      <TableCell className="font-black text-primary font-mono text-xs">{j.rollNo}</TableCell>
+                      <TableCell className="text-xs">{j.paperCompany}</TableCell>
+                      <TableCell><Badge variant="outline" className="text-[10px]">{j.paperType}</Badge></TableCell>
+                      <TableCell className="text-xs">{j.gsm}</TableCell>
+                      <TableCell className="text-xs">{j.widthMm}mm x {j.lengthMeters}m</TableCell>
+                      <TableCell className="font-bold text-xs">{j.sqm}</TableCell>
+                      <TableCell><Badge className={j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500'}>{j.status}</Badge></TableCell>
+                    </TableRow>
+                  ))}
+                  {jumboStock && jumboStock.length > 50 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-4 text-xs text-muted-foreground italic">
+                        Viewing latest 50 records. Use the Export button for the full registry.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
