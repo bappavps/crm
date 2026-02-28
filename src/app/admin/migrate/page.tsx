@@ -295,31 +295,29 @@ export default function MigrationPage() {
                     <Trash2 className="mr-2 h-4 w-4" /> Reset Transactional Database
                   </Button>
                 </DialogTrigger>
-                <DialogContent asChild>
-                  <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg">
-                    <DialogHeader>
-                      <DialogTitle className="text-destructive flex items-center gap-2">
-                        <AlertTriangle className="h-6 w-6" /> Destructive Action Confirmation
-                      </DialogTitle>
-                      <DialogDescription asChild>
-                        <div className="pt-4 space-y-3">
-                          <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
-                          <ul className="list-disc pl-5 text-xs space-y-1">
-                            <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
-                            <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
-                            <li><strong>Counters</strong> will reset to sequence #1.</li>
-                            <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
-                          </ul>
-                        </div>
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="gap-2 sm:gap-0">
-                      <Button variant="ghost" onClick={() => setIsWipeConfirmOpen(false)}>Cancel</Button>
-                      <Button variant="destructive" onClick={runFullReset} disabled={isProcessing}>
-                        {isProcessing ? <Loader2 className="animate-spin mr-2" /> : "Yes, Wipe All Data"}
-                      </Button>
-                    </DialogFooter>
-                  </div>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle className="text-destructive flex items-center gap-2">
+                      <AlertTriangle className="h-6 w-6" /> Destructive Action Confirmation
+                    </DialogTitle>
+                    <DialogDescription asChild>
+                      <div className="pt-4 space-y-3">
+                        <p className="font-bold text-foreground">Are you absolutely sure you want to wipe the database?</p>
+                        <ul className="list-disc pl-5 text-xs space-y-1">
+                          <li>All <strong>Jobs</strong> and <strong>Orders</strong> will be deleted.</li>
+                          <li>All <strong>Jumbo Stock</strong> and <strong>Inventory</strong> will be cleared.</li>
+                          <li><strong>Counters</strong> will reset to sequence #1.</li>
+                          <li><span className="text-emerald-600 font-bold">Safe:</span> Users and System Settings will be preserved.</li>
+                        </ul>
+                      </div>
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter className="gap-2 sm:gap-0">
+                    <Button variant="ghost" onClick={() => setIsWipeConfirmOpen(false)}>Cancel</Button>
+                    <Button variant="destructive" onClick={runFullReset} disabled={isProcessing}>
+                      {isProcessing ? <Loader2 className="animate-spin mr-2" /> : "Yes, Wipe All Data"}
+                    </Button>
+                  </DialogFooter>
                 </DialogContent>
               </Dialog>
             </CardContent>
