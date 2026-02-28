@@ -48,7 +48,8 @@ import {
   FileUp,
   Download,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  History
 } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp } from "firebase/firestore"
@@ -58,6 +59,7 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Progress } from "@/components/ui/progress"
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 import Image from "next/image"
 import * as XLSX from 'xlsx'
@@ -96,14 +98,16 @@ export default function MasterDataPage() {
   const [editingItem, setEditingItem] = useState<any>(null)
   const [viewingItem, setViewingItem] = useState<any>(null)
   const [isExporting, setIsExporting] = useState(false)
-  const [isImporting, setIsImporting] = useState(false)
   
   // Import State
+  const [isImporting, setIsImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState(0)
   const [importData, setImportData] = useState<any[]>([])
   const [excelHeaders, setExcelHeaders] = useState<string[]>([])
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1)
   const [importSummary, setImportSummary] = useState<any>(null)
+  const [importErrorLogs, setImportErrorLogs] = useState<any[]>([])
 
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -209,6 +213,8 @@ export default function MasterDataPage() {
 
         setImportData(data);
         setExcelHeaders(headers || []);
+        setImportErrorLogs([]);
+        setImportProgress(0);
         
         // Auto-mapping logic
         const autoMap: Record<string, string> = {};
@@ -241,69 +247,111 @@ export default function MasterDataPage() {
     }
 
     setIsImporting(true);
+    setImportProgress(0);
     let successCount = 0;
     let skipCount = 0;
-    let errorCount = 0;
+    const errors: any[] = [];
 
     try {
       // 1. Fetch existing roll IDs for duplicate check
       const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
       const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
 
-      // 2. Process in chunks of 500 for Firestore Batches
-      for (let i = 0; i < importData.length; i += 500) {
-        const batch = writeBatch(firestore);
-        const chunk = importData.slice(i, i + 500);
+      const batchSize = 200; // Chunk size for Firestore batches
+      const totalRows = importData.length;
 
-        chunk.forEach((row: any) => {
+      // 2. Process in chunks
+      for (let i = 0; i < totalRows; i += batchSize) {
+        const batch = writeBatch(firestore);
+        const chunk = importData.slice(i, i + batchSize);
+
+        chunk.forEach((row: any, indexWithinChunk: number) => {
+          const actualRowIndex = i + indexWithinChunk + 1; // +1 for user-friendly 1-based indexing
           const rollNo = String(row[columnMapping['roll_no']] || "").trim();
           
-          if (!rollNo || existingRolls.has(rollNo)) {
+          if (!rollNo) {
+            errors.push({ row: actualRowIndex, rollNo: "N/A", message: "Missing Roll ID" });
+            return;
+          }
+
+          if (existingRolls.has(rollNo)) {
             skipCount++;
             return;
           }
 
-          const width = Number(row[columnMapping['width_mm']]) || 0;
-          const length = Number(row[columnMapping['length_mtr']]) || 0;
-          const gsm = Number(row[columnMapping['gsm']]) || 0;
-          const sqm = Number((width * length / 1000).toFixed(2));
+          try {
+            const width = Number(row[columnMapping['width_mm']]) || 0;
+            const length = Number(row[columnMapping['length_mtr']]) || 0;
+            const gsm = Number(row[columnMapping['gsm']]) || 0;
+            const sqm = Number((width * length / 1000).toFixed(2));
 
-          const newRollRef = doc(collection(firestore, 'jumbo_stock'));
-          batch.set(newRollRef, {
-            rollNo,
-            paperCompany: row[columnMapping['paper_company']] || row[columnMapping['supplier']] || "Unknown",
-            paperType: row[columnMapping['paper_type']] || "Standard",
-            gsm,
-            widthMm: width,
-            lengthMeters: length,
-            sqm,
-            weightKg: Number(row[columnMapping['weight_kg']]) || 0,
-            purchaseRate: Number(row[columnMapping['rate_per_sqm']]) || 0,
-            receivedDate: row[columnMapping['purchase_date']] || new Date().toISOString().split('T')[0],
-            jobNo: row[columnMapping['grn_number']] || "",
-            location: row[columnMapping['location']] || "Main Store",
-            status: "In Stock",
-            createdAt: new Date().toISOString(),
-            createdById: user.uid,
-            imported: true
-          });
+            const newRollRef = doc(collection(firestore, 'jumbo_stock'));
+            batch.set(newRollRef, {
+              rollNo,
+              paperCompany: row[columnMapping['paper_company']] || row[columnMapping['supplier']] || "Unknown",
+              paperType: row[columnMapping['paper_type']] || "Standard",
+              gsm,
+              widthMm: width,
+              lengthMeters: length,
+              sqm,
+              weightKg: Number(row[columnMapping['weight_kg']]) || 0,
+              purchaseRate: Number(row[columnMapping['rate_per_sqm']]) || 0,
+              receivedDate: row[columnMapping['purchase_date']] || new Date().toISOString().split('T')[0],
+              jobNo: row[columnMapping['grn_number']] || "",
+              location: row[columnMapping['location']] || "Main Store",
+              status: "In Stock",
+              createdAt: new Date().toISOString(),
+              createdById: user.uid,
+              imported: true
+            });
 
-          existingRolls.add(rollNo);
-          successCount++;
+            existingRolls.add(rollNo);
+            successCount++;
+          } catch (rowErr: any) {
+            errors.push({ row: actualRowIndex, rollNo, message: rowErr.message });
+          }
         });
 
         await batch.commit();
+        
+        // Update progress
+        const processedCount = Math.min(i + batchSize, totalRows);
+        setImportProgress(Math.round((processedCount / totalRows) * 100));
       }
 
-      setImportSummary({ total: importData.length, success: successCount, skipped: skipCount, errors: errorCount });
+      setImportSummary({ total: totalRows, success: successCount, skipped: skipCount, errors: errors.length });
+      setImportErrorLogs(errors);
       setImportStep(3);
-      toast({ title: "Import Complete", description: `Successfully added ${successCount} rolls.` });
+      
+      if (errors.length > 0) {
+        toast({ 
+          variant: "destructive", 
+          title: "Import Finished with Errors", 
+          description: `Imported ${successCount} rolls. ${errors.length} rows failed.` 
+        });
+      } else {
+        toast({ title: "Import Complete", description: `Successfully added ${successCount} rolls.` });
+      }
     } catch (err: any) {
       console.error(err);
       toast({ variant: "destructive", title: "Import Failed", description: err.message });
     } finally {
       setIsImporting(false);
     }
+  }
+
+  const downloadErrorReport = () => {
+    if (importErrorLogs.length === 0) return;
+    
+    const ws = XLSX.utils.json_to_sheet(importErrorLogs.map(log => ({
+      "Row Number": log.row,
+      "Roll No": log.rollNo,
+      "Error Message": log.message
+    })));
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Import Errors");
+    XLSX.writeFile(wb, "paper_stock_import_errors.xlsx");
   }
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
@@ -480,9 +528,12 @@ export default function MasterDataPage() {
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <FileUp className="h-5 w-5 text-primary" /> Multi-Stock Bulk Import
+              <FileUp className="h-5 w-5 text-primary" /> 
+              {isImporting ? "Importing Stock Data..." : importStep === 3 ? "Import Completed" : "Multi-Stock Bulk Import"}
             </DialogTitle>
-            <DialogDescription>Professional Excel upload system with dynamic column mapping.</DialogDescription>
+            <DialogDescription>
+              {isImporting ? "Please wait while records are being committed to the registry." : "Professional Excel upload system with dynamic column mapping."}
+            </DialogDescription>
           </DialogHeader>
 
           {importStep === 1 && (
@@ -525,7 +576,7 @@ export default function MasterDataPage() {
                     <p className="text-[10px] text-muted-foreground uppercase">Map the columns below to system fields</p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setImportStep(1)}>Change File</Button>
+                {!isImporting && <Button variant="outline" size="sm" onClick={() => setImportStep(1)}>Change File</Button>}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4 border rounded-xl p-6 bg-card">
@@ -536,6 +587,7 @@ export default function MasterDataPage() {
                       {columnMapping[field.id] && <Badge className="bg-emerald-500 h-4 text-[8px]">MAPPED</Badge>}
                     </Label>
                     <Select 
+                      disabled={isImporting}
                       value={columnMapping[field.id] || ""} 
                       onValueChange={(val) => setColumnMapping(prev => ({...prev, [field.id]: val}))}
                     >
@@ -550,25 +602,40 @@ export default function MasterDataPage() {
                 ))}
               </div>
 
-              <div className="bg-muted/20 p-4 rounded-lg">
-                <p className="text-[10px] font-bold uppercase mb-2 flex items-center gap-1 text-muted-foreground">
-                  <Info className="h-3 w-3" /> Technical Preview (First 3 Rows)
-                </p>
-                <div className="overflow-x-auto">
-                  <Table className="text-[10px]">
-                    <TableHeader><TableRow>
-                      {excelHeaders.slice(0, 5).map(h => <TableHead key={h}>{h}</TableHead>)}
-                    </TableRow></TableHeader>
-                    <TableBody>
-                      {importData.slice(0, 3).map((row, idx) => (
-                        <TableRow key={idx}>
-                          {excelHeaders.slice(0, 5).map(h => <TableCell key={h}>{String(row[h] || "-")}</TableCell>)}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+              {isImporting && (
+                <div className="space-y-3 p-4 bg-muted/30 rounded-lg animate-in fade-in zoom-in-95">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase text-primary">
+                    <span>Processing Data Pipeline...</span>
+                    <span>{importProgress}%</span>
+                  </div>
+                  <Progress value={importProgress} className="h-2" />
+                  <p className="text-center text-[10px] text-muted-foreground italic">
+                    Saving records in high-performance batches...
+                  </p>
                 </div>
-              </div>
+              )}
+
+              {!isImporting && (
+                <div className="bg-muted/20 p-4 rounded-lg">
+                  <p className="text-[10px] font-bold uppercase mb-2 flex items-center gap-1 text-muted-foreground">
+                    <Info className="h-3 w-3" /> Technical Preview (First 3 Rows)
+                  </p>
+                  <div className="overflow-x-auto">
+                    <Table className="text-[10px]">
+                      <TableHeader><TableRow>
+                        {excelHeaders.slice(0, 5).map(h => <TableHead key={h}>{h}</TableHead>)}
+                      </TableRow></TableHeader>
+                      <TableBody>
+                        {importData.slice(0, 3).map((row, idx) => (
+                          <TableRow key={idx}>
+                            {excelHeaders.slice(0, 5).map(h => <TableCell key={h}>{String(row[h] || "-")}</TableCell>)}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              )}
 
               <Button 
                 onClick={executeImport} 
@@ -576,7 +643,7 @@ export default function MasterDataPage() {
                 className="w-full h-12 text-lg font-black uppercase tracking-widest shadow-xl mt-4"
               >
                 {isImporting ? <Loader2 className="animate-spin mr-2" /> : <Database className="mr-2 h-5 w-5" />}
-                Execute Multi-Stock Import
+                {isImporting ? "Importing Records..." : "Start Bulk Import"}
               </Button>
             </div>
           )}
@@ -591,24 +658,35 @@ export default function MasterDataPage() {
                 <p className="text-muted-foreground">The transaction has been committed to the master registry.</p>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 max-w-md mx-auto">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
                 <div className="p-4 border rounded-xl bg-muted/10">
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Imported</p>
+                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Total Rows</p>
+                  <p className="text-3xl font-black">{importSummary.total}</p>
+                </div>
+                <div className="p-4 border rounded-xl bg-muted/10 border-emerald-200 bg-emerald-50/20">
+                  <p className="text-[10px] font-bold uppercase text-emerald-700">Imported</p>
                   <p className="text-3xl font-black text-emerald-600">{importSummary.success}</p>
                 </div>
-                <div className="p-4 border rounded-xl bg-muted/10">
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Skipped</p>
+                <div className="p-4 border rounded-xl bg-muted/10 border-amber-200 bg-amber-50/20">
+                  <p className="text-[10px] font-bold uppercase text-amber-700">Skipped</p>
                   <p className="text-3xl font-black text-amber-600">{importSummary.skipped}</p>
                 </div>
-                <div className="p-4 border rounded-xl bg-muted/10">
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Errors</p>
+                <div className="p-4 border rounded-xl bg-muted/10 border-destructive/20 bg-destructive/5">
+                  <p className="text-[10px] font-bold uppercase text-destructive">Errors</p>
                   <p className="text-3xl font-black text-destructive">{importSummary.errors}</p>
                 </div>
               </div>
 
               <div className="flex flex-col gap-3 max-w-sm mx-auto">
-                <Button onClick={() => setIsImportDialogOpen(false)} className="w-full font-bold">View Stock Registry</Button>
-                <Button variant="outline" onClick={() => setImportStep(1)} className="w-full font-bold">Upload Another File</Button>
+                {importErrorLogs.length > 0 && (
+                  <Button variant="outline" onClick={downloadErrorReport} className="w-full font-bold border-destructive text-destructive hover:bg-destructive/5">
+                    <AlertTriangle className="h-4 w-4 mr-2" /> Download Error Report
+                  </Button>
+                )}
+                <Button onClick={() => setIsImportDialogOpen(false)} className="w-full font-bold">Close Registry</Button>
+                <Button variant="ghost" onClick={() => setImportStep(1)} className="w-full font-bold text-muted-foreground hover:text-primary">
+                  <History className="h-4 w-4 mr-2" /> Import Another File
+                </Button>
               </div>
             </div>
           )}
