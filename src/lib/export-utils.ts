@@ -1,58 +1,81 @@
+
 'use client';
 
 import * as XLSX from 'xlsx';
-import { collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { Firestore } from 'firebase/firestore';
 
 /**
- * Shared utility to export paper stock (jumbo_stock) to Excel.
- * Supports exporting full stock or a filtered subset.
+ * Professional ERP Export Engine for Substrate Stock.
+ * Supports multi-field filtering and pharmaceutical traceability columns.
  */
-export async function exportPaperStockToExcel(firestore: Firestore, filteredData?: any[]) {
-  let dataToExport = filteredData;
+export async function exportPaperStockToExcel(firestore: Firestore, filters?: any) {
+  let dataToExport: any[] = [];
 
-  // If no filtered data is provided, fetch everything from the master registry
-  if (!dataToExport) {
-    try {
-      const jumboRef = collection(firestore, 'jumbo_stock');
-      const q = query(jumboRef, orderBy('receivedDate', 'desc'));
-      const snapshot = await getDocs(q);
-      dataToExport = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    } catch (error) {
-      console.error("Export failed:", error);
-      throw new Error("Failed to fetch full stock for export. Check connectivity.");
+  try {
+    const jumboRef = collection(firestore, 'jumbo_stock');
+    let constraints: any[] = [];
+
+    if (filters) {
+      if (filters.companies?.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
+      if (filters.types?.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
+      if (filters.gsms?.length > 0) constraints.push(where('gsm', 'in', filters.gsms.slice(0, 10).map(Number)));
+      if (filters.suppliers?.length > 0) constraints.push(where('supplier', 'in', filters.suppliers.slice(0, 10)));
+      if (filters.locations?.length > 0) constraints.push(where('location', 'in', filters.locations.slice(0, 10)));
+      if (filters.statuses?.length > 0) constraints.push(where('status', 'in', filters.statuses.slice(0, 10)));
+      
+      if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
+      if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
     }
+
+    const q = constraints.length > 0 
+      ? query(jumboRef, ...constraints)
+      : query(jumboRef, orderBy('receivedDate', 'desc'));
+
+    const snapshot = await getDocs(q);
+    dataToExport = snapshot.docs.map((doc, idx) => ({ 
+      sn: idx + 1,
+      ...doc.data() 
+    }));
+  } catch (error) {
+    console.error("Master Data Export Failed:", error);
+    throw new Error("Failed to compile stock registry for export.");
   }
 
-  if (!dataToExport || dataToExport.length === 0) {
-    throw new Error("No data available to export.");
+  if (dataToExport.length === 0) {
+    throw new Error("No matching records found for the current filter criteria.");
   }
 
-  // Map Firestore fields to the requested professional column headers
+  // 19 Technical Columns + S/N
   const formattedData = dataToExport.map((j: any) => ({
-    "ROLL NO": j.rollNo || "",
+    "S/N": j.sn,
+    "RELL NO": j.rollNo || "",
     "PAPER COMPANY": j.paperCompany || "",
     "PAPER TYPE": j.paperType || "",
-    "GSM": j.gsm || 0,
     "WIDTH (MM)": j.widthMm || 0,
     "LENGTH (MTR)": j.lengthMeters || 0,
     "SQM": j.sqm || 0,
+    "GSM": j.gsm || 0,
     "WEIGHT (KG)": j.weightKg || 0,
-    "SUPPLIER": j.paperCompany || "", 
-    "GRN NO": j.rollNo || "", 
-    "PURCHASE DATE": j.receivedDate || "",
-    "RATE PER SQM": j.purchaseRate || 0,
-    "LOCATION": j.location || "Main Store",
-    "STATUS": j.status || "In Stock"
+    "PURCHASE RATE": j.purchaseRate || 0,
+    "WASTAGE": j.wastage || 0,
+    "DATE OF USE": j.dateOfUse || "-",
+    "DATE RECEIVED": j.receivedDate || "",
+    "JOB NO": j.jobNo || "-",
+    "SIZE": j.size || "-",
+    "PRODUCT NAME": j.productName || "-",
+    "CODE": j.code || "-",
+    "LOT NO": j.lotNo || "",
+    "DATE": j.date || "-",
+    "COMPANY RELL NO": j.companyRollNo || ""
   }));
 
   const ws = XLSX.utils.json_to_sheet(formattedData);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Paper Stock Registry");
+  XLSX.utils.book_append_sheet(wb, ws, "Stock Registry");
   
-  // Format: paper_stock_full_export_YYYYMMDD.xlsx
   const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  XLSX.writeFile(wb, `paper_stock_full_export_${dateStr}.xlsx`);
+  XLSX.writeFile(wb, `shree_label_stock_export_${dateStr}.xlsx`);
   
   return true;
 }

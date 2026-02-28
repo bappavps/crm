@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Separator } from "@/components/ui/separator"
+import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Separator } from "@/components/ui/separator"
 import { 
   Plus, 
   Loader2, 
@@ -20,22 +20,25 @@ import {
   FilterX, 
   Hash, 
   Calendar,
-  Filter,
   FileDown,
+  FileUp,
   ChevronLeft,
   ChevronRight,
   Trash2,
   X,
   Settings2,
+  Download,
+  AlertTriangle,
   CheckCircle2,
-  AlertCircle
+  Sparkles
 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter
+  DialogFooter,
+  DialogDescription
 } from "@/components/ui/dialog"
 import {
   Popover,
@@ -59,12 +62,11 @@ import {
   deleteDoc,
   writeBatch,
   serverTimestamp,
-  setDoc,
-  getDoc,
   runTransaction
 } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 
 // --- TYPES ---
@@ -80,8 +82,6 @@ interface FilterState {
   statuses: string[];
   lotNo: string;
   grnNo: string;
-  width: string;
-  length: string;
   startDate: string;
   endDate: string;
 }
@@ -95,20 +95,44 @@ const INITIAL_FILTERS: FilterState = {
   statuses: [],
   lotNo: "",
   grnNo: "",
-  width: "",
-  length: "",
   startDate: "",
   endDate: ""
 };
+
+const TEMPLATE_HEADERS = [
+  "RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", 
+  "GSM", "WEIGHT(KG)", "PURCHASE RATE", "WASTAGE", "DATE RECEIVED", 
+  "LOT NO", "COMPANY RELL NO", "LOCATION"
+];
+
+const SYSTEM_FIELDS = [
+  { label: "Roll No (Mandatory)", value: "rollNo" },
+  { label: "Paper Company", value: "paperCompany" },
+  { label: "Paper Type", value: "paperType" },
+  { label: "Width (mm)", value: "widthMm" },
+  { label: "Length (mtr)", value: "lengthMeters" },
+  { label: "GSM", value: "gsm" },
+  { label: "Weight (kg)", value: "weightKg" },
+  { label: "Purchase Rate", value: "purchaseRate" },
+  { label: "Wastage (%)", value: "wastage" },
+  { label: "Date Received", value: "receivedDate" },
+  { label: "Lot No", value: "lotNo" },
+  { label: "Company Roll No", value: "companyRollNo" },
+  { label: "Location", value: "location" }
+];
 
 export default function GRNPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
   const [isMounted, setIsMounted] = useState(false)
+  
+  // Dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  
+  // Data States
   const [isGenerating, setIsGenerating] = useState(false)
-  const [isManualId, setIsManualId] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -123,10 +147,18 @@ export default function GRNPage() {
   const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
   const [isPageLoading, setIsPageLoading] = useState(false)
 
-  // Sort & Filter State
+  // Filter & Sort State
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
+
+  // Upload State
+  const [importStep, setImportStep] = useState(1)
+  const [excelData, setExcelData] = useState<any[]>([])
+  const [excelHeaders, setExcelHeaders] = useState<string[]>([])
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [importSummary, setImportSummary] = useState<any>(null)
 
   // Options for multi-selects
   const [options, setOptions] = useState({
@@ -140,7 +172,7 @@ export default function GRNPage() {
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // Auth & Settings
+  // Auth check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
@@ -151,7 +183,7 @@ export default function GRNPage() {
   const settingsRef = useMemoFirebase(() => (!firestore ? null : doc(firestore, 'roll_settings', 'global_config')), [firestore]);
   const { data: settings } = useDoc(settingsRef);
 
-  // Fetch unique values for filter options
+  // Auto-generate filter options from data
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -168,13 +200,12 @@ export default function GRNPage() {
     return () => unsub();
   }, [firestore, isAdmin]);
 
-  // Dynamic Query Builder
+  // Query Builder
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    // Multi-selects (using 'in' operator)
     if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
     if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
     if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.slice(0, 10).map(Number)));
@@ -182,12 +213,6 @@ export default function GRNPage() {
     if (filters.locations.length > 0) constraints.push(where('location', 'in', filters.locations.slice(0, 10)));
     if (filters.statuses.length > 0) constraints.push(where('status', 'in', filters.statuses.slice(0, 10)));
 
-    // Equality filters
-    if (filters.width) constraints.push(where('widthMm', '==', Number(filters.width)));
-    if (filters.length) constraints.push(where('lengthMeters', '==', Number(filters.length)));
-
-    // Range constraints (Only one field allowed per query in Firestore)
-    // Priority: Date Range > Lot No > GRN No
     if (filters.startDate || filters.endDate) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
@@ -201,16 +226,15 @@ export default function GRNPage() {
 
     if (isCount) return query(q, ...constraints);
 
-    // Sorting & Pagination
     constraints.push(orderBy(sortField, sortOrder));
     const cursor = pageStack[currentPage - 1];
     if (cursor) constraints.push(startAfter(cursor));
-    if (pageSize !== 0) constraints.push(limit(pageSize));
+    constraints.push(limit(pageSize));
 
     return query(q, ...constraints);
   }
 
-  // Effect for Count & Data
+  // Load Data
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const load = async () => {
@@ -228,9 +252,8 @@ export default function GRNPage() {
           setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
           if (snap.docs.length > 0) setLastVisible(snap.docs[snap.docs.length - 1]);
         }
-      } catch (e: any) {
-        console.error(e);
-        toast({ variant: "destructive", title: "Query Error", description: "This combination might require a composite index or is too complex." });
+      } catch (e) {
+        toast({ variant: "destructive", title: "Query Complexity", description: "This filter combination is too complex or requires an index." });
       } finally {
         setIsPageLoading(false);
       }
@@ -246,26 +269,118 @@ export default function GRNPage() {
 
   const toggleMultiSelect = (field: keyof FilterState, value: string) => {
     const current = (filters[field] as string[]) || [];
-    const next = current.includes(value) 
-      ? current.filter(v => v !== value) 
-      : [...current, value];
-    
-    if (next.length > 10) {
-      toast({ variant: "destructive", title: "Limit Reached", description: "Maximum 10 values per filter." });
-      return;
-    }
+    const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
     handleFilterChange(field, next);
   }
 
-  const handleExport = async () => {
-    if (!firestore) return;
+  const resetFilters = () => {
+    setFilters(INITIAL_FILTERS);
+    setSortField('receivedDate');
+    setSortOrder('desc');
+    setCurrentPage(1);
+    setPageStack([null]);
+  }
+
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Stock Template");
+    XLSX.writeFile(wb, "paper_stock_template.xlsx");
+    toast({ title: "Template Downloaded" });
+  }
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const ab = evt.target?.result;
+        const wb = XLSX.read(ab, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws);
+        const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
+
+        setExcelData(data);
+        setExcelHeaders(headers);
+        setImportStep(2);
+      } catch (err) {
+        console.error("Excel Parse Error:", err);
+        toast({ variant: "destructive", title: "Format Error", description: "Could not parse Excel file." });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  const executeBulkImport = async () => {
+    if (!firestore || !user || !excelData.length) return;
+    
+    const rollNoMapping = Object.keys(columnMapping).find(k => columnMapping[k] === 'rollNo');
+    if (!rollNoMapping) {
+      toast({ variant: "destructive", title: "Mapping Error", description: "Roll No must be mapped." });
+      return;
+    }
+
+    setImportStep(3);
+    setUploadProgress(0);
+
+    const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
+    const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
+
+    let imported = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (let i = 0; i < excelData.length; i += 200) {
+      const batch = writeBatch(firestore);
+      const chunk = excelData.slice(i, i + 200);
+
+      chunk.forEach((row) => {
+        const rollId = String(row[rollNoMapping]);
+        if (existingRolls.has(rollId)) {
+          skipped++;
+          return;
+        }
+
+        const data: any = { status: 'In Stock', createdAt: serverTimestamp(), createdById: user.uid };
+        Object.entries(columnMapping).forEach(([excelHeader, systemKey]) => {
+          let val = row[excelHeader];
+          if (['widthMm', 'lengthMeters', 'gsm', 'weightKg', 'purchaseRate', 'wastage'].includes(systemKey)) {
+            val = Number(val) || 0;
+          }
+          data[systemKey] = val;
+        });
+
+        // Auto-calc SQM
+        if (data.widthMm && data.lengthMeters) {
+          data.sqm = (data.widthMm * data.lengthMeters) / 1000;
+        }
+
+        const docRef = doc(collection(firestore, 'jumbo_stock'));
+        batch.set(docRef, data);
+        imported++;
+      });
+
+      try {
+        await batch.commit();
+        setUploadProgress(Math.round(((i + chunk.length) / excelData.length) * 100));
+      } catch (err) {
+        console.error("Batch Commit Error:", err);
+        errors += chunk.length;
+      }
+    }
+
+    setImportSummary({ total: excelData.length, imported, skipped, errors });
+    setImportStep(4);
+    toast({ title: "Import Processed" });
+  }
+
+  const handleExportAll = async () => {
     setIsExporting(true);
     try {
       await exportPaperStockToExcel(firestore, filters as any);
-      toast({ title: "Export Started", description: "Your custom filtered report is being generated." });
-    } finally {
-      setIsExporting(false);
-    }
+    } finally { setIsExporting(false); }
   }
 
   const handleSingleDelete = async (roll: any) => {
@@ -274,19 +389,18 @@ export default function GRNPage() {
       setIsDeleting(true);
       try {
         await deleteDoc(doc(firestore, 'jumbo_stock', roll.id));
-        toast({ title: "Roll Removed" });
+        toast({ title: "Roll Deleted" });
         setTotalRecords(prev => prev - 1);
       } finally { setIsDeleting(false); }
     }
   }
 
-  // --- RENDER HELPERS ---
+  if (!isMounted) return null;
+
   const activeFiltersCount = Object.entries(filters).reduce((acc, [k, v]) => {
     if (Array.isArray(v)) return acc + v.length;
     return v ? acc + 1 : acc;
   }, 0);
-
-  if (!isMounted) return null;
 
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
@@ -295,68 +409,65 @@ export default function GRNPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Registry Center</h2>
-          <p className="text-muted-foreground font-medium italic">High-precision technical stock management & multi-field analysis.</p>
+          <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Substrate Registry (GRN)</h2>
+          <p className="text-muted-foreground font-medium italic">High-precision inventory analysis and technical data intake.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className={cn(activeFiltersCount > 0 && "border-primary text-primary")}>
-            <Settings2 className="mr-2 h-4 w-4" /> Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
+            <Settings2 className="h-4 w-4 mr-2" /> Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
           </Button>
-          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+          <Button variant="outline" onClick={handleExportAll} disabled={isExporting}>
             {isExporting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <FileDown className="mr-2 h-4 w-4" />} Export
           </Button>
-          <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg font-bold uppercase tracking-widest"><Plus className="mr-2 h-4 w-4" /> New Entry</Button>
+          <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg font-bold uppercase tracking-widest"><Plus className="mr-2 h-4 w-4" /> New Intake</Button>
         </div>
       </div>
 
-      {/* --- ADVANCED FILTER PANEL --- */}
+      {/* ADVANCED FILTERS */}
       {showFilters && (
         <Card className="border-primary/20 bg-primary/5 animate-in slide-in-from-top-2">
           <CardContent className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Search className="h-3 w-3" /> Lot / Batch Search</Label>
-                <Input placeholder="Prefix search..." value={filters.lotNo} onChange={(e) => handleFilterChange('lotNo', e.target.value)} className="bg-background h-9 text-xs" />
+                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Search className="h-3 w-3" /> Lot Search</Label>
+                <Input placeholder="Prefix..." value={filters.lotNo} onChange={(e) => handleFilterChange('lotNo', e.target.value)} className="bg-background h-9 text-xs" />
               </div>
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Hash className="h-3 w-3" /> GRN Number</Label>
-                <Input placeholder="Prefix search..." value={filters.grnNo} onChange={(e) => handleFilterChange('grnNo', e.target.value)} className="bg-background h-9 text-xs" />
+                <Input placeholder="Prefix..." value={filters.grnNo} onChange={(e) => handleFilterChange('grnNo', e.target.value)} className="bg-background h-9 text-xs" />
               </div>
               <div className="md:col-span-2 space-y-2">
-                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Date Range Picker</Label>
+                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Date Range</Label>
                 <div className="flex items-center gap-2">
                   <Input type="date" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="bg-background h-9 text-xs" />
-                  <span className="text-muted-foreground text-xs">to</span>
                   <Input type="date" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="bg-background h-9 text-xs" />
                 </div>
               </div>
             </div>
 
-            <Separator className="bg-primary/10" />
-
             <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
               {[
-                { label: 'Company', field: 'companies', options: options.companies },
-                { label: 'Paper Type', field: 'types', options: options.types },
-                { label: 'GSM', field: 'gsms', options: options.gsms },
-                { label: 'Supplier', field: 'suppliers', options: options.suppliers },
-                { label: 'Location', field: 'locations', options: options.locations },
-                { label: 'Status', field: 'statuses', options: options.statuses },
-              ].map((group) => (
-                <div key={group.label} className="space-y-2">
-                  <Label className="text-[9px] font-black uppercase text-muted-foreground">{group.label}</Label>
+                { label: 'Company', field: 'companies', opts: options.companies },
+                { label: 'Type', field: 'types', opts: options.types },
+                { label: 'GSM', field: 'gsms', opts: options.gsms },
+                { label: 'Supplier', field: 'suppliers', opts: options.suppliers },
+                { label: 'Location', field: 'locations', opts: options.locations },
+                { label: 'Status', field: 'statuses', opts: options.statuses },
+              ].map((g) => (
+                <div key={g.label} className="space-y-2">
+                  <Label className="text-[9px] font-black uppercase text-muted-foreground">{g.label}</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" size="sm" className="w-full justify-between h-8 text-[10px] font-bold bg-background">
-                        {filters[group.field as keyof FilterState].length === 0 ? 'Any' : `${filters[group.field as keyof FilterState].length} selected`}
-                        <ChevronLeft className="h-3 w-3 rotate-270" />
+                        {filters[g.field as keyof FilterState].length === 0 ? 'Any' : `${filters[g.field as keyof FilterState].length} selected`}
+                        <ChevronRight className="h-3 w-3 rotate-90" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-56 p-2 h-64 overflow-y-auto" align="start">
+                    <PopoverContent className="w-56 p-2 max-h-64 overflow-y-auto" align="start">
                       <div className="space-y-1">
-                        {group.options.map(opt => (
-                          <div key={opt} className="flex items-center space-x-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggleMultiSelect(group.field as keyof FilterState, opt)}>
-                            <Checkbox checked={filters[group.field as keyof FilterState].includes(opt)} />
+                        {g.opts.map(opt => (
+                          <div key={opt} className="flex items-center space-x-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggleMultiSelect(g.field as keyof FilterState, opt)}>
+                            <Checkbox checked={filters[g.field as keyof FilterState].includes(opt)} />
                             <span className="text-xs font-medium">{opt}</span>
                           </div>
                         ))}
@@ -369,27 +480,17 @@ export default function GRNPage() {
 
             <div className="flex items-center justify-between pt-2">
               <div className="flex gap-2 flex-wrap">
-                {Object.entries(filters).map(([k, v]) => {
-                  if (!v || (Array.isArray(v) && v.length === 0)) return null;
-                  return (
-                    <Badge key={k} variant="secondary" className="text-[9px] font-black uppercase bg-primary/10 text-primary border-none flex items-center gap-1 pr-1 h-6">
-                      {k}: {Array.isArray(v) ? v.length : v}
-                      <Button variant="ghost" size="icon" className="h-4 w-4 p-0 hover:bg-transparent" onClick={() => handleFilterChange(k as any, Array.isArray(v) ? [] : "")}>
-                        <X className="h-2 w-2" />
-                      </Button>
-                    </Badge>
-                  )
-                })}
+                {activeFiltersCount > 0 && <Badge variant="secondary" className="bg-primary text-white h-6 font-black uppercase text-[10px]">{activeFiltersCount} ACTIVE FILTERS</Badge>}
               </div>
-              <Button variant="ghost" size="sm" onClick={() => setFilters(INITIAL_FILTERS)} className="text-[10px] font-black uppercase text-destructive hover:text-destructive">
-                <FilterX className="mr-1 h-3 w-3" /> Reset All Filters
+              <Button variant="ghost" size="sm" onClick={resetFilters} className="text-[10px] font-black uppercase text-destructive hover:text-destructive">
+                <FilterX className="mr-1 h-3 w-3" /> Reset Registry View
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* --- DATA TABLE --- */}
+      {/* REGISTRY TABLE */}
       <Card className="shadow-2xl border-none overflow-hidden">
         <div className="bg-muted/30 p-4 border-b flex justify-between items-center">
           <div className="flex items-center gap-4">
@@ -399,14 +500,12 @@ export default function GRNPage() {
                 {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
             </Select>
-            <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">
-              Showing <span className="text-primary">{startIdx}-{endIdx}</span> of {totalRecords.toLocaleString()}
-            </span>
+            <span className="text-[10px] font-black uppercase text-muted-foreground">Showing {startIdx}-{endIdx} of {totalRecords.toLocaleString()}</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1 || isPageLoading} className="h-8 w-8 p-0"><ChevronLeft className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-8 w-8 p-0"><ChevronLeft className="h-4 w-4" /></Button>
             <Badge variant="secondary" className="h-8 px-3 text-[10px] font-black">PAGE {currentPage}</Badge>
-            <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p + 1)} disabled={endIdx >= totalRecords || isPageLoading} className="h-8 w-8 p-0"><ChevronRight className="h-4 w-4" /></Button>
+            <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p + 1)} disabled={endIdx >= totalRecords} className="h-8 w-8 p-0"><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
 
@@ -417,80 +516,65 @@ export default function GRNPage() {
                 <TableRow>
                   <TableHead className="w-[60px] font-black text-[10px] uppercase text-center sticky left-0 bg-muted/50 z-20">S/N</TableHead>
                   {[
-                    { label: 'RELL NO', field: 'rollNo' },
-                    { label: 'PAPER COMPANY', field: 'paperCompany' },
-                    { label: 'PAPER TYPE', field: 'paperType' },
-                    { label: 'WIDTH (MM)', field: 'widthMm' },
-                    { label: 'LENGTH (MTR)', field: 'lengthMeters' },
-                    { label: 'SQM', field: 'sqm' },
-                    { label: 'GSM', field: 'gsm' },
-                    { label: 'WEIGHT (KG)', field: 'weightKg' },
-                    { label: 'PURCHASE RATE', field: 'purchaseRate' },
-                    { label: 'WASTAGE', field: 'wastage' },
-                    { label: 'DATE OF USE', field: 'dateOfUse' },
-                    { label: 'DATE RECEIVED', field: 'receivedDate' },
-                    { label: 'JOB NO', field: 'jobNo' },
-                    { label: 'SIZE', field: 'size' },
-                    { label: 'PRODUCT NAME', field: 'productName' },
-                    { label: 'CODE', field: 'code' },
-                    { label: 'LOT NO', field: 'lotNo' },
-                    { label: 'DATE', field: 'date' },
-                    { label: 'COMPANY RELL NO', field: 'companyRollNo' }
-                  ].map(col => (
-                    <TableHead key={col.field}>
-                      <Button variant="ghost" size="sm" onClick={() => {
-                        const isAsc = sortField === col.field && sortOrder === 'asc';
-                        setSortField(col.field as any);
+                    { l: 'RELL NO', f: 'rollNo' },
+                    { l: 'COMPANY', f: 'paperCompany' },
+                    { l: 'TYPE', f: 'paperType' },
+                    { l: 'WIDTH (MM)', f: 'widthMm' },
+                    { l: 'LENGTH (MTR)', f: 'lengthMeters' },
+                    { l: 'SQM', f: 'sqm' },
+                    { l: 'GSM', f: 'gsm' },
+                    { l: 'WEIGHT (KG)', f: 'weightKg' },
+                    { l: 'RATE', f: 'purchaseRate' },
+                    { l: 'WASTAGE', f: 'wastage' },
+                    { l: 'USE DATE', f: 'dateOfUse' },
+                    { l: 'RECEIVED', f: 'receivedDate' },
+                    { l: 'JOB NO', f: 'jobNo' },
+                    { l: 'SIZE', f: 'size' },
+                    { l: 'PRODUCT', f: 'productName' },
+                    { l: 'CODE', f: 'code' },
+                    { l: 'LOT NO', f: 'lotNo' },
+                    { l: 'DATE', f: 'date' },
+                    { l: 'CO RELL NO', f: 'companyRollNo' }
+                  ].map(c => (
+                    <TableHead key={c.f} className="text-[10px] font-black uppercase">
+                      <Button variant="ghost" onClick={() => {
+                        const isAsc = sortField === c.f && sortOrder === 'asc';
+                        setSortField(c.f as any);
                         setSortOrder(isAsc ? 'desc' : 'asc');
-                      }} className="h-7 text-[10px] font-black uppercase hover:bg-transparent p-0">
-                        {col.label} <ArrowUpDown className="ml-1 h-3 w-3" />
+                      }} className="h-7 p-0 hover:bg-transparent font-black">
+                        {c.l} <ArrowUpDown className="ml-1 h-3 w-3" />
                       </Button>
                     </TableHead>
                   ))}
-                  {isAdmin && <TableHead className="text-right sticky right-0 bg-muted/50 z-20 font-black text-[10px]">ACTION</TableHead>}
+                  <TableHead className="text-right sticky right-0 bg-muted/50 z-20 font-black text-[10px]">ACTION</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isPageLoading ? (
-                  <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                ) : pagedJumbos.map((j, index) => (
+                {isPageLoading ? <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow> : pagedJumbos.map((j, i) => (
                   <TableRow key={j.id} className="hover:bg-primary/5 h-12">
-                    <TableCell className="text-center font-bold text-[10px] text-muted-foreground sticky left-0 bg-background z-10 border-r">
-                      {(currentPage - 1) * pageSize + index + 1}
-                    </TableCell>
-                    <TableCell className="font-black text-primary font-mono text-xs">
-                      <div className="flex flex-col">
-                        <span>{j.rollNo}</span>
-                        <Badge variant="outline" className={cn("text-[8px] h-4 mt-0.5", j.status === 'In Stock' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
-                          {j.status?.toUpperCase()}
-                        </Badge>
-                      </div>
-                    </TableCell>
+                    <TableCell className="text-center font-bold text-[10px] text-muted-foreground sticky left-0 bg-background z-10">{(currentPage-1)*pageSize+i+1}</TableCell>
+                    <TableCell className="font-black text-primary font-mono text-xs">{j.rollNo}</TableCell>
                     <TableCell className="text-[11px] font-bold">{j.paperCompany}</TableCell>
-                    <TableCell className="text-[11px] font-medium">{j.paperType}</TableCell>
+                    <TableCell className="text-[11px]">{j.paperType}</TableCell>
                     <TableCell className="text-[11px] font-mono">{j.widthMm}mm</TableCell>
                     <TableCell className="text-[11px] font-mono">{j.lengthMeters}m</TableCell>
                     <TableCell className="text-[11px] font-black text-primary">{j.sqm}</TableCell>
                     <TableCell className="text-[11px]">{j.gsm}</TableCell>
-                    <TableCell className="text-[11px] font-bold">{j.weightKg}kg</TableCell>
-                    <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString()}</TableCell>
-                    <TableCell className="text-[11px]">{j.wastage || 0}%</TableCell>
-                    <TableCell className="text-[10px] font-medium text-muted-foreground">{j.dateOfUse || '-'}</TableCell>
+                    <TableCell className="text-[11px]">{j.weightKg}kg</TableCell>
+                    <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate}</TableCell>
+                    <TableCell className="text-[11px]">{j.wastage}%</TableCell>
+                    <TableCell className="text-[10px]">{j.dateOfUse || '-'}</TableCell>
                     <TableCell className="text-[10px] font-bold">{j.receivedDate}</TableCell>
-                    <TableCell className="text-[11px] font-mono text-primary font-black">{j.jobNo || '-'}</TableCell>
+                    <TableCell className="text-[11px] font-mono">{j.jobNo || '-'}</TableCell>
                     <TableCell className="text-[11px]">{j.size || '-'}</TableCell>
                     <TableCell className="text-[11px] truncate max-w-[150px]">{j.productName || '-'}</TableCell>
                     <TableCell className="text-[11px] font-mono">{j.code || '-'}</TableCell>
                     <TableCell className="text-[11px] font-mono font-bold text-accent">{j.lotNo}</TableCell>
-                    <TableCell className="text-[10px] font-medium text-muted-foreground">{j.date || '-'}</TableCell>
+                    <TableCell className="text-[10px]">{j.date || '-'}</TableCell>
                     <TableCell className="text-[11px] font-mono">{j.companyRollNo || '-'}</TableCell>
-                    {isAdmin && (
-                      <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleSingleDelete(j)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    )}
+                    <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleSingleDelete(j)}><Trash2 className="h-4 w-4" /></Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -499,24 +583,21 @@ export default function GRNPage() {
         </CardContent>
       </Card>
 
+      {/* INTAKE DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[900px]">
           <form onSubmit={async (e) => {
             e.preventDefault();
-            if (!firestore || !user) return;
             setIsGenerating(true);
             const form = new FormData(e.currentTarget);
             const data = Object.fromEntries(form.entries());
-            
             try {
-              await runTransaction(firestore, async (transaction) => {
-                const counterRef = doc(firestore, 'counters', 'jumbo_roll');
-                const snap = await transaction.get(counterRef);
+              await runTransaction(firestore!, async (tx) => {
+                const countRef = doc(firestore!, 'counters', 'jumbo_roll');
+                const snap = await tx.get(countRef);
                 const nextNum = (snap.exists() ? snap.data().current_number : 1000) + 1;
-                const rollNo = isManualId ? (data.manualRollNo as string) : `${settings?.parentPrefix || "TLC-"}${nextNum}`;
-                
-                const newDocRef = doc(collection(firestore, 'jumbo_stock'));
-                transaction.set(newDocRef, {
+                const rollNo = `${settings?.parentPrefix || "TLC-"}${nextNum}`;
+                tx.set(doc(collection(firestore!, 'jumbo_stock')), {
                   ...data,
                   rollNo,
                   widthMm: Number(data.widthMm),
@@ -526,14 +607,13 @@ export default function GRNPage() {
                   status: 'In Stock',
                   createdAt: serverTimestamp()
                 });
-                
-                if (!isManualId) transaction.update(counterRef, { current_number: nextNum });
+                tx.update(countRef, { current_number: nextNum });
               });
-              toast({ title: "Roll Added" });
+              toast({ title: "Roll Added Successfully" });
               setIsDialogOpen(false);
             } finally { setIsGenerating(false); }
           }}>
-            <DialogHeader><DialogTitle>Technical Intake (19 Columns)</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Technical Stock Intake</DialogTitle><DialogDescription>Manual entry for single jumbo roll substrate.</DialogDescription></DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" required /></div>
@@ -546,7 +626,7 @@ export default function GRNPage() {
                 <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" required /></div>
               </div>
             </div>
-            <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : 'Complete GRN'}</Button></DialogFooter>
+            <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : 'Complete Intake'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
