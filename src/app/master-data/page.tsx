@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useRef, useMemo, useEffect } from "react"
@@ -49,10 +48,18 @@ import {
   Download,
   CheckCircle2,
   AlertTriangle,
-  History
+  History,
+  Filter,
+  FilterX,
+  ChevronDown,
+  ChevronUp,
+  ChevronLeft,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from "lucide-react"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
-import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp } from "firebase/firestore"
+import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, QueryDocumentSnapshot, DocumentData, deleteDoc } from "firebase/firestore"
 import { addDocumentNonBlocking, updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { usePermissions } from "@/components/auth/permission-context"
 import { Switch } from "@/components/ui/switch"
@@ -60,6 +67,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
+import { Checkbox } from "@/components/ui/checkbox"
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 import Image from "next/image"
 import * as XLSX from 'xlsx'
@@ -92,13 +100,36 @@ export default function MasterDataPage() {
   const { hasPermission, roles: userRoles } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<"materials" | "machines" | "customers" | "cylinders" | "suppliers" | "raw_materials" | "boms">("materials")
   const [editingItem, setEditingItem] = useState<any>(null)
-  const [viewingItem, setViewingItem] = useState<any>(null)
   const [isExporting, setIsExporting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   
+  // Selection State
+  const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set())
+
+  // Stock Registry Paging State
+  const [pageSize, setPageSize] = useState<number | 'all'>(20)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalRecords, setTotalRecords] = useState(0)
+  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
+  const [pageStack, setPageStack] = useState<any[]>([null])
+  const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
+  const [isPageLoading, setIsPageLoading] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Sort State
+  const [sortField, setSortField] = useState('receivedDate')
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+
+  // Stock Filter State
+  const [stockFilters, setStockFilters] = useState({
+    rollNo: "",
+    paperType: "all",
+    status: "all"
+  })
+
   // Import State
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
@@ -129,54 +160,160 @@ export default function MasterDataPage() {
     return collection(firestore, 'raw_materials');
   }, [firestore, user, adminData])
 
-  const bomsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'boms');
-  }, [firestore, user, adminData])
-
-  const machinesQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'machines');
-  }, [firestore, user, adminData])
-
-  const customersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    const base = collection(firestore, 'customers');
-    if (!isAdmin && user) {
-      return query(base, where("sales_owner_id", "==", user.uid));
-    }
-    return base;
-  }, [firestore, user, adminData, isAdmin])
-
-  const cylindersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'cylinders');
-  }, [firestore, user, adminData])
-
   const suppliersQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
     return collection(firestore, 'suppliers');
   }, [firestore, user, adminData])
 
-  const jumboStockQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'jumbo_stock'), orderBy('receivedDate', 'desc'));
-  }, [firestore, user, adminData])
-
   const { data: rawMaterials } = useCollection(rawMaterialsQuery)
-  const { data: boms } = useCollection(bomsQuery)
-  const { data: machines } = useCollection(machinesQuery)
-  const { data: customers } = useCollection(customersQuery)
-  const { data: cylinders } = useCollection(cylindersQuery)
   const { data: suppliers } = useCollection(suppliersQuery)
-  const { data: jumboStock, isLoading: jumboLoading } = useCollection(jumboStockQuery)
+
+  // 1. Fetch Total Count & Handle Pagination Reset for Stock Registry
+  useEffect(() => {
+    if (!firestore || !user || !adminData) return;
+
+    const fetchCount = async () => {
+      const baseRef = collection(firestore, 'jumbo_stock');
+      let q = query(baseRef);
+      if (stockFilters.paperType && stockFilters.paperType !== "all") q = query(q, where("paperType", "==", stockFilters.paperType));
+      if (stockFilters.status && stockFilters.status !== "all") q = query(q, where("status", "==", stockFilters.status));
+      if (stockFilters.rollNo) q = query(q, where("rollNo", "==", stockFilters.rollNo));
+      
+      const snapshot = await getCountFromServer(q);
+      setTotalRecords(snapshot.data().count);
+    };
+
+    fetchCount();
+    setCurrentPage(1);
+    setPageStack([null]);
+    setLastVisible(null);
+    setSelectedStockIds(new Set());
+  }, [firestore, user, adminData, stockFilters.paperType, stockFilters.status, stockFilters.rollNo]);
+
+  // 2. Fetch Paginated Stock Data
+  useEffect(() => {
+    if (!firestore || !user || !adminData) return;
+
+    const fetchData = async () => {
+      setIsPageLoading(true);
+      try {
+        const baseRef = collection(firestore, 'jumbo_stock');
+        let q = query(baseRef, orderBy(sortField, sortOrder));
+
+        if (stockFilters.paperType && stockFilters.paperType !== "all") q = query(q, where("paperType", "==", stockFilters.paperType));
+        if (stockFilters.status && stockFilters.status !== "all") q = query(q, where("status", "==", stockFilters.status));
+        if (stockFilters.rollNo) q = query(q, where("rollNo", "==", stockFilters.rollNo));
+
+        const cursor = pageStack[currentPage - 1];
+        if (cursor) q = query(q, startAfter(cursor));
+
+        if (pageSize !== 'all') q = query(q, limit(pageSize as number));
+
+        const snapshot = await getDocs(q);
+        const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        
+        setPagedJumbos(data);
+        if (snapshot.docs.length > 0) setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setIsPageLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [firestore, user, adminData, pageSize, currentPage, sortField, sortOrder, stockFilters.paperType, stockFilters.status, stockFilters.rollNo, pageStack]);
+
+  const handleNextPage = () => {
+    const currentLimit = pageSize === 'all' ? totalRecords : (pageSize as number);
+    if (currentPage * currentLimit < totalRecords) {
+      const nextStack = [...pageStack];
+      nextStack[currentPage] = lastVisible;
+      setPageStack(nextStack);
+      setCurrentPage(prev => prev + 1);
+      setSelectedStockIds(new Set());
+    }
+  }
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(prev => prev - 1);
+      setSelectedStockIds(new Set());
+    }
+  }
+
+  const handlePageSizeChange = (val: string) => {
+    if (val === 'all') {
+      if (totalRecords > 2000) {
+        toast({ variant: "destructive", title: "Limit Exceeded", description: "Cannot show 'All' for more than 2,000 records." });
+        return;
+      }
+      setPageSize('all');
+    } else {
+      setPageSize(Number(val));
+    }
+    setCurrentPage(1);
+    setPageStack([null]);
+    setSelectedStockIds(new Set());
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedStockIds.size === pagedJumbos.length) setSelectedStockIds(new Set());
+    else setSelectedStockIds(new Set(pagedJumbos.map(j => j.id)));
+  }
+
+  const toggleSelect = (id: string) => {
+    const next = new Set(selectedStockIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedStockIds(next);
+  }
+
+  const handleSingleStockDelete = async (roll: any) => {
+    if (!isAdmin || !firestore) return;
+    if (confirm(`Are you sure you want to delete Roll ID ${roll.rollNo}?`)) {
+      setIsDeleting(true);
+      try {
+        await deleteDoc(doc(firestore, 'jumbo_stock', roll.id));
+        toast({ title: "Roll Deleted" });
+        setTotalRecords(prev => prev - 1);
+      } catch (e) {
+        toast({ variant: "destructive", title: "Delete Failed" });
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  }
+
+  const handleBulkStockDelete = async () => {
+    if (!isAdmin || !firestore || selectedStockIds.size === 0) return;
+    if (confirm(`CRITICAL: Delete ${selectedStockIds.size} stock records forever?`)) {
+      setIsDeleting(true);
+      try {
+        const ids = Array.from(selectedStockIds);
+        for (let i = 0; i < ids.length; i += 500) {
+          const batch = writeBatch(firestore);
+          const chunk = ids.slice(i, i + 500);
+          chunk.forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
+          await batch.commit();
+        }
+        toast({ title: "Bulk Delete Successful", description: `${ids.length} records removed.` });
+        setSelectedStockIds(new Set());
+        setTotalRecords(prev => prev - ids.length);
+      } catch (e) {
+        toast({ variant: "destructive", title: "Bulk Delete Failed" });
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  }
 
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Stock Template");
     XLSX.writeFile(wb, "paper_stock_template.xlsx");
-    toast({ title: "Template Downloaded", description: "Use this file for bulk uploads." });
+    toast({ title: "Template Downloaded" });
   }
 
   const handleExportAll = async () => {
@@ -184,7 +321,7 @@ export default function MasterDataPage() {
     setIsExporting(true)
     try {
       await exportPaperStockToExcel(firestore)
-      toast({ title: "Export Complete", description: "Stock registry downloaded." })
+      toast({ title: "Export Complete" })
     } catch (e: any) {
       toast({ variant: "destructive", title: "Export Failed", description: e.message })
     } finally {
@@ -195,7 +332,6 @@ export default function MasterDataPage() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -205,34 +341,12 @@ export default function MasterDataPage() {
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws);
         const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
-
-        if (data.length === 0) {
-          toast({ variant: "destructive", title: "Empty File", description: "The uploaded file contains no data." });
-          return;
-        }
-
+        if (data.length === 0) return;
         setImportData(data);
         setExcelHeaders(headers || []);
-        setImportErrorLogs([]);
-        setImportProgress(0);
-        
-        // Auto-mapping logic
-        const autoMap: Record<string, string> = {};
-        headers?.forEach(h => {
-          const norm = h.toUpperCase().replace(/\s/g, '_');
-          if (norm === 'ROLL_NO' || norm === 'RELL_NO') autoMap['roll_no'] = h;
-          if (norm === 'PAPER_COMPANY' || norm === 'SUPPLIER') autoMap['paper_company'] = h;
-          if (norm === 'PAPER_TYPE') autoMap['paper_type'] = h;
-          if (norm === 'GSM') autoMap['gsm'] = h;
-          if (norm === 'WIDTH_(MM)' || norm === 'WIDTH') autoMap['width_mm'] = h;
-          if (norm === 'LENGTH_(MTR)' || norm === 'LENGTH') autoMap['length_mtr'] = h;
-          if (norm === 'PURCHASE_DATE' || norm === 'DATE') autoMap['purchase_date'] = h;
-          if (norm === 'LOCATION') autoMap['location'] = h;
-        });
-        setColumnMapping(autoMap);
         setImportStep(2);
       } catch (err) {
-        toast({ variant: "destructive", title: "Parsing Error", description: "Could not read the Excel file format." });
+        toast({ variant: "destructive", title: "Parsing Error" });
       }
     };
     reader.readAsBinaryString(file);
@@ -240,118 +354,51 @@ export default function MasterDataPage() {
 
   const executeImport = async () => {
     if (!firestore || !user || !isAdmin) return;
-    
-    if (!columnMapping['roll_no']) {
-      toast({ variant: "destructive", title: "Mapping Error", description: "ROLL NO mapping is required." });
-      return;
-    }
-
     setIsImporting(true);
     setImportProgress(0);
     let successCount = 0;
     let skipCount = 0;
     const errors: any[] = [];
-
     try {
-      // 1. Fetch existing roll IDs for duplicate check
       const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
       const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
-
-      const batchSize = 200; // Chunk size for Firestore batches
       const totalRows = importData.length;
-
-      // 2. Process in chunks
-      for (let i = 0; i < totalRows; i += batchSize) {
+      for (let i = 0; i < totalRows; i += 200) {
         const batch = writeBatch(firestore);
-        const chunk = importData.slice(i, i + batchSize);
-
-        chunk.forEach((row: any, indexWithinChunk: number) => {
-          const actualRowIndex = i + indexWithinChunk + 1; // +1 for user-friendly 1-based indexing
+        const chunk = importData.slice(i, i + 200);
+        chunk.forEach((row: any, idx: number) => {
           const rollNo = String(row[columnMapping['roll_no']] || "").trim();
-          
-          if (!rollNo) {
-            errors.push({ row: actualRowIndex, rollNo: "N/A", message: "Missing Roll ID" });
-            return;
-          }
-
-          if (existingRolls.has(rollNo)) {
-            skipCount++;
-            return;
-          }
-
+          if (!rollNo || existingRolls.has(rollNo)) { skipCount++; return; }
           try {
             const width = Number(row[columnMapping['width_mm']]) || 0;
             const length = Number(row[columnMapping['length_mtr']]) || 0;
-            const gsm = Number(row[columnMapping['gsm']]) || 0;
             const sqm = Number((width * length / 1000).toFixed(2));
-
             const newRollRef = doc(collection(firestore, 'jumbo_stock'));
             batch.set(newRollRef, {
               rollNo,
-              paperCompany: row[columnMapping['paper_company']] || row[columnMapping['supplier']] || "Unknown",
+              paperCompany: row[columnMapping['paper_company']] || "Unknown",
               paperType: row[columnMapping['paper_type']] || "Standard",
-              gsm,
+              gsm: Number(row[columnMapping['gsm']]) || 0,
               widthMm: width,
               lengthMeters: length,
               sqm,
-              weightKg: Number(row[columnMapping['weight_kg']]) || 0,
-              purchaseRate: Number(row[columnMapping['rate_per_sqm']]) || 0,
-              receivedDate: row[columnMapping['purchase_date']] || new Date().toISOString().split('T')[0],
-              jobNo: row[columnMapping['grn_number']] || "",
-              location: row[columnMapping['location']] || "Main Store",
               status: "In Stock",
+              receivedDate: row[columnMapping['purchase_date']] || new Date().toISOString().split('T')[0],
               createdAt: new Date().toISOString(),
-              createdById: user.uid,
-              imported: true
+              createdById: user.uid
             });
-
             existingRolls.add(rollNo);
             successCount++;
-          } catch (rowErr: any) {
-            errors.push({ row: actualRowIndex, rollNo, message: rowErr.message });
-          }
+          } catch (e) { errors.push({ row: i+idx+1, message: "Invalid row data" }); }
         });
-
         await batch.commit();
-        
-        // Update progress
-        const processedCount = Math.min(i + batchSize, totalRows);
-        setImportProgress(Math.round((processedCount / totalRows) * 100));
+        setImportProgress(Math.round((Math.min(i + 200, totalRows) / totalRows) * 100));
       }
-
       setImportSummary({ total: totalRows, success: successCount, skipped: skipCount, errors: errors.length });
-      setImportErrorLogs(errors);
       setImportStep(3);
-      
-      if (errors.length > 0) {
-        toast({ 
-          variant: "destructive", 
-          title: "Import Finished with Errors", 
-          description: `Imported ${successCount} rolls. ${errors.length} rows failed.` 
-        });
-      } else {
-        toast({ title: "Import Complete", description: `Successfully added ${successCount} rolls.` });
-      }
-    } catch (err: any) {
-      console.error(err);
-      toast({ variant: "destructive", title: "Import Failed", description: err.message });
     } finally {
       setIsImporting(false);
     }
-  }
-
-  const downloadErrorReport = () => {
-    if (importErrorLogs.length === 0) return;
-    
-    const ws = XLSX.utils.json_to_sheet(importErrorLogs.map(log => ({
-      "Row Number": log.row,
-      "Roll No": log.rollNo,
-      "Error Message": log.message
-    })));
-    
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Import Errors");
-    XLSX.writeFile(wb, "paper_stock_import_errors.xlsx");
   }
 
   const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
@@ -359,51 +406,22 @@ export default function MasterDataPage() {
     const formData = new FormData(e.currentTarget)
     const rawData = Object.fromEntries(formData.entries())
     if (!firestore || !user) return
-
     let finalData: any = { ...rawData };
-
-    if (dialogType === 'customers') {
-      finalData = {
-        ...finalData,
-        creditDays: Number(rawData.creditDays) || 0,
-        outstandingAmount: Number(rawData.outstandingAmount) || 0,
-        creditLimit: Number(rawData.creditLimit) || 0,
-        status: rawData.status === 'on' ? 'Active' : 'Inactive',
-        isCreditBlocked: rawData.isCreditBlocked === 'on',
-        photoUrl: photoPreview || editingItem?.photoUrl || null,
-        sales_owner_id: editingItem?.sales_owner_id || user.uid
-      }
-    } else if (dialogType === 'raw_materials') {
-      finalData = {
-        ...finalData,
-        rate_per_unit: Number(rawData.rate_per_unit),
-        is_composite: rawData.is_composite === 'on',
-        active: true
-      }
+    if (dialogType === 'raw_materials') {
+      finalData = { ...finalData, rate_per_unit: Number(rawData.rate_per_unit), active: true }
     }
-
     if (editingItem) {
-      updateDocumentNonBlocking(doc(firestore, dialogType, editingItem.id), {
-        ...finalData,
-        updatedAt: new Date().toISOString(),
-        updatedById: user.uid
-      })
+      updateDocumentNonBlocking(doc(firestore, dialogType, editingItem.id), { ...finalData, updatedAt: new Date().toISOString(), updatedById: user.uid })
       toast({ title: "Record Updated" })
     } else {
-      addDocumentNonBlocking(collection(firestore, dialogType), {
-        ...finalData,
-        id: crypto.randomUUID(),
-        createdAt: new Date().toISOString(),
-        createdById: user.uid
-      })
-      toast({ title: "Master Data Created" })
+      addDocumentNonBlocking(collection(firestore, dialogType), { ...finalData, id: crypto.randomUUID(), createdAt: new Date().toISOString(), createdById: user.uid })
+      toast({ title: "Created" })
     }
-
     setIsDialogOpen(false)
     setEditingItem(null)
   }
 
-  const handleDelete = (type: string, id: string, name: string) => {
+  const handleMasterDelete = (type: string, id: string, name: string) => {
     if (!firestore) return
     if (confirm(`Delete "${name}"?`)) {
       deleteDocumentNonBlocking(doc(firestore, type, id))
@@ -413,12 +431,16 @@ export default function MasterDataPage() {
 
   if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
 
+  const currentLimit = pageSize === 'all' ? totalRecords : (pageSize as number);
+  const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * currentLimit + 1;
+  const endIdx = pageSize === 'all' ? totalRecords : Math.min(currentPage * currentLimit, totalRecords);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary uppercase">Master Control Panel</h2>
-          <p className="text-muted-foreground">Configure global constants and enterprise resource registers.</p>
+          <p className="text-muted-foreground">Global constants and resource registries.</p>
         </div>
       </div>
 
@@ -426,66 +448,127 @@ export default function MasterDataPage() {
         <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto scrollbar-none">
           <TabsTrigger value="raw_materials" className="gap-2 font-bold"><FlaskConical className="h-4 w-4" /> Raw Materials</TabsTrigger>
           <TabsTrigger value="paper_stock" className="gap-2 font-bold"><Package className="h-4 w-4" /> Paper Stock</TabsTrigger>
-          <TabsTrigger value="boms" className="gap-2 font-bold"><Layers className="h-4 w-4" /> BOM Master</TabsTrigger>
           <TabsTrigger value="suppliers" className="gap-2 font-bold"><Truck className="h-4 w-4" /> Suppliers</TabsTrigger>
-          <TabsTrigger value="machines" className="gap-2 font-bold"><Box className="h-4 w-4" /> Machines</TabsTrigger>
-          <TabsTrigger value="cylinders" className="gap-2 font-bold"><Ruler className="h-4 w-4" /> Cylinders</TabsTrigger>
-          <TabsTrigger value="clients" className="gap-2 font-bold"><Users className="h-4 w-4" /> Clients</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="paper_stock">
+        <TabsContent value="paper_stock" className="space-y-6">
           <Card className="border-none shadow-xl">
-            <CardHeader className="flex flex-row items-center justify-between bg-primary/5">
+            <CardHeader className="flex flex-col md:flex-row md:items-center justify-between bg-primary/5 gap-4">
               <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5 text-primary" /> Jumbo Substrate Registry
-                </CardTitle>
-                <CardDescription>Master database of all inventory rolls in the system.</CardDescription>
+                <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-primary" /> Jumbo Substrate Registry</CardTitle>
+                <CardDescription>Transactional stock directory with batch controls.</CardDescription>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {isAdmin && (
                   <>
-                    <Button variant="outline" onClick={downloadTemplate} className="h-9">
-                      <Download className="h-4 w-4 mr-2" /> Template
-                    </Button>
-                    <Button variant="outline" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="h-9 border-primary text-primary hover:bg-primary/5">
-                      <FileUp className="h-4 w-4 mr-2" /> Upload Excel
-                    </Button>
+                    <Button variant="outline" size="sm" onClick={downloadTemplate}><Download className="h-4 w-4 mr-2" /> Template</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary hover:bg-primary/5"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button>
                   </>
                 )}
-                <Button variant="outline" onClick={handleExportAll} disabled={isExporting} className="h-9">
-                  {isExporting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
-                  Export All
-                </Button>
+                <Button variant="outline" size="sm" onClick={handleExportAll} disabled={isExporting}>{isExporting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileDown className="h-4 w-4 mr-2" />} Export All</Button>
               </div>
             </CardHeader>
+
+            <div className="p-4 border-b bg-muted/10 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground">Rows:</Label>
+                    <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
+                      <SelectTrigger className="w-[80px] h-8 text-xs font-bold"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                        <SelectItem value="all" disabled={totalRecords > 2000}>All</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-background px-3 py-1.5 rounded-full border">
+                    {totalRecords > 0 ? <>Showing <span className="text-primary">{startIdx}–{endIdx}</span> of {totalRecords.toLocaleString()}</> : "No records"}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={handlePrevPage} disabled={currentPage === 1 || isPageLoading}><ChevronLeft className="h-4 w-4" /></Button>
+                  <Badge variant="secondary" className="h-8 px-3 text-xs font-black">PAGE {currentPage}</Badge>
+                  <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={handleNextPage} disabled={pageSize === 'all' || endIdx >= totalRecords || isPageLoading}><ChevronRight className="h-4 w-4" /></Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-2 text-[10px] font-bold" onClick={() => setShowFilters(!showFilters)}>
+                    <Filter className="h-3 w-3 mr-1" /> {showFilters ? 'Hide' : 'Show'} Filters
+                  </Button>
+                </div>
+              </div>
+
+              {showFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-background border rounded-xl animate-in fade-in slide-in-from-top-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase">Paper Type</Label>
+                    <Select value={stockFilters.paperType} onValueChange={val => setStockFilters({...stockFilters, paperType: val})}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Types</SelectItem>
+                        {rawMaterials?.filter(rm => rm.category === 'Paper' || rm.category === 'Substrate').map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase">Status</Label>
+                    <Select value={stockFilters.status} onValueChange={val => setStockFilters({...stockFilters, status: val})}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Status</SelectItem>
+                        <SelectItem value="In Stock">In Stock</SelectItem>
+                        <SelectItem value="Consumed">Consumed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-[10px] font-black uppercase">Roll ID</Label>
+                    <Input className="h-9" value={stockFilters.rollNo} onChange={e => setStockFilters({...stockFilters, rollNo: e.target.value})} placeholder="Full ID..." />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Button variant="outline" className="h-9 flex-1" onClick={() => setStockFilters({rollNo: "", paperType: "all", status: "all"})}><FilterX className="h-4 w-4 mr-2" /> Reset</Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <CardContent className="p-0">
               <Table>
                 <TableHeader className="bg-muted/30">
                   <TableRow>
+                    <TableHead className="w-[50px] text-center">
+                      <Checkbox checked={selectedStockIds.size === pagedJumbos.length && pagedJumbos.length > 0} onCheckedChange={toggleSelectAll} />
+                    </TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Roll ID</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Company</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Type</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Paper Type</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">GSM</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Width</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Length</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">SQM</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
+                    <TableHead className="text-right font-black text-[10px] uppercase">Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {jumboLoading ? (
-                    <TableRow><TableCell colSpan={8} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                  ) : jumboStock?.slice(0, 50).map((j) => (
+                  {isPageLoading ? (
+                    <TableRow><TableCell colSpan={7} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  ) : pagedJumbos.map((j) => (
                     <TableRow key={j.id} className="hover:bg-primary/5 transition-colors">
+                      <TableCell className="text-center">
+                        <Checkbox checked={selectedStockIds.has(j.id)} onCheckedChange={() => toggleSelect(j.id)} />
+                      </TableCell>
                       <TableCell className="font-black text-primary font-mono text-xs">{j.rollNo}</TableCell>
-                      <TableCell className="text-xs font-medium">{j.paperCompany}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-[10px] font-bold">{j.paperType}</Badge></TableCell>
+                      <TableCell className="text-xs">{j.paperType}</TableCell>
                       <TableCell className="text-xs">{j.gsm}</TableCell>
-                      <TableCell className="text-xs">{j.widthMm}mm</TableCell>
-                      <TableCell className="text-xs">{j.lengthMeters}m</TableCell>
-                      <TableCell className="font-black text-xs text-primary">{j.sqm}</TableCell>
+                      <TableCell className="font-bold text-xs">{j.sqm}</TableCell>
                       <TableCell><Badge className={j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500'}>{j.status?.toUpperCase()}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        {isAdmin && (
+                          <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleSingleStockDelete(j)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -512,7 +595,7 @@ export default function MasterDataPage() {
                       <TableCell>₹{rm.rate_per_unit}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => { setEditingItem(rm); setDialogType("raw_materials"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleDelete("raw_materials", rm.id, rm.name)}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleMasterDelete("raw_materials", rm.id, rm.name)}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -523,171 +606,72 @@ export default function MasterDataPage() {
         </TabsContent>
       </Tabs>
 
-      {/* --- BULK IMPORT DIALOG --- */}
+      {/* Floating Action Bar for Stock Bulk Delete */}
+      {selectedStockIds.size > 0 && isAdmin && (
+        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-4">
+          <span className="text-sm font-bold uppercase tracking-widest">{selectedStockIds.size} Selected</span>
+          <Separator orientation="vertical" className="h-6 bg-white/20" />
+          <Button variant="destructive" size="sm" className="font-black uppercase h-9 px-6 rounded-full" onClick={handleBulkStockDelete} disabled={isDeleting}>
+            {isDeleting ? <Loader2 className="animate-spin h-3 w-3 mr-2" /> : <Trash2 className="h-3 w-3 mr-2" />} Delete Selected
+          </Button>
+          <Button variant="ghost" size="icon" className="h-9 w-9 text-white/60 hover:text-white" onClick={() => setSelectedStockIds(new Set())}><X className="h-4 w-4" /></Button>
+        </div>
+      )}
+
+      {/* BULK IMPORT DIALOG */}
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
         <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileUp className="h-5 w-5 text-primary" /> 
-              {isImporting ? "Importing Stock Data..." : importStep === 3 ? "Import Completed" : "Multi-Stock Bulk Import"}
-            </DialogTitle>
-            <DialogDescription>
-              {isImporting ? "Please wait while records are being committed to the registry." : "Professional Excel upload system with dynamic column mapping."}
-            </DialogDescription>
+            <DialogTitle>{isImporting ? "Importing Stock Data..." : importStep === 3 ? "Import Completed" : "Excel Stock Import"}</DialogTitle>
           </DialogHeader>
-
           {importStep === 1 && (
-            <div className="py-10 text-center space-y-6">
-              <div className="border-2 border-dashed rounded-2xl p-12 bg-muted/10 relative hover:bg-muted/20 transition-colors flex flex-col items-center justify-center min-h-[300px]">
-                <input 
-                  type="file" 
-                  accept=".xlsx,.xls,.csv" 
-                  onChange={handleFileUpload} 
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                />
-                <div className="space-y-4 flex flex-col items-center">
-                  <div className="p-4 bg-primary/10 rounded-full">
-                    <FileUp className="h-12 w-12 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-black text-lg">Browse or Drop Excel Stock File</p>
-                    <p className="text-sm text-muted-foreground">Standard .xlsx or .xls files supported.</p>
-                  </div>
-                  <Button variant="default" className="pointer-events-none font-bold">
-                    Choose File to Start
-                  </Button>
-                </div>
-              </div>
-              <div className="flex justify-center gap-4">
-                <Button variant="link" onClick={downloadTemplate} className="text-primary font-bold">
-                  <Download className="h-4 w-4 mr-2" /> Download Official Template
-                </Button>
-              </div>
+            <div className="py-10 text-center border-2 border-dashed rounded-2xl bg-muted/10 relative hover:bg-muted/20">
+              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+              <FileUp className="h-12 w-12 text-primary mx-auto mb-4" />
+              <p className="font-black">Click or Drag Excel File</p>
+              <Button size="sm" className="mt-4">Browse Files</Button>
             </div>
           )}
-
           {importStep === 2 && (
-            <div className="space-y-6 py-4">
-              <div className="bg-primary/5 p-4 rounded-lg border border-primary/20 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-                  <div>
-                    <p className="text-sm font-black">Excel Parsed: {importData.length} Rows Found</p>
-                    <p className="text-[10px] text-muted-foreground uppercase">Map the columns below to system fields</p>
-                  </div>
-                </div>
-                {!isImporting && <Button variant="outline" size="sm" onClick={() => setImportStep(1)}>Change File</Button>}
+            <div className="space-y-6">
+              <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-lg flex items-center justify-between">
+                <p className="text-sm font-bold text-emerald-800">{importData.length} Rows Found. Map columns to proceed.</p>
+                <Button variant="outline" size="sm" onClick={() => setImportStep(1)}>Change File</Button>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-4 border rounded-xl p-6 bg-card">
-                {SYSTEM_FIELDS.map((field) => (
-                  <div key={field.id} className="space-y-1.5">
-                    <Label className="text-[10px] font-black uppercase text-muted-foreground flex items-center justify-between">
-                      {field.label}
-                      {columnMapping[field.id] && <Badge className="bg-emerald-500 h-4 text-[8px]">MAPPED</Badge>}
-                    </Label>
-                    <Select 
-                      disabled={isImporting}
-                      value={columnMapping[field.id] || ""} 
-                      onValueChange={(val) => setColumnMapping(prev => ({...prev, [field.id]: val}))}
-                    >
-                      <SelectTrigger className={cn("h-9", !columnMapping[field.id] && field.id === 'roll_no' ? "border-destructive" : "")}>
-                        <SelectValue placeholder="Select Excel Column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {excelHeaders.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                      </SelectContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border p-4 rounded-xl">
+                {SYSTEM_FIELDS.map(f => (
+                  <div key={f.id} className="space-y-1">
+                    <Label className="text-[10px] font-black uppercase text-muted-foreground">{f.label}</Label>
+                    <Select value={columnMapping[f.id] || ""} onValueChange={val => setColumnMapping({...columnMapping, [f.id]: val})}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Excel Column" /></SelectTrigger>
+                      <SelectContent>{excelHeaders.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 ))}
               </div>
-
               {isImporting && (
-                <div className="space-y-3 p-4 bg-muted/30 rounded-lg animate-in fade-in zoom-in-95">
-                  <div className="flex justify-between items-center text-[10px] font-black uppercase text-primary">
-                    <span>Processing Data Pipeline...</span>
-                    <span>{importProgress}%</span>
-                  </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-[10px] font-black uppercase text-primary"><span>Processing Chunks...</span><span>{importProgress}%</span></div>
                   <Progress value={importProgress} className="h-2" />
-                  <p className="text-center text-[10px] text-muted-foreground italic">
-                    Saving records in high-performance batches...
-                  </p>
                 </div>
               )}
-
-              {!isImporting && (
-                <div className="bg-muted/20 p-4 rounded-lg">
-                  <p className="text-[10px] font-bold uppercase mb-2 flex items-center gap-1 text-muted-foreground">
-                    <Info className="h-3 w-3" /> Technical Preview (First 3 Rows)
-                  </p>
-                  <div className="overflow-x-auto">
-                    <Table className="text-[10px]">
-                      <TableHeader><TableRow>
-                        {excelHeaders.slice(0, 5).map(h => <TableHead key={h}>{h}</TableHead>)}
-                      </TableRow></TableHeader>
-                      <TableBody>
-                        {importData.slice(0, 3).map((row, idx) => (
-                          <TableRow key={idx}>
-                            {excelHeaders.slice(0, 5).map(h => <TableCell key={h}>{String(row[h] || "-")}</TableCell>)}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-
-              <Button 
-                onClick={executeImport} 
-                disabled={isImporting || !columnMapping['roll_no']} 
-                className="w-full h-12 text-lg font-black uppercase tracking-widest shadow-xl mt-4"
-              >
-                {isImporting ? <Loader2 className="animate-spin mr-2" /> : <Database className="mr-2 h-5 w-5" />}
-                {isImporting ? "Importing Records..." : "Start Bulk Import"}
-              </Button>
+              <Button onClick={executeImport} disabled={isImporting || !columnMapping['roll_no']} className="w-full h-12 font-black uppercase">Execute Multi-Stock Import</Button>
             </div>
           )}
-
-          {importStep === 3 && importSummary && (
-            <div className="py-10 text-center space-y-8 animate-in fade-in zoom-in-95">
-              <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border-2 border-emerald-500">
-                <CheckCircle2 className="h-10 w-10 text-emerald-600" />
-              </div>
+          {importStep === 3 && (
+            <div className="py-10 text-center space-y-6">
+              <CheckCircle2 className="h-16 w-16 text-emerald-500 mx-auto" />
               <div>
-                <h3 className="text-2xl font-black uppercase tracking-tight">Import Processing Success</h3>
-                <p className="text-muted-foreground">The transaction has been committed to the master registry.</p>
+                <h3 className="text-xl font-black">Success!</h3>
+                <p className="text-muted-foreground">Import processing complete.</p>
               </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto">
-                <div className="p-4 border rounded-xl bg-muted/10">
-                  <p className="text-[10px] font-bold uppercase text-muted-foreground">Total Rows</p>
-                  <p className="text-3xl font-black">{importSummary.total}</p>
-                </div>
-                <div className="p-4 border rounded-xl bg-muted/10 border-emerald-200 bg-emerald-50/20">
-                  <p className="text-[10px] font-bold uppercase text-emerald-700">Imported</p>
-                  <p className="text-3xl font-black text-emerald-600">{importSummary.success}</p>
-                </div>
-                <div className="p-4 border rounded-xl bg-muted/10 border-amber-200 bg-amber-50/20">
-                  <p className="text-[10px] font-bold uppercase text-amber-700">Skipped</p>
-                  <p className="text-3xl font-black text-amber-600">{importSummary.skipped}</p>
-                </div>
-                <div className="p-4 border rounded-xl bg-muted/10 border-destructive/20 bg-destructive/5">
-                  <p className="text-[10px] font-bold uppercase text-destructive">Errors</p>
-                  <p className="text-3xl font-black text-destructive">{importSummary.errors}</p>
-                </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-muted/20 rounded-xl"><p className="text-[10px] font-bold">Total</p><p className="text-2xl font-black">{importSummary.total}</p></div>
+                <div className="p-4 bg-emerald-50 rounded-xl"><p className="text-[10px] font-bold">Added</p><p className="text-2xl font-black text-emerald-600">{importSummary.success}</p></div>
+                <div className="p-4 bg-amber-50 rounded-xl"><p className="text-[10px] font-bold">Skipped</p><p className="text-2xl font-black text-amber-600">{importSummary.skipped}</p></div>
+                <div className="p-4 bg-destructive/5 rounded-xl"><p className="text-[10px] font-bold">Errors</p><p className="text-2xl font-black text-destructive">{importSummary.errors}</p></div>
               </div>
-
-              <div className="flex flex-col gap-3 max-w-sm mx-auto">
-                {importErrorLogs.length > 0 && (
-                  <Button variant="outline" onClick={downloadErrorReport} className="w-full font-bold border-destructive text-destructive hover:bg-destructive/5">
-                    <AlertTriangle className="h-4 w-4 mr-2" /> Download Error Report
-                  </Button>
-                )}
-                <Button onClick={() => setIsImportDialogOpen(false)} className="w-full font-bold">Close Registry</Button>
-                <Button variant="ghost" onClick={() => setImportStep(1)} className="w-full font-bold text-muted-foreground hover:text-primary">
-                  <History className="h-4 w-4 mr-2" /> Import Another File
-                </Button>
-              </div>
+              <Button onClick={() => setIsImportDialogOpen(false)} className="w-full">Close Registry</Button>
             </div>
           )}
         </DialogContent>
@@ -698,10 +682,7 @@ export default function MasterDataPage() {
           <form onSubmit={handleSave}>
             <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Add'} {dialogType.replace(/_/g, ' ')}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input name="name" defaultValue={editingItem?.name} required />
-              </div>
+              <div className="space-y-2"><Label>Name</Label><Input name="name" defaultValue={editingItem?.name} required /></div>
               {dialogType === 'raw_materials' && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Rate</Label><Input name="rate_per_unit" type="number" step="0.01" defaultValue={editingItem?.rate_per_unit} /></div>
