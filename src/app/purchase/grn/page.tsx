@@ -2,7 +2,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -15,51 +15,37 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { 
   Plus, 
   Loader2, 
-  Printer, 
   Search, 
   ArrowUpDown, 
   FilterX, 
-  ArrowUp, 
-  ArrowDown, 
   Hash, 
-  Info, 
   Calendar,
   Filter,
-  ChevronDown,
-  ChevronUp,
-  Download,
   FileDown,
   ChevronLeft,
   ChevronRight,
-  AlertTriangle,
   Trash2,
   X,
-  MoreVertical
+  Settings2,
+  CheckCircle2,
+  AlertCircle
 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter,
-  DialogDescription
+  DialogFooter
 } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { useFirestore, useUser, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
+import { useFirestore, useUser, useMemoFirebase, useDoc, useCollection, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { 
   collection, 
   doc, 
-  runTransaction, 
   query, 
   where, 
   getDocs, 
@@ -71,20 +57,49 @@ import {
   DocumentData,
   onSnapshot,
   deleteDoc,
-  writeBatch
+  writeBatch,
+  serverTimestamp,
+  setDoc,
+  getDoc,
+  runTransaction
 } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 
-type SortField = 'rollNo' | 'receivedDate' | 'purchaseRate' | 'gsm' | 'sqm' | 'weightKg' | 'paperCompany' | 'status';
+// --- TYPES ---
+type SortField = 'rollNo' | 'receivedDate' | 'gsm' | 'widthMm' | 'sqm' | 'createdAt';
 type SortOrder = 'asc' | 'desc';
 
-interface ColumnFilter {
-  field: string;
-  operator: '==' | 'startsWith' | '>=' | '<=' | 'all';
-  value: any;
+interface FilterState {
+  companies: string[];
+  types: string[];
+  gsms: string[];
+  suppliers: string[];
+  locations: string[];
+  statuses: string[];
+  lotNo: string;
+  grnNo: string;
+  width: string;
+  length: string;
+  startDate: string;
+  endDate: string;
 }
+
+const INITIAL_FILTERS: FilterState = {
+  companies: [],
+  types: [],
+  gsms: [],
+  suppliers: [],
+  locations: [],
+  statuses: [],
+  lotNo: "",
+  grnNo: "",
+  width: "",
+  length: "",
+  startDate: "",
+  endDate: ""
+};
 
 export default function GRNPage() {
   const { toast } = useToast()
@@ -96,12 +111,11 @@ export default function GRNPage() {
   const [isManualId, setIsManualId] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
   
-  // Selection State
+  // Selection & Pagination
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-
-  // Pagination & Display State
-  const [pageSize, setPageSize] = useState<number | 'all'>(20)
+  const [pageSize, setPageSize] = useState<number>(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalRecords, setTotalRecords] = useState(0)
   const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
@@ -109,189 +123,149 @@ export default function GRNPage() {
   const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
   const [isPageLoading, setIsPageLoading] = useState(false)
 
-  // Sort & Advanced Filter State
+  // Sort & Filter State
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
+  const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
 
-  useEffect(() => {
-    setIsMounted(true)
-  }, [])
-
-  // Form State
-  const [formData, setFormData] = useState({
-    widthMm: 1020,
-    lengthMeters: 0,
-    sqm: 0,
-    gsm: 0,
-    weightKg: 0,
-    purchaseRate: 0,
-    wastage: 0,
-    jobNo: "",
-    size: "",
-    productName: "",
-    code: "",
-    lotNo: "",
-    companyRollNo: "",
-    dateOfUse: "",
-    date: ""
+  // Options for multi-selects
+  const [options, setOptions] = useState({
+    companies: [] as string[],
+    types: [] as string[],
+    gsms: [] as string[],
+    suppliers: [] as string[],
+    locations: [] as string[],
+    statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  useEffect(() => {
-    if (isMounted) {
-      setFormData(prev => ({ ...prev, date: new Date().toISOString().split('T')[0] }));
-    }
-  }, [isMounted])
+  useEffect(() => { setIsMounted(true) }, [])
 
+  // Auth & Settings
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
+  const { data: adminData } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  const settingsDocRef = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return doc(firestore, 'roll_settings', 'global_config');
-  }, [firestore]);
-  const { data: settings } = useDoc(settingsDocRef);
+  const settingsRef = useMemoFirebase(() => (!firestore ? null : doc(firestore, 'roll_settings', 'global_config')), [firestore]);
+  const { data: settings } = useDoc(settingsRef);
 
-  const [materials, setMaterials] = useState<any[]>([])
-  const [suppliers, setSuppliers] = useState<any[]>([])
-
+  // Fetch unique values for filter options
   useEffect(() => {
-    if (!firestore || !user || !adminData) return
-    const unsubM = onSnapshot(collection(firestore, 'raw_materials'), s => setMaterials(s.docs.map(d => ({id: d.id, ...d.data()}))))
-    const unsubS = onSnapshot(collection(firestore, 'suppliers'), s => setSuppliers(s.docs.map(d => ({id: d.id, ...d.data()}))))
-    return () => { unsubM(); unsubS(); }
-  }, [firestore, user, adminData])
+    if (!firestore || !isAdmin) return;
+    const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
+      const docs = snap.docs.map(d => d.data());
+      setOptions(prev => ({
+        ...prev,
+        companies: Array.from(new Set(docs.map(d => d.paperCompany).filter(Boolean))).sort(),
+        types: Array.from(new Set(docs.map(d => d.paperType).filter(Boolean))).sort(),
+        gsms: Array.from(new Set(docs.map(d => d.gsm?.toString()).filter(Boolean))).sort((a,b) => Number(a)-Number(b)),
+        suppliers: Array.from(new Set(docs.map(d => d.supplier).filter(Boolean))).sort(),
+        locations: Array.from(new Set(docs.map(d => d.location).filter(Boolean))).sort(),
+      }));
+    });
+    return () => unsub();
+  }, [firestore, isAdmin]);
 
-  // Query Builder Utility
-  const buildBaseQuery = () => {
+  // Dynamic Query Builder
+  const buildQuery = (isCount = false) => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
-    let queries: any[] = [];
-    
-    Object.values(columnFilters).forEach(f => {
-      if (f.value === "" || f.value === "all") return;
-      
-      if (f.operator === 'startsWith') {
-        queries.push(where(f.field, '>=', f.value));
-        queries.push(where(f.field, '<=', f.value + '\uf8ff'));
-      } else {
-        queries.push(where(f.field, f.operator, f.value));
-      }
-    });
+    let constraints: any[] = [];
 
-    if (queries.length > 3) {
-      toast({ variant: "destructive", title: "Query Too Complex", description: "Please limit to 3 simultaneous filters." });
-      return null;
+    // Multi-selects (using 'in' operator)
+    if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
+    if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
+    if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.slice(0, 10).map(Number)));
+    if (filters.suppliers.length > 0) constraints.push(where('supplier', 'in', filters.suppliers.slice(0, 10)));
+    if (filters.locations.length > 0) constraints.push(where('location', 'in', filters.locations.slice(0, 10)));
+    if (filters.statuses.length > 0) constraints.push(where('status', 'in', filters.statuses.slice(0, 10)));
+
+    // Equality filters
+    if (filters.width) constraints.push(where('widthMm', '==', Number(filters.width)));
+    if (filters.length) constraints.push(where('lengthMeters', '==', Number(filters.length)));
+
+    // Range constraints (Only one field allowed per query in Firestore)
+    // Priority: Date Range > Lot No > GRN No
+    if (filters.startDate || filters.endDate) {
+      if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
+      if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
+    } else if (filters.lotNo) {
+      constraints.push(where('lotNo', '>=', filters.lotNo));
+      constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+    } else if (filters.grnNo) {
+      constraints.push(where('rollNo', '>=', filters.grnNo));
+      constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
     }
 
-    let finalQ = query(q, ...queries);
-    return finalQ;
+    if (isCount) return query(q, ...constraints);
+
+    // Sorting & Pagination
+    constraints.push(orderBy(sortField, sortOrder));
+    const cursor = pageStack[currentPage - 1];
+    if (cursor) constraints.push(startAfter(cursor));
+    if (pageSize !== 0) constraints.push(limit(pageSize));
+
+    return query(q, ...constraints);
   }
 
-  // 1. Fetch Total Count & Handle Pagination Reset
+  // Effect for Count & Data
   useEffect(() => {
-    if (!firestore || !user || !adminData) return;
-
-    const fetchCount = async () => {
-      const baseQ = buildBaseQuery();
-      if (!baseQ) {
-        setTotalRecords(0);
-        return;
-      }
-      const snapshot = await getCountFromServer(baseQ);
-      setTotalRecords(snapshot.data().count);
-    };
-
-    fetchCount();
-    setCurrentPage(1);
-    setPageStack([null]);
-    setLastVisible(null);
-    setSelectedIds(new Set());
-  }, [firestore, user, adminData, columnFilters]);
-
-  // 2. Fetch Paginated Data
-  useEffect(() => {
-    if (!firestore || !user || !adminData) return;
-
-    const fetchData = async () => {
+    if (!firestore || !isAdmin) return;
+    const load = async () => {
       setIsPageLoading(true);
       try {
-        const baseQ = buildBaseQuery();
-        if (!baseQ) {
-          setPagedJumbos([]);
-          return;
+        const countQ = buildQuery(true);
+        if (countQ) {
+          const countSnap = await getCountFromServer(countQ);
+          setTotalRecords(countSnap.data().count);
         }
 
-        // Handle Firestore range sort rule: First order by must match range filter field
-        const rangeFilter = Object.values(columnFilters).find(f => ['startsWith', '>=', '<='].includes(f.operator));
-        let finalSortField: any = sortField;
-        if (rangeFilter) finalSortField = rangeFilter.field;
-
-        let q = query(baseQ, orderBy(finalSortField, sortOrder));
-
-        const cursor = pageStack[currentPage - 1];
-        if (cursor) q = query(q, startAfter(cursor));
-        if (pageSize !== 'all') q = query(q, limit(pageSize as number));
-
-        const snapshot = await getDocs(q);
-        setPagedJumbos(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-        if (snapshot.docs.length > 0) setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
-      } catch (e) {
-        console.error("Pagination error:", e);
+        const dataQ = buildQuery();
+        if (dataQ) {
+          const snap = await getDocs(dataQ);
+          setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          if (snap.docs.length > 0) setLastVisible(snap.docs[snap.docs.length - 1]);
+        }
+      } catch (e: any) {
+        console.error(e);
+        toast({ variant: "destructive", title: "Query Error", description: "This combination might require a composite index or is too complex." });
       } finally {
         setIsPageLoading(false);
       }
     };
+    load();
+  }, [firestore, isAdmin, filters, sortField, sortOrder, pageSize, currentPage]);
 
-    fetchData();
-  }, [firestore, user, adminData, pageSize, currentPage, sortField, sortOrder, columnFilters, pageStack]);
-
-  const handleNextPage = () => {
-    const currentLimit = pageSize === 'all' ? totalRecords : (pageSize as number);
-    if (currentPage * currentLimit < totalRecords) {
-      const nextStack = [...pageStack];
-      nextStack[currentPage] = lastVisible;
-      setPageStack(nextStack);
-      setCurrentPage(prev => prev + 1);
-      setSelectedIds(new Set());
-    }
-  }
-
-  const handlePrevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
-      setSelectedIds(new Set());
-    }
-  }
-
-  const handlePageSizeChange = (val: string) => {
-    if (val === 'all') {
-      if (totalRecords > 2000) {
-        toast({ variant: "destructive", title: "Limit Exceeded", description: "Too many records for single page load." });
-        return;
-      }
-      setPageSize('all');
-    } else {
-      setPageSize(Number(val));
-    }
+  const handleFilterChange = (field: keyof FilterState, value: any) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
     setCurrentPage(1);
     setPageStack([null]);
   }
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === pagedJumbos.length) setSelectedIds(new Set())
-    else setSelectedIds(new Set(pagedJumbos.map(j => j.id)))
+  const toggleMultiSelect = (field: keyof FilterState, value: string) => {
+    const current = (filters[field] as string[]) || [];
+    const next = current.includes(value) 
+      ? current.filter(v => v !== value) 
+      : [...current, value];
+    
+    if (next.length > 10) {
+      toast({ variant: "destructive", title: "Limit Reached", description: "Maximum 10 values per filter." });
+      return;
+    }
+    handleFilterChange(field, next);
   }
 
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setSelectedIds(next)
+  const handleExport = async () => {
+    if (!firestore) return;
+    setIsExporting(true);
+    try {
+      await exportPaperStockToExcel(firestore, filters as any);
+      toast({ title: "Export Started", description: "Your custom filtered report is being generated." });
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   const handleSingleDelete = async (roll: any) => {
@@ -300,285 +274,218 @@ export default function GRNPage() {
       setIsDeleting(true);
       try {
         await deleteDoc(doc(firestore, 'jumbo_stock', roll.id));
-        toast({ title: "Roll Deleted" });
+        toast({ title: "Roll Removed" });
         setTotalRecords(prev => prev - 1);
-      } finally {
-        setIsDeleting(false);
-      }
+      } finally { setIsDeleting(false); }
     }
   }
 
-  const handleBulkDelete = async () => {
-    if (!isAdmin || !firestore || selectedIds.size === 0) return;
-    if (confirm(`Delete ${selectedIds.size} records?`)) {
-      setIsDeleting(true);
-      try {
-        const ids = Array.from(selectedIds);
-        for (let i = 0; i < ids.length; i += 500) {
-          const batch = writeBatch(firestore);
-          ids.slice(i, i + 500).forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
-          await batch.commit();
-        }
-        toast({ title: "Bulk Delete Successful" });
-        setSelectedIds(new Set());
-        setTotalRecords(prev => prev - ids.length);
-      } finally {
-        setIsDeleting(false);
-      }
-    }
-  }
+  // --- RENDER HELPERS ---
+  const activeFiltersCount = Object.entries(filters).reduce((acc, [k, v]) => {
+    if (Array.isArray(v)) return acc + v.length;
+    return v ? acc + 1 : acc;
+  }, 0);
 
-  const handleExport = async () => {
-    if (!firestore) return
-    setIsExporting(true)
-    try {
-      await exportPaperStockToExcel(firestore);
-      toast({ title: "Export Complete" })
-    } finally {
-      setIsExporting(false)
-    }
-  }
+  if (!isMounted) return null;
 
-  const updateFilter = (field: string, operator: any, value: any) => {
-    setColumnFilters(prev => {
-      const next = { ...prev };
-      if (value === "" || value === "all") delete next[field];
-      else next[field] = { field, operator, value };
-      return next;
-    });
-  }
-
-  const resetFilters = () => {
-    setColumnFilters({});
-    setSortField('receivedDate');
-    setSortOrder('desc');
-    setCurrentPage(1);
-  }
-
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortOrder('asc'); }
-  };
-
-  const activeFiltersCount = Object.keys(columnFilters).length;
-
-  const FilterControl = ({ field, type, options }: { field: string, type: 'text' | 'number' | 'select', options?: any[] }) => (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className={cn("h-6 w-6 ml-1", columnFilters[field] && "text-primary bg-primary/10")}>
-          <Filter className="h-3.5 w-3.5" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-60 p-4 space-y-4" align="start">
-        <div className="space-y-2">
-          <Label className="text-[10px] font-black uppercase">Filter {field}</Label>
-          {type === 'select' ? (
-            <Select 
-              value={columnFilters[field]?.value || 'all'} 
-              onValueChange={(val) => updateFilter(field, '==', val)}
-            >
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                {options?.map(opt => <SelectItem key={opt} value={opt}>{opt}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ) : (
-            <>
-              <Select 
-                value={columnFilters[field]?.operator || (type === 'text' ? 'startsWith' : '==')} 
-                onValueChange={(op) => updateFilter(field, op, columnFilters[field]?.value || '')}
-              >
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {type === 'text' ? (
-                    <>
-                      <SelectItem value="startsWith">Starts With</SelectItem>
-                      <SelectItem value="==">Equals</SelectItem>
-                    </>
-                  ) : (
-                    <>
-                      <SelectItem value="==">Equals</SelectItem>
-                      <SelectItem value=">=">Greater Than</SelectItem>
-                      <SelectItem value="<=">Less Than</SelectItem>
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
-              <Input 
-                placeholder="Value..." 
-                className="h-8 text-xs" 
-                defaultValue={columnFilters[field]?.value || ''}
-                onBlur={(e) => updateFilter(field, columnFilters[field]?.operator || (type === 'text' ? 'startsWith' : '=='), e.target.value)}
-              />
-            </>
-          )}
-        </div>
-        <Button variant="ghost" size="sm" className="w-full text-[10px] h-7" onClick={() => updateFilter(field, 'all', 'all')}>Clear</Button>
-      </PopoverContent>
-    </Popover>
-  );
+  const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIdx = Math.min(currentPage * pageSize, totalRecords);
 
   return (
-    <div className="space-y-6 relative">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">GRN (Jumbo Entry)</h2>
-          <p className="text-muted-foreground font-medium">ERP Stock Registry with technical column filtering.</p>
+          <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Registry Center</h2>
+          <p className="text-muted-foreground font-medium italic">High-precision technical stock management & multi-field analysis.</p>
         </div>
         <div className="flex gap-2">
-          {activeFiltersCount > 0 && (
-            <Button variant="outline" onClick={resetFilters} className="border-primary text-primary font-bold">
-              <FilterX className="mr-2 h-4 w-4" /> Reset Filters ({activeFiltersCount})
-            </Button>
-          )}
-          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
-            {isExporting ? <Loader2 className="animate-spin mr-2" /> : <FileDown className="mr-2 h-4 w-4" />}
-            Export Stock
+          <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className={cn(activeFiltersCount > 0 && "border-primary text-primary")}>
+            <Settings2 className="mr-2 h-4 w-4" /> Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
           </Button>
-          <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg"><Plus className="mr-2 h-4 w-4" /> New Entry</Button>
+          <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+            {isExporting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <FileDown className="mr-2 h-4 w-4" />} Export
+          </Button>
+          <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg font-bold uppercase tracking-widest"><Plus className="mr-2 h-4 w-4" /> New Entry</Button>
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-muted/30 p-4 rounded-xl border border-primary/10">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Label className="text-[10px] font-black uppercase text-muted-foreground">Rows:</Label>
-            <Select value={pageSize.toString()} onValueChange={handlePageSizeChange}>
-              <SelectTrigger className="w-[80px] h-8 text-xs font-bold"><SelectValue /></SelectTrigger>
+      {/* --- ADVANCED FILTER PANEL --- */}
+      {showFilters && (
+        <Card className="border-primary/20 bg-primary/5 animate-in slide-in-from-top-2">
+          <CardContent className="p-6 space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Search className="h-3 w-3" /> Lot / Batch Search</Label>
+                <Input placeholder="Prefix search..." value={filters.lotNo} onChange={(e) => handleFilterChange('lotNo', e.target.value)} className="bg-background h-9 text-xs" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Hash className="h-3 w-3" /> GRN Number</Label>
+                <Input placeholder="Prefix search..." value={filters.grnNo} onChange={(e) => handleFilterChange('grnNo', e.target.value)} className="bg-background h-9 text-xs" />
+              </div>
+              <div className="md:col-span-2 space-y-2">
+                <Label className="text-[10px] font-black uppercase flex items-center gap-1"><Calendar className="h-3 w-3" /> Date Range Picker</Label>
+                <div className="flex items-center gap-2">
+                  <Input type="date" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="bg-background h-9 text-xs" />
+                  <span className="text-muted-foreground text-xs">to</span>
+                  <Input type="date" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="bg-background h-9 text-xs" />
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-primary/10" />
+
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+              {[
+                { label: 'Company', field: 'companies', options: options.companies },
+                { label: 'Paper Type', field: 'types', options: options.types },
+                { label: 'GSM', field: 'gsms', options: options.gsms },
+                { label: 'Supplier', field: 'suppliers', options: options.suppliers },
+                { label: 'Location', field: 'locations', options: options.locations },
+                { label: 'Status', field: 'statuses', options: options.statuses },
+              ].map((group) => (
+                <div key={group.label} className="space-y-2">
+                  <Label className="text-[9px] font-black uppercase text-muted-foreground">{group.label}</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className="w-full justify-between h-8 text-[10px] font-bold bg-background">
+                        {filters[group.field as keyof FilterState].length === 0 ? 'Any' : `${filters[group.field as keyof FilterState].length} selected`}
+                        <ChevronLeft className="h-3 w-3 rotate-270" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-2 h-64 overflow-y-auto" align="start">
+                      <div className="space-y-1">
+                        {group.options.map(opt => (
+                          <div key={opt} className="flex items-center space-x-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggleMultiSelect(group.field as keyof FilterState, opt)}>
+                            <Checkbox checked={filters[group.field as keyof FilterState].includes(opt)} />
+                            <span className="text-xs font-medium">{opt}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex gap-2 flex-wrap">
+                {Object.entries(filters).map(([k, v]) => {
+                  if (!v || (Array.isArray(v) && v.length === 0)) return null;
+                  return (
+                    <Badge key={k} variant="secondary" className="text-[9px] font-black uppercase bg-primary/10 text-primary border-none flex items-center gap-1 pr-1 h-6">
+                      {k}: {Array.isArray(v) ? v.length : v}
+                      <Button variant="ghost" size="icon" className="h-4 w-4 p-0 hover:bg-transparent" onClick={() => handleFilterChange(k as any, Array.isArray(v) ? [] : "")}>
+                        <X className="h-2 w-2" />
+                      </Button>
+                    </Badge>
+                  )
+                })}
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => setFilters(INITIAL_FILTERS)} className="text-[10px] font-black uppercase text-destructive hover:text-destructive">
+                <FilterX className="mr-1 h-3 w-3" /> Reset All Filters
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* --- DATA TABLE --- */}
+      <Card className="shadow-2xl border-none overflow-hidden">
+        <div className="bg-muted/30 p-4 border-b flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); setPageStack([null]); }}>
+              <SelectTrigger className="w-[80px] h-8 text-[10px] font-black"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-                <SelectItem value="100">100</SelectItem>
-                <SelectItem value="all" disabled={totalRecords > 2000}>All</SelectItem>
+                {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
             </Select>
+            <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">
+              Showing <span className="text-primary">{startIdx}-{endIdx}</span> of {totalRecords.toLocaleString()}
+            </span>
           </div>
-          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-background px-3 py-1.5 rounded-full border">
-            {totalRecords > 0 ? <>Showing <span className="text-primary">{startIdx}–{endIdx}</span> of {totalRecords.toLocaleString()}</> : "No records"}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1 || isPageLoading} className="h-8 w-8 p-0"><ChevronLeft className="h-4 w-4" /></Button>
+            <Badge variant="secondary" className="h-8 px-3 text-[10px] font-black">PAGE {currentPage}</Badge>
+            <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p + 1)} disabled={endIdx >= totalRecords || isPageLoading} className="h-8 w-8 p-0"><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={handlePrevPage} disabled={currentPage === 1 || isPageLoading}><ChevronLeft className="h-4 w-4" /></Button>
-          <Badge variant="secondary" className="h-8 px-3 text-xs font-black">PAGE {currentPage}</Badge>
-          <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={handleNextPage} disabled={pageSize === 'all' || endIdx >= totalRecords || isPageLoading}><ChevronRight className="h-4 w-4" /></Button>
-        </div>
-      </div>
-
-      <Card className="shadow-2xl border-none overflow-hidden">
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table className="min-w-[2200px]">
-              <TableHeader className="sticky top-0 bg-background z-20 shadow-sm border-b-2">
-                <TableRow className="bg-muted/50 hover:bg-muted/50">
-                  <TableHead className="w-[50px] text-center sticky left-0 bg-muted/50 z-30">
-                    <Checkbox checked={selectedIds.size === pagedJumbos.length && pagedJumbos.length > 0} onCheckedChange={toggleSelectAll} />
-                  </TableHead>
-                  <TableHead className="w-[60px] font-black text-center text-[10px] uppercase">S/N</TableHead>
-                  <TableHead className="w-[120px] sticky left-[50px] bg-muted/50 border-r z-30">
-                    <div className="flex items-center">
-                      <span className="font-black text-primary text-[10px]">RELL NO</span>
-                      <FilterControl field="rollNo" type="text" />
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleSort('rollNo')}>
-                        <ArrowUpDown className="h-3 w-3" />
+            <Table className="min-w-[2500px]">
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead className="w-[60px] font-black text-[10px] uppercase text-center sticky left-0 bg-muted/50 z-20">S/N</TableHead>
+                  {[
+                    { label: 'RELL NO', field: 'rollNo' },
+                    { label: 'PAPER COMPANY', field: 'paperCompany' },
+                    { label: 'PAPER TYPE', field: 'paperType' },
+                    { label: 'WIDTH (MM)', field: 'widthMm' },
+                    { label: 'LENGTH (MTR)', field: 'lengthMeters' },
+                    { label: 'SQM', field: 'sqm' },
+                    { label: 'GSM', field: 'gsm' },
+                    { label: 'WEIGHT (KG)', field: 'weightKg' },
+                    { label: 'PURCHASE RATE', field: 'purchaseRate' },
+                    { label: 'WASTAGE', field: 'wastage' },
+                    { label: 'DATE OF USE', field: 'dateOfUse' },
+                    { label: 'DATE RECEIVED', field: 'receivedDate' },
+                    { label: 'JOB NO', field: 'jobNo' },
+                    { label: 'SIZE', field: 'size' },
+                    { label: 'PRODUCT NAME', field: 'productName' },
+                    { label: 'CODE', field: 'code' },
+                    { label: 'LOT NO', field: 'lotNo' },
+                    { label: 'DATE', field: 'date' },
+                    { label: 'COMPANY RELL NO', field: 'companyRollNo' }
+                  ].map(col => (
+                    <TableHead key={col.field}>
+                      <Button variant="ghost" size="sm" onClick={() => {
+                        const isAsc = sortField === col.field && sortOrder === 'asc';
+                        setSortField(col.field as any);
+                        setSortOrder(isAsc ? 'desc' : 'asc');
+                      }} className="h-7 text-[10px] font-black uppercase hover:bg-transparent p-0">
+                        {col.label} <ArrowUpDown className="ml-1 h-3 w-3" />
                       </Button>
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[180px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">COMPANY</span>
-                      <FilterControl field="paperCompany" type="text" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[150px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">TYPE</span>
-                      <FilterControl field="paperType" type="text" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[100px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">WIDTH</span>
-                      <FilterControl field="widthMm" type="number" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[100px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">LENGTH</span>
-                      <FilterControl field="lengthMeters" type="number" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[100px]">
-                    <div className="flex items-center text-primary">
-                      <span className="font-black text-[10px]">SQM</span>
-                      <FilterControl field="sqm" type="number" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[80px]">
-                    <div className="flex items-center text-primary">
-                      <span className="font-black text-[10px]">GSM</span>
-                      <FilterControl field="gsm" type="number" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[100px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">WEIGHT</span>
-                      <FilterControl field="weightKg" type="number" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[120px]">
-                    <div className="flex items-center text-primary">
-                      <span className="font-black text-[10px]">RATE</span>
-                      <FilterControl field="purchaseRate" type="number" />
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[120px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">RECEIVED</span>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleSort('receivedDate')}>
-                        <ArrowUpDown className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </TableHead>
-                  <TableHead className="w-[120px]">
-                    <div className="flex items-center">
-                      <span className="font-black text-[10px]">STATUS</span>
-                      <FilterControl field="status" type="select" options={['In Stock', 'Consumed', 'Partial']} />
-                    </div>
-                  </TableHead>
-                  {isAdmin && <TableHead className="text-right sticky right-0 bg-muted/50 border-l font-black text-[10px]">ACTIONS</TableHead>}
+                    </TableHead>
+                  ))}
+                  {isAdmin && <TableHead className="text-right sticky right-0 bg-muted/50 z-20 font-black text-[10px]">ACTION</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isPageLoading ? (
-                  <TableRow><TableCell colSpan={15} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : pagedJumbos.map((j, index) => (
-                  <TableRow key={j.id} className="hover:bg-primary/5 h-14">
-                    <TableCell className="text-center sticky left-0 bg-background z-10 border-r">
-                      <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={() => toggleSelect(j.id)} />
+                  <TableRow key={j.id} className="hover:bg-primary/5 h-12">
+                    <TableCell className="text-center font-bold text-[10px] text-muted-foreground sticky left-0 bg-background z-10 border-r">
+                      {(currentPage - 1) * pageSize + index + 1}
                     </TableCell>
-                    <TableCell className="text-center text-[10px] font-bold text-muted-foreground">
-                      {((currentPage - 1) * (pageSize === 'all' ? 0 : pageSize)) + index + 1}
+                    <TableCell className="font-black text-primary font-mono text-xs">
+                      <div className="flex flex-col">
+                        <span>{j.rollNo}</span>
+                        <Badge variant="outline" className={cn("text-[8px] h-4 mt-0.5", j.status === 'In Stock' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}>
+                          {j.status?.toUpperCase()}
+                        </Badge>
+                      </div>
                     </TableCell>
-                    <TableCell className="font-black text-primary sticky left-[50px] bg-background border-r z-10 font-mono text-xs">{j.rollNo}</TableCell>
-                    <TableCell className="text-xs">{j.paperCompany}</TableCell>
-                    <TableCell><Badge variant="outline" className="font-bold bg-white text-[10px]">{j.paperType}</Badge></TableCell>
-                    <TableCell className="font-mono text-xs">{j.widthMm}mm</TableCell>
-                    <TableCell className="font-mono text-xs">{j.lengthMeters}m</TableCell>
-                    <TableCell className="font-black text-xs text-primary">{j.sqm}</TableCell>
-                    <TableCell className="text-xs">{j.gsm}</TableCell>
-                    <TableCell className="font-bold text-xs">{j.weightKg}kg</TableCell>
-                    <TableCell className="text-emerald-700 font-bold text-xs">₹{j.purchaseRate?.toLocaleString()}</TableCell>
-                    <TableCell className="text-[10px] font-bold text-muted-foreground">{j.receivedDate}</TableCell>
-                    <TableCell>
-                      <Badge className={cn("text-[10px]", j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500')}>
-                        {j.status}
-                      </Badge>
-                    </TableCell>
+                    <TableCell className="text-[11px] font-bold">{j.paperCompany}</TableCell>
+                    <TableCell className="text-[11px] font-medium">{j.paperType}</TableCell>
+                    <TableCell className="text-[11px] font-mono">{j.widthMm}mm</TableCell>
+                    <TableCell className="text-[11px] font-mono">{j.lengthMeters}m</TableCell>
+                    <TableCell className="text-[11px] font-black text-primary">{j.sqm}</TableCell>
+                    <TableCell className="text-[11px]">{j.gsm}</TableCell>
+                    <TableCell className="text-[11px] font-bold">{j.weightKg}kg</TableCell>
+                    <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString()}</TableCell>
+                    <TableCell className="text-[11px]">{j.wastage || 0}%</TableCell>
+                    <TableCell className="text-[10px] font-medium text-muted-foreground">{j.dateOfUse || '-'}</TableCell>
+                    <TableCell className="text-[10px] font-bold">{j.receivedDate}</TableCell>
+                    <TableCell className="text-[11px] font-mono text-primary font-black">{j.jobNo || '-'}</TableCell>
+                    <TableCell className="text-[11px]">{j.size || '-'}</TableCell>
+                    <TableCell className="text-[11px] truncate max-w-[150px]">{j.productName || '-'}</TableCell>
+                    <TableCell className="text-[11px] font-mono">{j.code || '-'}</TableCell>
+                    <TableCell className="text-[11px] font-mono font-bold text-accent">{j.lotNo}</TableCell>
+                    <TableCell className="text-[10px] font-medium text-muted-foreground">{j.date || '-'}</TableCell>
+                    <TableCell className="text-[11px] font-mono">{j.companyRollNo || '-'}</TableCell>
                     {isAdmin && (
-                      <TableCell className="text-right sticky right-0 bg-background border-l z-10">
+                      <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => handleSingleDelete(j)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -592,52 +499,54 @@ export default function GRNPage() {
         </CardContent>
       </Card>
 
-      {selectedIds.size > 0 && isAdmin && (
-        <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 bg-zinc-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-6 animate-in slide-in-from-bottom-4">
-          <div className="flex items-center gap-2">
-            <div className="bg-primary h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-black">{selectedIds.size}</div>
-            <span className="text-sm font-bold uppercase tracking-tight">Records Selected</span>
-          </div>
-          <Separator orientation="vertical" className="h-6 bg-white/20" />
-          <Button variant="destructive" size="sm" className="font-black uppercase h-9 px-4 rounded-full" onClick={handleBulkDelete} disabled={isDeleting}>
-            {isDeleting ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Trash2 className="h-3 w-3 mr-2" />} Delete Selection
-          </Button>
-          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full text-white/60 hover:text-white" onClick={() => setSelectedIds(new Set())}><X className="h-4 w-4" /></Button>
-        </div>
-      )}
-
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[900px] max-h-[95vh] overflow-y-auto">
-          <form onSubmit={handleAddJumbo}>
-            <DialogHeader><DialogTitle>Substrate Technical Intake (19 Columns)</DialogTitle></DialogHeader>
+        <DialogContent className="sm:max-w-[900px]">
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!firestore || !user) return;
+            setIsGenerating(true);
+            const form = new FormData(e.currentTarget);
+            const data = Object.fromEntries(form.entries());
+            
+            try {
+              await runTransaction(firestore, async (transaction) => {
+                const counterRef = doc(firestore, 'counters', 'jumbo_roll');
+                const snap = await transaction.get(counterRef);
+                const nextNum = (snap.exists() ? snap.data().current_number : 1000) + 1;
+                const rollNo = isManualId ? (data.manualRollNo as string) : `${settings?.parentPrefix || "TLC-"}${nextNum}`;
+                
+                const newDocRef = doc(collection(firestore, 'jumbo_stock'));
+                transaction.set(newDocRef, {
+                  ...data,
+                  rollNo,
+                  widthMm: Number(data.widthMm),
+                  lengthMeters: Number(data.lengthMeters),
+                  gsm: Number(data.gsm),
+                  sqm: (Number(data.widthMm) * Number(data.lengthMeters)) / 1000,
+                  status: 'In Stock',
+                  createdAt: serverTimestamp()
+                });
+                
+                if (!isManualId) transaction.update(counterRef, { current_number: nextNum });
+              });
+              toast({ title: "Roll Added" });
+              setIsDialogOpen(false);
+            } finally { setIsGenerating(false); }
+          }}>
+            <DialogHeader><DialogTitle>Technical Intake (19 Columns)</DialogTitle></DialogHeader>
             <div className="grid gap-6 py-4">
-              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg border border-primary/10">
-                <div className="flex items-center gap-2">
-                  <Hash className="h-5 w-5 text-primary" />
-                  <div><Label className="font-bold text-base">RELL NO Identification</Label><p className="text-[10px] text-muted-foreground uppercase font-medium">Internal Master Serial</p></div>
-                </div>
-                <div className="flex items-center gap-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-muted-foreground">AUTO</span>
-                    <Switch checked={isManualId} onCheckedChange={setIsManualId} />
-                    <span className="text-[10px] font-bold text-primary">MANUAL</span>
-                  </div>
-                  {isManualId ? <Input name="manualRollNo" placeholder="VEN-001" className="w-40 h-10 font-bold" required /> : <div className="px-4 py-2 bg-background border rounded-md font-mono font-bold text-primary shadow-inner">{settings?.parentPrefix || "TLC-"}1XXX</div>}
-                </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" required /></div>
+                <div className="space-y-2"><Label>Paper Type</Label><Input name="paperType" required /></div>
+                <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" required /></div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2"><Label className="text-[11px] font-bold text-primary">PAPER COMPANY</Label><Select name="paperCompany" required><SelectTrigger className="h-10"><SelectValue placeholder="Vendor" /></SelectTrigger><SelectContent>{suppliers?.map(s => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}</SelectContent></Select></div>
-                <div className="space-y-2"><Label className="text-[11px] font-bold text-primary">PAPER TYPE</Label><Select name="paperType" required><SelectTrigger className="h-10"><SelectValue placeholder="Type" /></SelectTrigger><SelectContent>{materials?.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}</SelectContent></Select></div>
-                <div className="space-y-2"><Label className="text-[11px] font-bold text-primary">DATE RECEIVED</Label><Input name="receivedDate" type="date" defaultValue={new Date().toISOString().split('T')[0]} required /></div>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold">WIDTH (MM)</Label><Input name="widthMm" type="number" value={formData.widthMm} onChange={handleInputChange} required /></div>
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold">LENGTH (MTR)</Label><Input name="lengthMeters" type="number" value={formData.lengthMeters} onChange={handleInputChange} required /></div>
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-primary">SQM (AUTO)</Label><div className="h-10 px-3 flex items-center bg-primary/5 border-2 border-primary/20 rounded-md font-black text-primary">{formData.sqm}</div></div>
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold">GSM</Label><Input name="gsm" type="number" value={formData.gsm} onChange={handleInputChange} required /></div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" required /></div>
+                <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" required /></div>
+                <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" required /></div>
               </div>
             </div>
-            <DialogFooter className="pt-4 border-t"><Button type="submit" className="h-12 px-10 text-lg font-bold bg-primary" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : "Complete GRN"}</Button></DialogFooter>
+            <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : 'Complete GRN'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
