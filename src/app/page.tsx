@@ -44,10 +44,10 @@ export default function Dashboard() {
   }, [firestore, user])
   const { data: profile, isLoading: profileLoading } = useDoc(userProfileRef)
 
-  const role = profile?.roleId || "Operator" // Default to Operator if not found
-  const isAdmin = role === 'Admin' || role === 'Manager'
-  const isSales = role === 'Sales' || isAdmin
-  const isProduction = role === 'Operator' || isAdmin
+  const role = profile?.roleId || "Operator" 
+  const isAdmin = role === 'Admin' || role === 'Manager' || profile?.roles?.includes('Admin')
+  const isSales = role === 'Sales' || isAdmin || profile?.roles?.includes('Sales')
+  const isProduction = role === 'Operator' || isAdmin || profile?.roles?.includes('Operator')
 
   // 2. Live Data Queries
   const ordersQuery = useMemoFirebase(() => {
@@ -69,12 +69,41 @@ export default function Dashboard() {
   const { data: productionJobs, isLoading: productionLoading } = useCollection(productionQuery)
   const { data: jumboStock, isLoading: inventoryLoading } = useCollection(inventoryQuery)
 
-  // Helper to safely parse any date format (String or Timestamp)
+  /**
+   * Helper to safely parse any date format (String, Timestamp, or JS Date)
+   * Prevents "dateString.split is not a function" errors.
+   */
   const getSafeDate = (dateValue: any): Date => {
     if (!dateValue) return new Date(0)
+    
+    // JS Date object
+    if (dateValue instanceof Date) return dateValue
+    
+    // Firestore Timestamp instance
     if (typeof dateValue.toDate === 'function') return dateValue.toDate()
-    if (typeof dateValue === 'string') return parseISO(dateValue)
-    return new Date(dateValue)
+    
+    // Firestore Timestamp serialized object (standard in many React/Firebase environments)
+    if (dateValue && typeof dateValue.seconds === 'number') {
+      return new Date(dateValue.seconds * 1000)
+    }
+    
+    // String ISO date
+    if (typeof dateValue === 'string') {
+      try {
+        // date-fns parseISO is strict, so we wrap it
+        return parseISO(dateValue)
+      } catch (e) {
+        const d = new Date(dateValue)
+        return isNaN(d.getTime()) ? new Date(0) : d
+      }
+    }
+    
+    // Numeric timestamp
+    if (typeof dateValue === 'number') return new Date(dateValue)
+
+    // Last resort attempt
+    const fallback = new Date(dateValue)
+    return isNaN(fallback.getTime()) ? new Date(0) : fallback
   }
 
   // 3. Metrics Aggregation
@@ -119,7 +148,7 @@ export default function Dashboard() {
       return {
         name: dayLabel,
         orders: dayOrders,
-        production: Math.floor(dayOrders * 0.8), // Simulated production trend based on actual orders
+        production: Math.floor(dayOrders * 0.8), // Trend simulation
         sales: daySales
       }
     })
@@ -136,7 +165,10 @@ export default function Dashboard() {
   if (!isMounted || profileLoading) {
     return (
       <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Synchronizing Workspace...</p>
+        </div>
       </div>
     )
   }
