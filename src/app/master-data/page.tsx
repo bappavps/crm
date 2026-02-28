@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useRef, useMemo, useEffect } from "react"
@@ -66,23 +65,15 @@ import * as XLSX from 'xlsx'
 import { cn } from "@/lib/utils"
 
 const TEMPLATE_HEADERS = ["ROLL NO", "PAPER COMPANY", "PAPER TYPE", "GSM", "WIDTH (MM)", "LENGTH (MTR)", "WEIGHT (KG)", "SUPPLIER", "GRN NO", "PURCHASE DATE", "RATE PER SQM", "LOCATION"];
-const SYSTEM_FIELDS = [
-  { id: 'roll_no', label: 'ROLL NO' },
-  { id: 'paper_company', label: 'PAPER COMPANY' },
-  { id: 'paper_type', label: 'PAPER TYPE' },
-  { id: 'gsm', label: 'GSM' },
-  { id: 'width_mm', label: 'WIDTH (MM)' },
-  { id: 'length_mtr', label: 'LENGTH (MTR)' },
-  { id: 'weight_kg', label: 'WEIGHT (KG)' },
-  { id: 'supplier', label: 'SUPPLIER' },
-  { id: 'grn_number', label: 'GRN NO' },
-  { id: 'purchase_date', label: 'PURCHASE DATE' },
-  { id: 'rate_per_sqm', label: 'RATE PER SQM' },
-  { id: 'location', label: 'LOCATION' }
-];
 
 type SortField = 'rollNo' | 'receivedDate' | 'purchaseRate' | 'gsm' | 'sqm' | 'weightKg' | 'paperCompany' | 'status';
 type SortOrder = 'asc' | 'desc';
+
+interface ColumnFilter {
+  field: string;
+  operator: '==' | 'startsWith' | '>=' | '<=' | 'all';
+  value: any;
+}
 
 export default function MasterDataPage() {
   const { toast } = useToast()
@@ -108,19 +99,16 @@ export default function MasterDataPage() {
   
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const [columnFilters, setColumnFilters] = useState<Record<string, { field: string, operator: any, value: any }>>({})
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilter>>({})
 
   // Import State
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState(0)
-  const [importData, setImportData] = useState<any[]>([])
-  const [excelHeaders, setExcelHeaders] = useState<string[]>([])
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
   const [importStep, setImportStep] = useState<1 | 2 | 3>(1)
-  const [importSummary, setImportSummary] = useState<any>(null)
 
   useEffect(() => { setIsMounted(true) }, [])
 
+  // Authorization Check
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
@@ -134,15 +122,14 @@ export default function MasterDataPage() {
   const machinesQuery = useMemoFirebase(() => (!firestore || !user || !adminData) ? null : collection(firestore, 'machines'), [firestore, user, adminData])
   const customersQuery = useMemoFirebase(() => (!firestore || !user || !adminData) ? null : collection(firestore, 'customers'), [firestore, user, adminData])
   const cylindersQuery = useMemoFirebase(() => (!firestore || !user || !adminData) ? null : collection(firestore, 'cylinders'), [firestore, user, adminData])
-  const bomsQuery = useMemoFirebase(() => (!firestore || !user || !adminData) ? null : collection(firestore, 'boms'), [firestore, user, adminData])
 
   const { data: rawMaterials } = useCollection(rawMaterialsQuery)
   const { data: suppliers } = useCollection(suppliersQuery)
   const { data: machines } = useCollection(machinesQuery)
   const { data: customers } = useCollection(customersQuery)
   const { data: cylinders } = useCollection(cylindersQuery)
-  const { data: boms } = useCollection(bomsQuery)
 
+  // Query Builder Utility
   const buildBaseQuery = () => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
@@ -159,6 +146,7 @@ export default function MasterDataPage() {
     return queries.length <= 3 ? query(q, ...queries) : null;
   }
 
+  // Effect for Count
   useEffect(() => {
     if (!firestore || !user || !adminData) return;
     const fetchCount = async () => {
@@ -174,6 +162,7 @@ export default function MasterDataPage() {
     setSelectedStockIds(new Set());
   }, [firestore, user, adminData, columnFilters]);
 
+  // Effect for Paginated Data
   useEffect(() => {
     if (!firestore || !user || !adminData) return;
     const fetchData = async () => {
@@ -182,7 +171,10 @@ export default function MasterDataPage() {
         const baseQ = buildBaseQuery();
         if (!baseQ) return setPagedJumbos([]);
         const rangeFilter = Object.values(columnFilters).find(f => ['startsWith', '>=', '<='].includes(f.operator));
-        let q = query(baseQ, orderBy(rangeFilter ? rangeFilter.field : sortField, sortOrder));
+        let finalSortField: any = sortField;
+        if (rangeFilter) finalSortField = rangeFilter.field;
+
+        let q = query(baseQ, orderBy(finalSortField, sortOrder));
         const cursor = pageStack[currentPage - 1];
         if (cursor) q = query(q, startAfter(cursor));
         if (pageSize !== 'all') q = query(q, limit(pageSize as number));
@@ -224,6 +216,26 @@ export default function MasterDataPage() {
       else next[field] = { field, operator, value };
       return next;
     });
+  }
+
+  const resetFilters = () => {
+    setColumnFilters({});
+    setSortField('receivedDate');
+    setSortOrder('desc');
+    setCurrentPage(1);
+  }
+
+  const handleExport = async () => {
+    if (!firestore) return;
+    setIsExporting(true);
+    try {
+      await exportPaperStockToExcel(firestore);
+      toast({ title: "Export Complete" });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Export Failed" });
+    } finally {
+      setIsExporting(false);
+    }
   }
 
   const handleSingleStockDelete = async (roll: any) => {
@@ -332,7 +344,15 @@ export default function MasterDataPage() {
       </div>
 
       <Tabs defaultValue="raw_materials" className="w-full">
-        <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto whitespace-nowrap"><TabsTrigger value="raw_materials" className="gap-2 font-bold"><FlaskConical className="h-4 w-4" /> Raw Materials</TabsTrigger><TabsTrigger value="paper_stock" className="gap-2 font-bold"><Package className="h-4 w-4" /> Paper Stock</TabsTrigger><TabsTrigger value="boms" className="gap-2 font-bold"><Layers className="h-4 w-4" /> BOM Master</TabsTrigger><TabsTrigger value="suppliers" className="gap-2 font-bold"><Truck className="h-4 w-4" /> Suppliers</TabsTrigger><TabsTrigger value="machines" className="gap-2 font-bold"><Factory className="h-4 w-4" /> Machines</TabsTrigger><TabsTrigger value="cylinders" className="gap-2 font-bold"><Ruler className="h-4 w-4" /> Cylinders</TabsTrigger><TabsTrigger value="customers" className="gap-2 font-bold"><Users className="h-4 w-4" /> Clients</TabsTrigger></TabsList>
+        <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto whitespace-nowrap">
+          <TabsTrigger value="raw_materials" className="gap-2 font-bold"><FlaskConical className="h-4 w-4" /> Raw Materials</TabsTrigger>
+          <TabsTrigger value="paper_stock" className="gap-2 font-bold"><Package className="h-4 w-4" /> Paper Stock</TabsTrigger>
+          <TabsTrigger value="boms" className="gap-2 font-bold"><Layers className="h-4 w-4" /> BOM Master</TabsTrigger>
+          <TabsTrigger value="suppliers" className="gap-2 font-bold"><Truck className="h-4 w-4" /> Suppliers</TabsTrigger>
+          <TabsTrigger value="machines" className="gap-2 font-bold"><Factory className="h-4 w-4" /> Machines</TabsTrigger>
+          <TabsTrigger value="cylinders" className="gap-2 font-bold"><Ruler className="h-4 w-4" /> Cylinders</TabsTrigger>
+          <TabsTrigger value="customers" className="gap-2 font-bold"><Users className="h-4 w-4" /> Clients</TabsTrigger>
+        </TabsList>
         
         <TabsContent value="paper_stock">
           <Card className="border-none shadow-xl">
@@ -340,7 +360,17 @@ export default function MasterDataPage() {
               <div><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-primary" /> Substrate Stock Registry</CardTitle><CardDescription>Full ERP traceability with column-wise filtering.</CardDescription></div>
               <div className="flex flex-wrap gap-2">
                 {Object.keys(columnFilters).length > 0 && <Button variant="outline" size="sm" onClick={resetFilters} className="border-primary text-primary font-bold"><FilterX className="h-4 w-4 mr-2" /> Reset Filters</Button>}
-                {isAdmin && <><Button variant="outline" size="sm" onClick={() => XLSX.writeFile(XLSX.utils.book_new(), "stock_template.xlsx")}><Download className="h-4 w-4 mr-2" /> Template</Button><Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button></>}
+                {isAdmin && (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => { 
+                      const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
+                      const wb = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb, ws, "Template");
+                      XLSX.writeFile(wb, "paper_stock_template.xlsx");
+                    }}><Download className="h-4 w-4 mr-2" /> Template</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button>
+                  </>
+                )}
                 <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting}>{isExporting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileDown className="h-4 w-4 mr-2" />} Export All</Button>
               </div>
             </CardHeader>
@@ -427,7 +457,126 @@ export default function MasterDataPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {/* Other tabs remain unchanged */}
+
+        <TabsContent value="raw_materials">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Raw Material Catalog</CardTitle><CardDescription>Manage unit costs for inks, varnishes, and base substrates.</CardDescription></div>
+              <Button onClick={() => { setDialogType("raw_materials"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Material</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Material Name</TableHead><TableHead>Unit</TableHead><TableHead>Rate (₹)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {rawMaterials?.map((m) => (
+                    <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit}</TableCell><TableCell>₹{m.rate_per_unit}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("raw_materials"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { if(confirm('Delete?')) deleteDocumentNonBlocking(doc(firestore!, 'raw_materials', m.id)) }}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="suppliers">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Vendor Directory</CardTitle><CardDescription>Supplier contact details and material sourcing history.</CardDescription></div>
+              <Button onClick={() => { setDialogType("suppliers"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Supplier</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Contact</TableHead><TableHead>Location</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {suppliers?.map((s) => (
+                    <TableRow key={s.id}><TableCell className="font-bold">{s.name}</TableCell><TableCell>{s.contactPerson}</TableCell><TableCell>{s.location}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(s); setDialogType("suppliers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { if(confirm('Delete?')) deleteDocumentNonBlocking(doc(firestore!, 'suppliers', s.id)) }}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="machines">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Production Lines</CardTitle><CardDescription>Printing press technical limits and capacity settings.</CardDescription></div>
+              <Button onClick={() => { setDialogType("machines"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Machine</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Machine Name</TableHead><TableHead>Width (mm)</TableHead><TableHead>Speed (m/min)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {machines?.map((m) => (
+                    <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.maxPrintingWidthMm}</TableCell><TableCell>{m.speed}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("machines"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { if(confirm('Delete?')) deleteDocumentNonBlocking(doc(firestore!, 'machines', m.id)) }}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cylinders">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Cylinder & Plate Master</CardTitle><CardDescription>Inventory of printing tools indexed by repeat size.</CardDescription></div>
+              <Button onClick={() => { setDialogType("cylinders"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Cylinder</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Cylinder Size</TableHead><TableHead>Teeth</TableHead><TableHead>Location</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {cylinders?.map((c) => (
+                    <TableRow key={c.id}><TableCell className="font-bold">{c.size} mm</TableCell><TableCell>{c.teeth} T</TableCell><TableCell>{c.location}</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("cylinders"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { if(confirm('Delete?')) deleteDocumentNonBlocking(doc(firestore!, 'cylinders', c.id)) }}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="customers">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div><CardTitle>Client Ledger Registry</CardTitle><CardDescription>Manage customer profiles and credit limits.</CardDescription></div>
+              <Button onClick={() => { setDialogType("customers"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Client</Button>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Sales Rep</TableHead><TableHead>Credit Days</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {customers?.map((c) => (
+                    <TableRow key={c.id}><TableCell className="font-bold">{c.companyName}</TableCell><TableCell>{c.sales_owner_name}</TableCell><TableCell>{c.creditDays} days</TableCell>
+                      <TableCell className="text-right flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("customers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => { if(confirm('Delete?')) deleteDocumentNonBlocking(doc(firestore!, 'customers', c.id)) }}><Trash2 className="h-4 w-4" /></Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {selectedStockIds.size > 0 && isAdmin && (
@@ -438,6 +587,49 @@ export default function MasterDataPage() {
           <Button variant="ghost" size="icon" className="h-9 w-9 text-white/60 hover:text-white" onClick={() => setSelectedStockIds(new Set())}><X className="h-4 w-4" /></Button>
         </div>
       )}
+
+      {/* Unified Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleSave}>
+            <DialogHeader>
+              <DialogTitle>{editingItem ? 'Edit Record' : 'Create New Record'}</DialogTitle>
+              <DialogDescription>Enter technical parameters for the selected master category.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Name / Label</Label>
+                <Input id="name" name={dialogType === 'customers' ? 'companyName' : 'name'} defaultValue={editingItem?.name || editingItem?.companyName} required />
+              </div>
+              {dialogType === 'raw_materials' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2"><Label>Unit</Label><Input name="unit" defaultValue={editingItem?.unit} placeholder="e.g. Kg, Ltr" /></div>
+                  <div className="grid gap-2"><Label>Rate (₹)</Label><Input name="rate_per_unit" type="number" defaultValue={editingItem?.rate_per_unit} /></div>
+                </div>
+              )}
+              {dialogType === 'machines' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2"><Label>Width (mm)</Label><Input name="maxPrintingWidthMm" type="number" defaultValue={editingItem?.maxPrintingWidthMm} /></div>
+                  <div className="grid gap-2"><Label>Speed (m/min)</Label><Input name="speed" type="number" defaultValue={editingItem?.speed} /></div>
+                </div>
+              )}
+              {dialogType === 'cylinders' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2"><Label>Size (mm)</Label><Input name="size" type="number" defaultValue={editingItem?.size} /></div>
+                  <div className="grid gap-2"><Label>Teeth Count</Label><Input name="teeth" type="number" defaultValue={editingItem?.teeth} /></div>
+                </div>
+              )}
+              {dialogType === 'customers' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2"><Label>Credit Days</Label><Input name="creditDays" type="number" defaultValue={editingItem?.creditDays} /></div>
+                  <div className="grid gap-2"><Label>Sales Rep Code</Label><Input name="sales_owner_code" defaultValue={editingItem?.sales_owner_code} /></div>
+                </div>
+              )}
+            </div>
+            <DialogFooter><Button type="submit" className="w-full">{editingItem ? 'Update Registry' : 'Save Record'}</Button></DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
