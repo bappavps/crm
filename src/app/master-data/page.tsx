@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useRef, useMemo, useEffect } from "react"
@@ -151,7 +150,12 @@ export default function MasterDataPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: adminLoading } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
+  
+  // Define isAdmin for template guards
+  const isAdmin = useMemo(() => {
+    return !!adminData || userRoles.includes('Admin');
+  }, [adminData, userRoles]);
 
   // DATA QUERIES
   const rawMaterialsQuery = useMemoFirebase(() => {
@@ -317,7 +321,7 @@ export default function MasterDataPage() {
     }
   }
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
+  if (!isMounted || adminCheckLoading) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
 
   const currentLimit = pageSize === 'all' ? totalRecords : (pageSize as number);
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * currentLimit + 1;
