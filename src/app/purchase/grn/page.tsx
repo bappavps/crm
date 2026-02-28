@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -145,7 +144,7 @@ export default function GRNPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -153,23 +152,13 @@ export default function GRNPage() {
   }, [firestore]);
   const { data: settings } = useDoc(settingsDocRef);
 
-  const materialsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'materials');
-  }, [firestore, user, adminData])
-  
-  const suppliersQuery = useMemoFirebase(() => {
-    if (!firestore || !user || !adminData) return null;
-    return collection(firestore, 'suppliers');
-  }, [firestore, user, adminData])
-
   // Simple loaders for dropdowns
   const [materials, setMaterials] = useState<any[]>([])
   const [suppliers, setSuppliers] = useState<any[]>([])
 
   useEffect(() => {
     if (!firestore || !user || !adminData) return
-    const unsubM = onSnapshot(collection(firestore, 'materials'), s => setMaterials(s.docs.map(d => ({id: d.id, ...d.data()}))))
+    const unsubM = onSnapshot(collection(firestore, 'raw_materials'), s => setMaterials(s.docs.map(d => ({id: d.id, ...d.data()}))))
     const unsubS = onSnapshot(collection(firestore, 'suppliers'), s => setSuppliers(s.docs.map(d => ({id: d.id, ...d.data()}))))
     return () => { unsubM(); unsubS(); }
   }, [firestore, user, adminData])
@@ -214,7 +203,7 @@ export default function GRNPage() {
         }
 
         if (pageSize !== 'all') {
-          q = query(q, limit(pageSize));
+          q = query(q, limit(pageSize as number));
         }
 
         const snapshot = await getDocs(q);
@@ -240,7 +229,7 @@ export default function GRNPage() {
     };
 
     fetchData();
-  }, [firestore, user, adminData, pageSize, currentPage, sortField, sortOrder, filters.paperType, filters.status]);
+  }, [firestore, user, adminData, pageSize, currentPage, sortField, sortOrder, filters.paperType, filters.status, pageStack]);
 
   // SQM Auto-Calculation
   useEffect(() => {
@@ -253,7 +242,8 @@ export default function GRNPage() {
   }, [formData.widthMm, formData.lengthMeters])
 
   const handleNextPage = () => {
-    if (currentPage * (pageSize === 'all' ? totalRecords : pageSize) < totalRecords) {
+    const currentLimit = pageSize === 'all' ? totalRecords : (pageSize as number);
+    if (currentPage * currentLimit < totalRecords) {
       const nextStack = [...pageStack];
       nextStack[currentPage] = lastVisible;
       setPageStack(nextStack);
@@ -394,7 +384,7 @@ export default function GRNPage() {
     })
   }
 
-  if (!isMounted || adminCheckLoading) {
+  if (!isMounted || authLoading) {
     return (
       <div className="flex h-[calc(100vh-10rem)] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -402,8 +392,9 @@ export default function GRNPage() {
     );
   }
 
-  const startIdx = (currentPage - 1) * (pageSize === 'all' ? totalRecords : pageSize) + 1;
-  const endIdx = pageSize === 'all' ? totalRecords : Math.min(currentPage * pageSize, totalRecords);
+  const currentLimit = pageSize === 'all' ? totalRecords : (pageSize as number);
+  const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * currentLimit + 1;
+  const endIdx = pageSize === 'all' ? totalRecords : Math.min(currentPage * currentLimit, totalRecords);
 
   return (
     <div className="space-y-6">
@@ -574,7 +565,11 @@ export default function GRNPage() {
                     <TableCell className="text-emerald-700 font-bold text-xs">₹{j.purchaseRate?.toLocaleString()}</TableCell>
                     <TableCell className="text-[10px] font-bold text-muted-foreground">{j.receivedDate}</TableCell>
                     <TableCell className="text-[10px] font-mono">{j.lotNo || '-'}</TableCell>
-                    <TableCell><Badge className={j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500'} text-[10px]>{j.status}</Badge></TableCell>
+                    <TableCell>
+                      <Badge className={cn("text-[10px]", j.status === 'In Stock' ? 'bg-emerald-500' : 'bg-amber-500')}>
+                        {j.status}
+                      </Badge>
+                    </TableCell>
                   </TableRow>
                 ))}
                 {pagedJumbos.length === 0 && !isPageLoading && (
