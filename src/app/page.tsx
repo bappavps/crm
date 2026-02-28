@@ -69,6 +69,14 @@ export default function Dashboard() {
   const { data: productionJobs, isLoading: productionLoading } = useCollection(productionQuery)
   const { data: jumboStock, isLoading: inventoryLoading } = useCollection(inventoryQuery)
 
+  // Helper to safely parse any date format (String or Timestamp)
+  const getSafeDate = (dateValue: any): Date => {
+    if (!dateValue) return new Date(0)
+    if (typeof dateValue.toDate === 'function') return dateValue.toDate()
+    if (typeof dateValue === 'string') return parseISO(dateValue)
+    return new Date(dateValue)
+  }
+
   // 3. Metrics Aggregation
   const metrics = useMemo(() => {
     if (!isMounted) return null
@@ -78,7 +86,7 @@ export default function Dashboard() {
 
     // Monthly Sales Calculation
     const monthlyOrders = orders?.filter(o => {
-      const orderDate = o.createdAt ? parseISO(o.createdAt) : new Date(0)
+      const orderDate = getSafeDate(o.createdAt)
       return isAfter(orderDate, monthStart)
     }) || []
     
@@ -98,9 +106,15 @@ export default function Dashboard() {
       const dateStr = format(d, 'yyyy-MM-dd')
       const dayLabel = format(d, 'EEE')
 
-      const dayOrders = orders?.filter(o => o.createdAt?.startsWith(dateStr)).length || 0
-      const daySales = orders?.filter(o => o.createdAt?.startsWith(dateStr))
-        .reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0) || 0
+      const dayOrders = orders?.filter(o => {
+        const orderDate = getSafeDate(o.createdAt)
+        return format(orderDate, 'yyyy-MM-dd') === dateStr
+      }).length || 0
+
+      const daySales = orders?.filter(o => {
+        const orderDate = getSafeDate(o.createdAt)
+        return format(orderDate, 'yyyy-MM-dd') === dateStr
+      }).reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0) || 0
       
       return {
         name: dayLabel,
