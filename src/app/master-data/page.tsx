@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useRef, useMemo } from "react"
+import { useState, useRef, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -61,6 +61,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 import Image from "next/image"
 import * as XLSX from 'xlsx'
+import { cn } from "@/lib/utils"
 
 const TEMPLATE_HEADERS = [
   "ROLL NO", "PAPER COMPANY", "PAPER TYPE", "GSM", "WIDTH (MM)", "LENGTH (MTR)", 
@@ -87,6 +88,7 @@ export default function MasterDataPage() {
   const { user } = useUser()
   const firestore = useFirestore()
   const { hasPermission, roles: userRoles } = usePermissions()
+  const [isMounted, setIsMounted] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isDetailsOpen, setIsDetailsOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -108,17 +110,15 @@ export default function MasterDataPage() {
 
   const isAdmin = userRoles.includes('Admin')
 
-  const profileRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'users', user.uid);
-  }, [firestore, user]);
-  const { data: profile } = useDoc(profileRef);
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminLoading } = useDoc(adminDocRef);
 
   const rawMaterialsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
@@ -159,10 +159,10 @@ export default function MasterDataPage() {
     return query(collection(firestore, 'jumbo_stock'), orderBy('receivedDate', 'desc'));
   }, [firestore, user, adminData])
 
-  const { data: rawMaterials, isLoading: rawLoading } = useCollection(rawMaterialsQuery)
-  const { data: boms, isLoading: bomsLoading } = useCollection(bomsQuery)
+  const { data: rawMaterials } = useCollection(rawMaterialsQuery)
+  const { data: boms } = useCollection(bomsQuery)
   const { data: machines } = useCollection(machinesQuery)
-  const { data: customers, isLoading: customersLoading } = useCollection(customersQuery)
+  const { data: customers } = useCollection(customersQuery)
   const { data: cylinders } = useCollection(cylindersQuery)
   const { data: suppliers } = useCollection(suppliersQuery)
   const { data: jumboStock, isLoading: jumboLoading } = useCollection(jumboStockQuery)
@@ -175,42 +175,59 @@ export default function MasterDataPage() {
     toast({ title: "Template Downloaded", description: "Use this file for bulk uploads." });
   }
 
+  const handleExportAll = async () => {
+    if (!firestore) return
+    setIsExporting(true)
+    try {
+      await exportPaperStockToExcel(firestore)
+      toast({ title: "Export Complete", description: "Stock registry downloaded." })
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: e.message })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const wsname = wb.SheetNames[0];
-      const ws = wb.Sheets[wsname];
-      const data = XLSX.utils.sheet_to_json(ws);
-      const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+        const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
 
-      if (data.length === 0) {
-        toast({ variant: "destructive", title: "Empty File", description: "The uploaded file contains no data." });
-        return;
+        if (data.length === 0) {
+          toast({ variant: "destructive", title: "Empty File", description: "The uploaded file contains no data." });
+          return;
+        }
+
+        setImportData(data);
+        setExcelHeaders(headers || []);
+        
+        // Auto-mapping logic
+        const autoMap: Record<string, string> = {};
+        headers?.forEach(h => {
+          const norm = h.toUpperCase().replace(/\s/g, '_');
+          if (norm === 'ROLL_NO' || norm === 'RELL_NO') autoMap['roll_no'] = h;
+          if (norm === 'PAPER_COMPANY' || norm === 'SUPPLIER') autoMap['paper_company'] = h;
+          if (norm === 'PAPER_TYPE') autoMap['paper_type'] = h;
+          if (norm === 'GSM') autoMap['gsm'] = h;
+          if (norm === 'WIDTH_(MM)' || norm === 'WIDTH') autoMap['width_mm'] = h;
+          if (norm === 'LENGTH_(MTR)' || norm === 'LENGTH') autoMap['length_mtr'] = h;
+          if (norm === 'PURCHASE_DATE' || norm === 'DATE') autoMap['purchase_date'] = h;
+          if (norm === 'LOCATION') autoMap['location'] = h;
+        });
+        setColumnMapping(autoMap);
+        setImportStep(2);
+      } catch (err) {
+        toast({ variant: "destructive", title: "Parsing Error", description: "Could not read the Excel file format." });
       }
-
-      setImportData(data);
-      setExcelHeaders(headers || []);
-      
-      // Auto-mapping logic
-      const autoMap: Record<string, string> = {};
-      headers?.forEach(h => {
-        const norm = h.toUpperCase().replace(/\s/g, '_');
-        if (norm === 'ROLL_NO' || norm === 'RELL_NO') autoMap['roll_no'] = h;
-        if (norm === 'PAPER_COMPANY' || norm === 'SUPPLIER') autoMap['paper_company'] = h;
-        if (norm === 'PAPER_TYPE') autoMap['paper_type'] = h;
-        if (norm === 'GSM') autoMap['gsm'] = h;
-        if (norm === 'WIDTH_(MM)' || norm === 'WIDTH') autoMap['width_mm'] = h;
-        if (norm === 'LENGTH_(MTR)' || norm === 'LENGTH') autoMap['length_mtr'] = h;
-        if (norm === 'PURCHASE_DATE' || norm === 'DATE') autoMap['purchase_date'] = h;
-        if (norm === 'LOCATION') autoMap['location'] = h;
-      });
-      setColumnMapping(autoMap);
-      setImportStep(2);
     };
     reader.readAsBinaryString(file);
   }
@@ -293,7 +310,7 @@ export default function MasterDataPage() {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
     const rawData = Object.fromEntries(formData.entries())
-    if (!firestore || !user || !profile) return
+    if (!firestore || !user) return
 
     let finalData: any = { ...rawData };
 
@@ -306,9 +323,7 @@ export default function MasterDataPage() {
         status: rawData.status === 'on' ? 'Active' : 'Inactive',
         isCreditBlocked: rawData.isCreditBlocked === 'on',
         photoUrl: photoPreview || editingItem?.photoUrl || null,
-        sales_owner_id: editingItem?.sales_owner_id || user.uid,
-        sales_owner_name: editingItem?.sales_owner_name || profile.firstName,
-        sales_owner_code: editingItem?.sales_owner_code || profile.salesCode || 'Admin'
+        sales_owner_id: editingItem?.sales_owner_id || user.uid
       }
     } else if (dialogType === 'raw_materials') {
       finalData = {
@@ -347,6 +362,8 @@ export default function MasterDataPage() {
       toast({ title: "Deleted" })
     }
   }
+
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
 
   return (
     <div className="space-y-6">
@@ -388,7 +405,7 @@ export default function MasterDataPage() {
                     </Button>
                   </>
                 )}
-                <Button variant="outline" onClick={() => exportPaperStockToExcel(firestore)} disabled={isExporting} className="h-9">
+                <Button variant="outline" onClick={handleExportAll} disabled={isExporting} className="h-9">
                   {isExporting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileDown className="h-4 w-4 mr-2" />}
                   Export All
                 </Button>
@@ -429,7 +446,6 @@ export default function MasterDataPage() {
           </Card>
         </TabsContent>
 
-        {/* Existing Tabs Logic Preserved */}
         <TabsContent value="raw_materials">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -457,7 +473,6 @@ export default function MasterDataPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {/* ... Other Tabs remain identical ... */}
       </Tabs>
 
       {/* --- BULK IMPORT DIALOG --- */}
@@ -472,11 +487,25 @@ export default function MasterDataPage() {
 
           {importStep === 1 && (
             <div className="py-10 text-center space-y-6">
-              <div className="border-2 border-dashed rounded-2xl p-12 bg-muted/10 relative hover:bg-muted/20 transition-colors">
-                <input type="file" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                <FileUp className="h-12 w-12 mx-auto text-muted-foreground opacity-20 mb-4" />
-                <p className="font-black text-lg">Click to Upload Excel Stock File</p>
-                <p className="text-sm text-muted-foreground">Standard .xlsx or .xls files supported.</p>
+              <div className="border-2 border-dashed rounded-2xl p-12 bg-muted/10 relative hover:bg-muted/20 transition-colors flex flex-col items-center justify-center min-h-[300px]">
+                <input 
+                  type="file" 
+                  accept=".xlsx,.xls,.csv" 
+                  onChange={handleFileUpload} 
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                />
+                <div className="space-y-4 flex flex-col items-center">
+                  <div className="p-4 bg-primary/10 rounded-full">
+                    <FileUp className="h-12 w-12 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-black text-lg">Browse or Drop Excel Stock File</p>
+                    <p className="text-sm text-muted-foreground">Standard .xlsx or .xls files supported.</p>
+                  </div>
+                  <Button variant="default" className="pointer-events-none font-bold">
+                    Choose File to Start
+                  </Button>
+                </div>
               </div>
               <div className="flex justify-center gap-4">
                 <Button variant="link" onClick={downloadTemplate} className="text-primary font-bold">
@@ -541,7 +570,11 @@ export default function MasterDataPage() {
                 </div>
               </div>
 
-              <Button onClick={executeImport} disabled={isImporting || !columnMapping['roll_no']} className="w-full h-12 text-lg font-black uppercase tracking-widest shadow-xl">
+              <Button 
+                onClick={executeImport} 
+                disabled={isImporting || !columnMapping['roll_no']} 
+                className="w-full h-12 text-lg font-black uppercase tracking-widest shadow-xl mt-4"
+              >
                 {isImporting ? <Loader2 className="animate-spin mr-2" /> : <Database className="mr-2 h-5 w-5" />}
                 Execute Multi-Stock Import
               </Button>
@@ -582,7 +615,6 @@ export default function MasterDataPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Standard Dialog for Single Records */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <form onSubmit={handleSave}>
