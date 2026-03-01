@@ -55,7 +55,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, QueryDocumentSnapshot, DocumentData, deleteDoc, onSnapshot } from "firebase/firestore"
-import { updateDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { updateDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
@@ -125,15 +125,21 @@ export default function MasterDataPage() {
 
   // Paper Stock Specific State
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
-  const [importStep, setImportStep] = useState(1) // 1: Select, 2: Map, 3: Progress, 4: Summary
+  const [importStep, setImportStep] = useState(1) 
   const [excelData, setExcelData] = useState<any[]>([])
   const [excelHeaders, setExcelHeaders] = useState<string[]>([])
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
   const [uploadProgress, setUploadProgress] = useState(0)
   const [importSummary, setImportSummary] = useState<any>(null)
   
+  const [intakeForm, setIntakeForm] = useState({ widthMm: 0, lengthMeters: 0 })
+  const liveSqm = useMemo(() => {
+    const w = intakeForm.widthMm || 0;
+    const l = intakeForm.lengthMeters || 0;
+    return w > 0 && l > 0 ? ((w * l) / 1000).toFixed(2) : "0.00";
+  }, [intakeForm]);
+
   const [isExporting, setIsExporting] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   
   const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set())
@@ -324,8 +330,13 @@ export default function MasterDataPage() {
           data[systemKey] = val;
         });
 
-        if (data.widthMm && data.lengthMeters) {
-          data.sqm = (data.widthMm * data.lengthMeters) / 1000;
+        // AUTO-CALC SQM (Enforced Global Rule)
+        const w = Number(data.widthMm) || 0;
+        const l = Number(data.lengthMeters) || 0;
+        if (w > 0 && l > 0) {
+          data.sqm = Number(((w * l) / 1000).toFixed(2));
+        } else {
+          data.sqm = 0;
         }
 
         batch.set(doc(collection(firestore, 'jumbo_stock')), data);
@@ -356,6 +367,15 @@ export default function MasterDataPage() {
     setFilters(INITIAL_FILTERS);
     setCurrentPage(1);
     setPageStack([null]);
+  }
+
+  const handleOpenEdit = (item: any, type: string) => {
+    setEditingItem(item);
+    setDialogType(type);
+    if (type === 'jumbo_stock') {
+      setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
+    }
+    setIsDialogOpen(true);
   }
 
   const handleSingleDelete = async (item: any) => {
@@ -502,7 +522,12 @@ export default function MasterDataPage() {
                           <TableCell className="text-[11px]">{j.wastage}%</TableCell>
                           <TableCell className="text-[10px] font-bold">{j.receivedDate}</TableCell>
                           <TableCell className="text-[11px] font-mono font-bold text-accent">{j.lotNo}</TableCell>
-                          <TableCell className="text-right sticky right-0 bg-background z-10 border-l"><Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => { setDialogType('paper_stock'); handleSingleDelete(j); }}><Trash2 className="h-4 w-4" /></Button></TableCell>
+                          <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleOpenEdit(j, 'jumbo_stock')}><Pencil className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => { setDialogType('paper_stock'); handleSingleDelete(j); }}><Trash2 className="h-4 w-4" /></Button>
+                            </div>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -526,7 +551,7 @@ export default function MasterDataPage() {
                   {rawMaterials?.map((m) => (
                     <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit}</TableCell><TableCell>₹{m.rate_per_unit}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("raw_materials"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "raw_materials")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'raw_materials', m.id))}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -550,7 +575,7 @@ export default function MasterDataPage() {
                   {suppliers?.map((s) => (
                     <TableRow key={s.id}><TableCell className="font-bold">{s.name}</TableCell><TableCell>{s.unit || 'Substrates'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(s); setDialogType("suppliers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(s, "suppliers")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'suppliers', s.id))}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -574,7 +599,7 @@ export default function MasterDataPage() {
                   {machines?.map((m) => (
                     <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit || '250mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("machines"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "machines")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'machines', m.id))}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -598,7 +623,7 @@ export default function MasterDataPage() {
                   {cylinders?.map((c) => (
                     <TableRow key={c.id}><TableCell className="font-bold">{c.name}</TableCell><TableCell>{c.unit || '508mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("cylinders"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "cylinders")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'cylinders', c.id))}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -622,7 +647,7 @@ export default function MasterDataPage() {
                   {customers?.map((c) => (
                     <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("customers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "customers")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'customers', c.id))}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -646,7 +671,7 @@ export default function MasterDataPage() {
                   {boms?.map((b) => (
                     <TableRow key={b.id}><TableCell className="font-bold">{b.name || b.bomNumber}</TableCell><TableCell className="text-xs truncate max-w-[200px]">{b.unit || b.description}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(b); setDialogType("boms"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(b, "boms")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'boms', b.id))}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -725,20 +750,66 @@ export default function MasterDataPage() {
 
       {/* CRUD DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className={cn("sm:max-w-[500px]", dialogType === 'jumbo_stock' && "sm:max-w-[800px]")}>
           <form onSubmit={(e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
-            const data = Object.fromEntries(formData.entries());
+            const data: any = Object.fromEntries(formData.entries());
+            
+            if (dialogType === 'jumbo_stock') {
+              const width = Number(data.widthMm);
+              const length = Number(data.lengthMeters);
+              if (width <= 0 || length <= 0) {
+                toast({ variant: "destructive", title: "Validation Error", description: "Width and Length must be greater than zero." });
+                return;
+              }
+              data.widthMm = width;
+              data.lengthMeters = length;
+              data.gsm = Number(data.gsm);
+              data.sqm = Number(((width * length) / 1000).toFixed(2));
+            } else {
+              if (data.rate_per_unit) data.rate_per_unit = Number(data.rate_per_unit);
+            }
+
             if (editingItem) updateDocumentNonBlocking(doc(firestore!, dialogType, editingItem.id), data);
             else addDocumentNonBlocking(collection(firestore!, dialogType), { ...data, createdAt: serverTimestamp() });
             setIsDialogOpen(false);
           }}>
             <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Create'} {dialogType.replace('_', ' ')}</DialogTitle></DialogHeader>
+            
             <div className="grid gap-4 py-4">
-              <div className="space-y-2"><Label>Name</Label><Input name="name" defaultValue={editingItem?.name || editingItem?.companyName} required /></div>
-              <div className="space-y-2"><Label>Unit/Specs</Label><Input name="unit" defaultValue={editingItem?.unit || editingItem?.description} /></div>
-              <div className="space-y-2"><Label>Rate (₹)</Label><Input name="rate_per_unit" type="number" defaultValue={editingItem?.rate_per_unit} /></div>
+              {dialogType === 'jumbo_stock' ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" defaultValue={editingItem?.paperCompany} required /></div>
+                    <div className="space-y-2"><Label>Paper Type</Label><Input name="paperType" defaultValue={editingItem?.paperType} required /></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Width (mm)</Label>
+                      <Input name="widthMm" type="number" min="0.01" step="0.01" defaultValue={editingItem?.widthMm} required onChange={(e) => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Length (m)</Label>
+                      <Input name="lengthMeters" type="number" min="0.01" step="0.01" defaultValue={editingItem?.lengthMeters} required onChange={(e) => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>SQM (Auto Calculated)</Label>
+                      <Input value={liveSqm} readOnly className="bg-muted font-bold" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" defaultValue={editingItem?.gsm} required /></div>
+                    <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" defaultValue={editingItem?.lotNo} required /></div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2"><Label>Name</Label><Input name="name" defaultValue={editingItem?.name || editingItem?.companyName} required /></div>
+                  <div className="space-y-2"><Label>Unit/Specs</Label><Input name="unit" defaultValue={editingItem?.unit || editingItem?.description} /></div>
+                  <div className="space-y-2"><Label>Rate (₹)</Label><Input name="rate_per_unit" type="number" defaultValue={editingItem?.rate_per_unit} /></div>
+                </>
+              )}
             </div>
             <DialogFooter><Button type="submit">Save Record</Button></DialogFooter>
           </form>

@@ -30,7 +30,8 @@ import {
   Download,
   AlertTriangle,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Pencil
 } from "lucide-react"
 import { 
   Dialog, 
@@ -64,6 +65,7 @@ import {
   serverTimestamp,
   runTransaction
 } from "firebase/firestore"
+import { updateDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
@@ -105,22 +107,6 @@ const TEMPLATE_HEADERS = [
   "LOT NO", "COMPANY RELL NO", "LOCATION"
 ];
 
-const SYSTEM_FIELDS = [
-  { label: "Roll No (Mandatory)", value: "rollNo" },
-  { label: "Paper Company", value: "paperCompany" },
-  { label: "Paper Type", value: "paperType" },
-  { label: "Width (mm)", value: "widthMm" },
-  { label: "Length (mtr)", value: "lengthMeters" },
-  { label: "GSM", value: "gsm" },
-  { label: "Weight (kg)", value: "weightKg" },
-  { label: "Purchase Rate", value: "purchaseRate" },
-  { label: "Wastage (%)", value: "wastage" },
-  { label: "Date Received", value: "receivedDate" },
-  { label: "Lot No", value: "lotNo" },
-  { label: "Company Roll No", value: "companyRollNo" },
-  { label: "Location", value: "location" }
-];
-
 export default function GRNPage() {
   const { toast } = useToast()
   const { user } = useUser()
@@ -130,7 +116,16 @@ export default function GRNPage() {
   // Dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [editingRoll, setEditingRoll] = useState<any>(null)
   
+  // Intake Form Logic
+  const [intakeForm, setIntakeForm] = useState({ widthMm: 0, lengthMeters: 0 })
+  const liveSqm = useMemo(() => {
+    const w = intakeForm.widthMm || 0;
+    const l = intakeForm.lengthMeters || 0;
+    return w > 0 && l > 0 ? ((w * l) / 1000).toFixed(2) : "0.00";
+  }, [intakeForm]);
+
   // Data States
   const [isGenerating, setIsGenerating] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
@@ -151,14 +146,6 @@ export default function GRNPage() {
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
-
-  // Upload State
-  const [importStep, setImportStep] = useState(1)
-  const [excelData, setExcelData] = useState<any[]>([])
-  const [excelHeaders, setExcelHeaders] = useState<string[]>([])
-  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [importSummary, setImportSummary] = useState<any>(null)
 
   // Options for multi-selects
   const [options, setOptions] = useState({
@@ -236,7 +223,7 @@ export default function GRNPage() {
 
   // Load Data
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
+    if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
       setIsPageLoading(true);
       try {
@@ -253,13 +240,13 @@ export default function GRNPage() {
           if (snap.docs.length > 0) setLastVisible(snap.docs[snap.docs.length - 1]);
         }
       } catch (e) {
-        toast({ variant: "destructive", title: "Query Complexity", description: "This filter combination is too complex or requires an index." });
+        console.error("Query Error:", e);
       } finally {
         setIsPageLoading(false);
       }
     };
     load();
-  }, [firestore, isAdmin, filters, sortField, sortOrder, pageSize, currentPage]);
+  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage]);
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -281,105 +268,10 @@ export default function GRNPage() {
     setPageStack([null]);
   }
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Stock Template");
-    XLSX.writeFile(wb, "paper_stock_template.xlsx");
-    toast({ title: "Template Downloaded" });
-  }
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const ab = evt.target?.result;
-        const wb = XLSX.read(ab, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(ws);
-        const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
-
-        setExcelData(data);
-        setExcelHeaders(headers);
-        setImportStep(2);
-      } catch (err) {
-        console.error("Excel Parse Error:", err);
-        toast({ variant: "destructive", title: "Format Error", description: "Could not parse Excel file." });
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  const executeBulkImport = async () => {
-    if (!firestore || !user || !excelData.length) return;
-    
-    const rollNoMapping = Object.keys(columnMapping).find(k => columnMapping[k] === 'rollNo');
-    if (!rollNoMapping) {
-      toast({ variant: "destructive", title: "Mapping Error", description: "Roll No must be mapped." });
-      return;
-    }
-
-    setImportStep(3);
-    setUploadProgress(0);
-
-    const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
-    const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
-
-    let imported = 0;
-    let skipped = 0;
-    let errors = 0;
-
-    for (let i = 0; i < excelData.length; i += 200) {
-      const batch = writeBatch(firestore);
-      const chunk = excelData.slice(i, i + 200);
-
-      chunk.forEach((row) => {
-        const rollId = String(row[rollNoMapping]);
-        if (existingRolls.has(rollId)) {
-          skipped++;
-          return;
-        }
-
-        const data: any = { status: 'In Stock', createdAt: serverTimestamp(), createdById: user.uid };
-        Object.entries(columnMapping).forEach(([excelHeader, systemKey]) => {
-          let val = row[excelHeader];
-          if (['widthMm', 'lengthMeters', 'gsm', 'weightKg', 'purchaseRate', 'wastage'].includes(systemKey)) {
-            val = Number(val) || 0;
-          }
-          data[systemKey] = val;
-        });
-
-        // Auto-calc SQM
-        if (data.widthMm && data.lengthMeters) {
-          data.sqm = (data.widthMm * data.lengthMeters) / 1000;
-        }
-
-        const docRef = doc(collection(firestore, 'jumbo_stock'));
-        batch.set(docRef, data);
-        imported++;
-      });
-
-      try {
-        await batch.commit();
-        setUploadProgress(Math.round(((i + chunk.length) / excelData.length) * 100));
-      } catch (err) {
-        console.error("Batch Commit Error:", err);
-        errors += chunk.length;
-      }
-    }
-
-    setImportSummary({ total: excelData.length, imported, skipped, errors });
-    setImportStep(4);
-    toast({ title: "Import Processed" });
-  }
-
   const handleExportAll = async () => {
     setIsExporting(true);
     try {
-      await exportPaperStockToExcel(firestore, filters as any);
+      await exportPaperStockToExcel(firestore!, filters as any);
     } finally { setIsExporting(false); }
   }
 
@@ -393,6 +285,12 @@ export default function GRNPage() {
         setTotalRecords(prev => prev - 1);
       } finally { setIsDeleting(false); }
     }
+  }
+
+  const handleOpenEdit = (roll: any) => {
+    setEditingRoll(roll);
+    setIntakeForm({ widthMm: roll.widthMm || 0, lengthMeters: roll.lengthMeters || 0 });
+    setIsDialogOpen(true);
   }
 
   if (!isMounted) return null;
@@ -419,7 +317,7 @@ export default function GRNPage() {
           <Button variant="outline" onClick={handleExportAll} disabled={isExporting}>
             {isExporting ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <FileDown className="mr-2 h-4 w-4" />} Export
           </Button>
-          <Button onClick={() => setIsDialogOpen(true)} className="shadow-lg font-bold uppercase tracking-widest"><Plus className="mr-2 h-4 w-4" /> New Intake</Button>
+          <Button onClick={() => { setEditingRoll(null); setIntakeForm({ widthMm: 0, lengthMeters: 0 }); setIsDialogOpen(true); }} className="shadow-lg font-bold uppercase tracking-widest"><Plus className="mr-2 h-4 w-4" /> New Intake</Button>
         </div>
       </div>
 
@@ -560,7 +458,7 @@ export default function GRNPage() {
                     <TableCell className="text-[11px] font-mono">{j.lengthMeters}m</TableCell>
                     <TableCell className="text-[11px] font-black text-primary">{j.sqm}</TableCell>
                     <TableCell className="text-[11px]">{j.gsm}</TableCell>
-                    <TableCell className="text-[11px]">{j.weightKg}kg</TableCell>
+                    <TableCell className="text-[11px] font-bold">{j.weightKg}kg</TableCell>
                     <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate}</TableCell>
                     <TableCell className="text-[11px]">{j.wastage}%</TableCell>
                     <TableCell className="text-[10px]">{j.dateOfUse || '-'}</TableCell>
@@ -573,7 +471,10 @@ export default function GRNPage() {
                     <TableCell className="text-[10px]">{j.date || '-'}</TableCell>
                     <TableCell className="text-[11px] font-mono">{j.companyRollNo || '-'}</TableCell>
                     <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleSingleDelete(j)}><Trash2 className="h-4 w-4" /></Button>
+                      <div className="flex justify-end gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleOpenEdit(j)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleSingleDelete(j)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -583,50 +484,109 @@ export default function GRNPage() {
         </CardContent>
       </Card>
 
-      {/* INTAKE DIALOG */}
+      {/* INTAKE / EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[900px]">
           <form onSubmit={async (e) => {
             e.preventDefault();
             setIsGenerating(true);
             const form = new FormData(e.currentTarget);
-            const data = Object.fromEntries(form.entries());
+            const data: any = Object.fromEntries(form.entries());
+            
+            const width = Number(data.widthMm);
+            const length = Number(data.lengthMeters);
+            
+            if (width <= 0 || length <= 0) {
+              toast({ variant: "destructive", title: "Validation Error", description: "Width and Length must be greater than zero." });
+              setIsGenerating(false);
+              return;
+            }
+
+            const sqm = Number(((width * length) / 1000).toFixed(2));
+
             try {
-              await runTransaction(firestore!, async (tx) => {
-                const countRef = doc(firestore!, 'counters', 'jumbo_roll');
-                const snap = await tx.get(countRef);
-                const nextNum = (snap.exists() ? snap.data().current_number : 1000) + 1;
-                const rollNo = `${settings?.parentPrefix || "TLC-"}${nextNum}`;
-                tx.set(doc(collection(firestore!, 'jumbo_stock')), {
+              if (editingRoll) {
+                updateDocumentNonBlocking(doc(firestore!, 'jumbo_stock', editingRoll.id), {
                   ...data,
-                  rollNo,
-                  widthMm: Number(data.widthMm),
-                  lengthMeters: Number(data.lengthMeters),
+                  widthMm: width,
+                  lengthMeters: length,
                   gsm: Number(data.gsm),
-                  sqm: (Number(data.widthMm) * Number(data.lengthMeters)) / 1000,
-                  status: 'In Stock',
-                  createdAt: serverTimestamp()
+                  sqm: sqm,
+                  updatedAt: serverTimestamp()
                 });
-                tx.update(countRef, { current_number: nextNum });
-              });
-              toast({ title: "Roll Added Successfully" });
-              setIsDialogOpen(false);
+                toast({ title: "Roll Updated Successfully" });
+                setIsDialogOpen(false);
+              } else {
+                await runTransaction(firestore!, async (tx) => {
+                  const countRef = doc(firestore!, 'counters', 'jumbo_roll');
+                  const snap = await tx.get(countRef);
+                  const nextNum = (snap.exists() ? snap.data().current_number : 1000) + 1;
+                  const rollNo = `${settings?.parentPrefix || "TLC-"}${nextNum}`;
+                  tx.set(doc(collection(firestore!, 'jumbo_stock')), {
+                    ...data,
+                    rollNo,
+                    widthMm: width,
+                    lengthMeters: length,
+                    gsm: Number(data.gsm),
+                    sqm: sqm,
+                    status: 'In Stock',
+                    createdAt: serverTimestamp()
+                  });
+                  tx.update(countRef, { current_number: nextNum });
+                });
+                toast({ title: "Roll Added Successfully" });
+                setIsDialogOpen(false);
+              }
             } finally { setIsGenerating(false); }
           }}>
-            <DialogHeader><DialogTitle>Technical Stock Intake</DialogTitle><DialogDescription>Manual entry for single jumbo roll substrate.</DialogDescription></DialogHeader>
+            <DialogHeader>
+              <DialogTitle>{editingRoll ? 'Edit Technical Roll' : 'Technical Stock Intake'}</DialogTitle>
+              <DialogDescription>{editingRoll ? `Modifying technical parameters for ${editingRoll.rollNo}` : 'Manual entry for single jumbo roll substrate.'}</DialogDescription>
+            </DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" required /></div>
-                <div className="space-y-2"><Label>Paper Type</Label><Input name="paperType" required /></div>
-                <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" required /></div>
+                <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" defaultValue={editingRoll?.paperCompany} required /></div>
+                <div className="space-y-2"><Label>Paper Type</Label><Input name="paperType" defaultValue={editingRoll?.paperType} required /></div>
+                <div className="space-y-2">
+                  <Label>Width (mm)</Label>
+                  <Input 
+                    name="widthMm" 
+                    type="number" 
+                    min="0.01"
+                    step="0.01"
+                    defaultValue={editingRoll?.widthMm} 
+                    required 
+                    onChange={(e) => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))}
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" required /></div>
-                <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" required /></div>
-                <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" required /></div>
+                <div className="space-y-2">
+                  <Label>Length (m)</Label>
+                  <Input 
+                    name="lengthMeters" 
+                    type="number" 
+                    min="0.01"
+                    step="0.01"
+                    defaultValue={editingRoll?.lengthMeters} 
+                    required 
+                    onChange={(e) => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>SQM (Auto Calculated)</Label>
+                  <Input value={liveSqm} readOnly className="bg-muted font-bold" />
+                  <p className="text-[9px] text-muted-foreground italic">Auto calculated: (W / 1000) * L</p>
+                </div>
+                <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" defaultValue={editingRoll?.gsm} required /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" defaultValue={editingRoll?.lotNo} required /></div>
+                <div className="space-y-2"><Label>Purchase Rate</Label><Input name="purchaseRate" type="number" step="0.01" defaultValue={editingRoll?.purchaseRate} required /></div>
+                <div className="space-y-2"><Label>Location</Label><Input name="location" defaultValue={editingRoll?.location} /></div>
               </div>
             </div>
-            <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : 'Complete Intake'}</Button></DialogFooter>
+            <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : editingRoll ? 'Update Roll' : 'Complete Intake'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
