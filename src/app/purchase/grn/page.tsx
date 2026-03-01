@@ -101,12 +101,6 @@ const INITIAL_FILTERS: FilterState = {
   endDate: ""
 };
 
-const TEMPLATE_HEADERS = [
-  "RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", 
-  "GSM", "WEIGHT(KG)", "PURCHASE RATE", "WASTAGE", "DATE RECEIVED", 
-  "LOT NO", "COMPANY RELL NO", "LOCATION"
-];
-
 export default function GRNPage() {
   const { toast } = useToast()
   const { user } = useUser()
@@ -115,7 +109,6 @@ export default function GRNPage() {
   
   // Dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [editingRoll, setEditingRoll] = useState<any>(null)
   
   // Intake Form Logic
@@ -131,13 +124,13 @@ export default function GRNPage() {
   const [isExporting, setIsExporting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   
   // Selection & Pagination
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [pageSize, setPageSize] = useState<number>(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalRecords, setTotalRecords] = useState(0)
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
   const [pageStack, setPageStack] = useState<any[]>([null])
   const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
   const [isPageLoading, setIsPageLoading] = useState(false)
@@ -147,7 +140,6 @@ export default function GRNPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
 
-  // Options for multi-selects
   const [options, setOptions] = useState({
     companies: [] as string[],
     types: [] as string[],
@@ -164,13 +156,12 @@ export default function GRNPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
   const settingsRef = useMemoFirebase(() => (!firestore ? null : doc(firestore, 'roll_settings', 'global_config')), [firestore]);
   const { data: settings } = useDoc(settingsRef);
 
-  // Auto-generate filter options from data
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -187,7 +178,6 @@ export default function GRNPage() {
     return () => unsub();
   }, [firestore, isAdmin]);
 
-  // Query Builder
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
@@ -221,7 +211,6 @@ export default function GRNPage() {
     return query(q, ...constraints);
   }
 
-  // Load Data
   useEffect(() => {
     if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
@@ -237,7 +226,15 @@ export default function GRNPage() {
         if (dataQ) {
           const snap = await getDocs(dataQ);
           setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          if (snap.docs.length > 0) setLastVisible(snap.docs[snap.docs.length - 1]);
+          // Update stack for next navigation
+          if (snap.docs.length > 0) {
+            const last = snap.docs[snap.docs.length - 1];
+            setPageStack(prev => {
+              const next = [...prev];
+              next[currentPage] = last;
+              return next;
+            });
+          }
         }
       } catch (e) {
         console.error("Query Error:", e);
@@ -246,7 +243,7 @@ export default function GRNPage() {
       }
     };
     load();
-  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage]);
+  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -277,13 +274,41 @@ export default function GRNPage() {
 
   const handleSingleDelete = async (roll: any) => {
     if (!isAdmin || !firestore) return;
-    if (confirm(`Delete Roll ID ${roll.rollNo}?`)) {
+    if (confirm(`Are you sure you want to delete Roll ID ${roll.rollNo}? This cannot be undone.`)) {
       setIsDeleting(true);
       try {
         await deleteDoc(doc(firestore, 'jumbo_stock', roll.id));
-        toast({ title: "Roll Deleted" });
-        setTotalRecords(prev => prev - 1);
+        toast({ title: "Roll Deleted", description: `Record for ${roll.rollNo} removed.` });
+        setRefreshTrigger(prev => prev + 1);
+      } catch (e: any) {
+        toast({ variant: "destructive", title: "Error", description: e.message });
       } finally { setIsDeleting(false); }
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!isAdmin || !firestore || selectedIds.size === 0) return;
+    if (!confirm(`You are about to delete ${selectedIds.size} rolls. This action is permanent and cannot be undone. Proceed?`)) return;
+
+    setIsDeleting(true);
+    const ids = Array.from(selectedIds);
+    
+    try {
+      for (let i = 0; i < ids.length; i += 500) {
+        const batch = writeBatch(firestore);
+        const chunk = ids.slice(i, i + 500);
+        chunk.forEach(id => {
+          batch.delete(doc(firestore, 'jumbo_stock', id));
+        });
+        await batch.commit();
+      }
+      toast({ title: "Bulk Delete Successful", description: `${ids.length} records removed from registry.` });
+      setSelectedIds(new Set());
+      setRefreshTrigger(prev => prev + 1);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Bulk Delete Failed", description: e.message });
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -389,7 +414,7 @@ export default function GRNPage() {
       )}
 
       {/* REGISTRY TABLE */}
-      <Card className="shadow-2xl border-none overflow-hidden">
+      <Card className="shadow-2xl border-none overflow-hidden relative">
         <div className="bg-muted/30 p-4 border-b flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); setPageStack([null]); }}>
@@ -412,7 +437,16 @@ export default function GRNPage() {
             <Table className="min-w-[2500px]">
               <TableHeader className="bg-muted/50">
                 <TableRow>
-                  <TableHead className="w-[60px] font-black text-[10px] uppercase text-center sticky left-0 bg-muted/50 z-20">S/N</TableHead>
+                  <TableHead className="w-[50px] sticky left-0 bg-muted/50 z-20">
+                    <Checkbox 
+                      checked={selectedIds.size === pagedJumbos.length && pagedJumbos.length > 0} 
+                      onCheckedChange={(checked) => {
+                        if (checked) setSelectedIds(new Set(pagedJumbos.map(j => j.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                    />
+                  </TableHead>
+                  <TableHead className="w-[60px] font-black text-[10px] uppercase text-center sticky left-[50px] bg-muted/50 z-20 border-r">S/N</TableHead>
                   {[
                     { l: 'RELL NO', f: 'rollNo' },
                     { l: 'COMPANY', f: 'paperCompany' },
@@ -448,9 +482,22 @@ export default function GRNPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isPageLoading ? <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow> : pagedJumbos.map((j, i) => (
+                {isPageLoading ? (
+                  <TableRow><TableCell colSpan={22} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                ) : pagedJumbos.map((j, i) => (
                   <TableRow key={j.id} className="hover:bg-primary/5 h-12">
-                    <TableCell className="text-center font-bold text-[10px] text-muted-foreground sticky left-0 bg-background z-10">{(currentPage-1)*pageSize+i+1}</TableCell>
+                    <TableCell className="sticky left-0 bg-background z-10">
+                      <Checkbox 
+                        checked={selectedIds.has(j.id)} 
+                        onCheckedChange={(checked) => {
+                          const next = new Set(selectedIds);
+                          if (checked) next.add(j.id);
+                          else next.delete(j.id);
+                          setSelectedIds(next);
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell className="text-center font-bold text-[10px] text-muted-foreground sticky left-[50px] bg-background z-10 border-r">{(currentPage-1)*pageSize+i+1}</TableCell>
                     <TableCell className="font-black text-primary font-mono text-xs">{j.rollNo}</TableCell>
                     <TableCell className="text-[11px] font-bold">{j.paperCompany}</TableCell>
                     <TableCell className="text-[11px]">{j.paperType}</TableCell>
@@ -473,7 +520,7 @@ export default function GRNPage() {
                     <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleOpenEdit(j)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleSingleDelete(j)}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleSingleDelete(j)} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -483,6 +530,28 @@ export default function GRNPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* BULK ACTION BAR */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
+          <Card className="bg-zinc-900 text-white border-none shadow-2xl px-6 py-3 flex items-center gap-6">
+            <div className="flex flex-col">
+              <span className="text-xs font-black uppercase text-zinc-500 tracking-widest">Selected Inventory</span>
+              <span className="text-lg font-black text-primary leading-tight">{selectedIds.size} rolls</span>
+            </div>
+            <div className="h-10 w-px bg-zinc-800" />
+            <div className="flex items-center gap-3">
+              <Button variant="destructive" className="h-10 font-bold" onClick={handleBulkDelete} disabled={isDeleting}>
+                {isDeleting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Delete Permanent
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setSelectedIds(new Set())} className="text-zinc-400 hover:text-white hover:bg-zinc-800">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* INTAKE / EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
@@ -515,6 +584,7 @@ export default function GRNPage() {
                   updatedAt: serverTimestamp()
                 });
                 toast({ title: "Roll Updated Successfully" });
+                setRefreshTrigger(prev => prev + 1);
                 setIsDialogOpen(false);
               } else {
                 await runTransaction(firestore!, async (tx) => {
@@ -535,6 +605,7 @@ export default function GRNPage() {
                   tx.update(countRef, { current_number: nextNum });
                 });
                 toast({ title: "Roll Added Successfully" });
+                setRefreshTrigger(prev => prev + 1);
                 setIsDialogOpen(false);
               }
             } finally { setIsGenerating(false); }

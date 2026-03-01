@@ -140,13 +140,14 @@ export default function MasterDataPage() {
   }, [intakeForm]);
 
   const [isExporting, setIsExporting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
   
   const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set())
   const [pageSize, setPageSize] = useState<number>(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalRecords, setTotalRecords] = useState(0)
-  const [lastVisible, setLastVisible] = useState<QueryDocumentSnapshot<DocumentData> | null>(null)
   const [pageStack, setPageStack] = useState<any[]>([null])
   const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
   const [isPageLoading, setIsPageLoading] = useState(false)
@@ -172,7 +173,7 @@ export default function MasterDataPage() {
   const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Master Tabs Data Queries
+  // Master Tabs Data Queries - Always top-level for hook stability
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -193,7 +194,7 @@ export default function MasterDataPage() {
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // Real-time unique values for filters
+  // Dynamic filter options generator
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -243,6 +244,7 @@ export default function MasterDataPage() {
     return query(q, ...constraints);
   }
 
+  // Load Paper Stock Data
   useEffect(() => {
     if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
@@ -258,16 +260,23 @@ export default function MasterDataPage() {
         if (dataQ) {
           const snap = await getDocs(dataQ);
           setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          if (snap.docs.length > 0) setLastVisible(snap.docs[snap.docs.length - 1]);
+          if (snap.docs.length > 0) {
+            const last = snap.docs[snap.docs.length - 1];
+            setPageStack(prev => {
+              const next = [...prev];
+              next[currentPage] = last;
+              return next;
+            });
+          }
         }
       } catch (e) {
-        console.error("Filter Query Error:", e);
+        console.error("Master Query Error:", e);
       } finally {
         setIsPageLoading(false);
       }
     };
     load();
-  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage]);
+  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -330,14 +339,9 @@ export default function MasterDataPage() {
           data[systemKey] = val;
         });
 
-        // AUTO-CALC SQM (Enforced Global Rule)
         const w = Number(data.widthMm) || 0;
         const l = Number(data.lengthMeters) || 0;
-        if (w > 0 && l > 0) {
-          data.sqm = Number(((w * l) / 1000).toFixed(2));
-        } else {
-          data.sqm = 0;
-        }
+        data.sqm = Number(((w * l) / 1000).toFixed(2));
 
         batch.set(doc(collection(firestore, 'jumbo_stock')), data);
         imported++;
@@ -348,6 +352,7 @@ export default function MasterDataPage() {
     }
 
     setImportSummary({ total: excelData.length, imported, skipped });
+    setRefreshTrigger(prev => prev + 1);
     setImportStep(4);
   }
 
@@ -378,11 +383,41 @@ export default function MasterDataPage() {
     setIsDialogOpen(true);
   }
 
-  const handleSingleDelete = async (item: any) => {
+  const handleSingleDelete = async (item: any, type: string) => {
     if (!firestore || !isAdmin) return;
-    if (confirm("Permanently delete this record?")) {
-      deleteDocumentNonBlocking(doc(firestore, dialogType === 'paper_stock' ? 'jumbo_stock' : dialogType, item.id));
-      toast({ title: "Deleted", description: "Record removed successfully." });
+    const collName = type === 'paper_stock' ? 'jumbo_stock' : type;
+    if (confirm(`Permanently delete this record from ${collName}?`)) {
+      setIsDeleting(true);
+      try {
+        await deleteDoc(doc(firestore, collName, item.id));
+        toast({ title: "Deleted", description: "Record removed successfully." });
+        setRefreshTrigger(prev => prev + 1);
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!isAdmin || !firestore || selectedStockIds.size === 0) return;
+    if (!confirm(`Are you sure you want to permanently delete ${selectedStockIds.size} rolls?`)) return;
+
+    setIsDeleting(true);
+    const ids = Array.from(selectedStockIds);
+    try {
+      for (let i = 0; i < ids.length; i += 500) {
+        const batch = writeBatch(firestore);
+        const chunk = ids.slice(i, i + 500);
+        chunk.forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
+        await batch.commit();
+      }
+      toast({ title: "Bulk Delete Successful", description: `${ids.length} rolls removed.` });
+      setSelectedStockIds(new Set());
+      setRefreshTrigger(prev => prev + 1);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message });
+    } finally {
+      setIsDeleting(false);
     }
   }
 
@@ -409,7 +444,7 @@ export default function MasterDataPage() {
       </div>
 
       <Tabs defaultValue="raw_materials" className="w-full">
-        <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto whitespace-nowrap">
+        <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto whitespace-nowrap rounded-xl">
           <TabsTrigger value="raw_materials" className="gap-2 font-bold"><FlaskConical className="h-4 w-4" /> Raw Materials</TabsTrigger>
           <TabsTrigger value="paper_stock" className="gap-2 font-bold"><Package className="h-4 w-4" /> Paper Stock</TabsTrigger>
           <TabsTrigger value="boms" className="gap-2 font-bold"><Layers className="h-4 w-4" /> BOM Master</TabsTrigger>
@@ -424,8 +459,8 @@ export default function MasterDataPage() {
             <div className="flex items-center justify-between">
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)} className={cn(showFilters && "border-primary text-primary")}><Settings2 className="h-4 w-4 mr-2" /> Filters</Button>
-                {Object.keys(filters).some(k => Array.isArray(filters[k as keyof FilterState]) ? filters[k as keyof FilterState].length > 0 : !!filters[k as keyof FilterState]) && (
-                  <Button variant="ghost" size="sm" onClick={resetFilters} className="text-destructive"><FilterX className="h-4 w-4 mr-2" /> Reset</Button>
+                {activeFiltersCount > 0 && (
+                  <Button variant="ghost" size="sm" onClick={resetFilters} className="text-destructive font-black text-[10px] uppercase"><FilterX className="h-4 w-4 mr-2" /> Reset All</Button>
                 )}
               </div>
               <div className="flex gap-2">
@@ -436,30 +471,64 @@ export default function MasterDataPage() {
                       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template");
                       XLSX.writeFile(wb, "paper_stock_template.xlsx");
                     }}><Download className="h-4 w-4 mr-2" /> Template</Button>
-                    <Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button>
+                    <Button variant="outline" size="sm" onClick={() => { setImportStep(1); setIsImportDialogOpen(true); }} className="border-primary text-primary font-bold"><FileUp className="h-4 w-4 mr-2" /> Upload Excel</Button>
                   </>
                 )}
-                <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting}>{isExporting ? <Loader2 className="animate-spin h-4 w-4" /> : <FileDown className="h-4 w-4 mr-2" />} Export All</Button>
+                <Button variant="outline" size="sm" onClick={handleExport} disabled={isExporting}>{isExporting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileDown className="h-4 w-4 mr-2" />} Export All</Button>
               </div>
             </div>
 
             {showFilters && (
-              <Card className="bg-muted/30 border-dashed">
-                <CardContent className="p-4 grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Lot Search</Label><Input value={filters.lotNo} onChange={e => handleFilterChange('lotNo', e.target.value)} className="h-8 text-xs bg-background" /></div>
-                  <div className="space-y-1"><Label className="text-[10px] uppercase font-black">GRN Search</Label><Input value={filters.grnNo} onChange={e => handleFilterChange('grnNo', e.target.value)} className="h-8 text-xs bg-background" /></div>
-                  <div className="md:col-span-2 space-y-1">
-                    <Label className="text-[10px] uppercase font-black">Date Range</Label>
-                    <div className="flex gap-2"><Input type="date" value={filters.startDate} onChange={e => handleFilterChange('startDate', e.target.value)} className="h-8 text-xs bg-background" /><Input type="date" value={filters.endDate} onChange={e => handleFilterChange('endDate', e.target.value)} className="h-8 text-xs bg-background" /></div>
+              <Card className="bg-muted/30 border-dashed border-2">
+                <CardContent className="p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Lot Search</Label><Input value={filters.lotNo} onChange={e => handleFilterChange('lotNo', e.target.value)} className="h-9 text-xs bg-background" /></div>
+                    <div className="space-y-1"><Label className="text-[10px] uppercase font-black">GRN Search</Label><Input value={filters.grnNo} onChange={e => handleFilterChange('grnNo', e.target.value)} className="h-9 text-xs bg-background" /></div>
+                    <div className="md:col-span-2 space-y-1">
+                      <Label className="text-[10px] uppercase font-black">Date Range</Label>
+                      <div className="flex gap-2"><Input type="date" value={filters.startDate} onChange={e => handleFilterChange('startDate', e.target.value)} className="h-9 text-xs bg-background" /><Input type="date" value={filters.endDate} onChange={e => handleFilterChange('endDate', e.target.value)} className="h-9 text-xs bg-background" /></div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    {[
+                      { label: 'Company', field: 'companies', opts: options.companies },
+                      { label: 'Type', field: 'types', opts: options.types },
+                      { label: 'GSM', field: 'gsms', opts: options.gsms },
+                      { label: 'Supplier', field: 'suppliers', opts: options.suppliers },
+                      { label: 'Location', field: 'locations', opts: options.locations },
+                      { label: 'Status', field: 'statuses', opts: options.statuses },
+                    ].map((g) => (
+                      <div key={g.label} className="space-y-1">
+                        <Label className="text-[9px] font-black uppercase text-muted-foreground">{g.label}</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-full justify-between h-8 text-[10px] font-bold bg-background">
+                              {filters[g.field as keyof FilterState].length === 0 ? 'Any' : `${filters[g.field as keyof FilterState].length} selected`}
+                              <ChevronRight className="h-3 w-3 rotate-90" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-56 p-2 max-h-64 overflow-y-auto" align="start">
+                            <div className="space-y-1">
+                              {g.opts.map(opt => (
+                                <div key={opt} className="flex items-center space-x-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggleMultiSelect(g.field as keyof FilterState, opt)}>
+                                  <Checkbox checked={filters[g.field as keyof FilterState].includes(opt)} />
+                                  <span className="text-xs font-medium">{opt}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
             )}
 
-            <Card className="border-none shadow-xl overflow-hidden">
+            <Card className="border-none shadow-xl overflow-hidden relative">
               <div className="p-4 bg-muted/10 border-b flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                  <Select value={pageSize.toString()} onValueChange={v => setPageSize(Number(v))}>
+                  <Select value={pageSize.toString()} onValueChange={v => { setPageSize(Number(v)); setCurrentPage(1); setPageStack([null]); }}>
                     <SelectTrigger className="w-[100px] h-8 text-[10px] font-black"><SelectValue /></SelectTrigger>
                     <SelectContent>{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
                   </Select>
@@ -476,8 +545,8 @@ export default function MasterDataPage() {
                   <Table className="min-w-[2500px]">
                     <TableHeader className="bg-muted/30">
                       <TableRow>
-                        <TableHead className="w-[50px] sticky left-0 bg-muted/30 z-20"><Checkbox checked={selectedStockIds.size === pagedJumbos.length && pagedJumbos.length > 0} onCheckedChange={() => selectedStockIds.size === pagedJumbos.length ? setSelectedStockIds(new Set()) : setSelectedStockIds(new Set(pagedJumbos.map(j => j.id)))} /></TableHead>
-                        <TableHead className="w-[60px] text-center font-black text-[10px] uppercase sticky left-[50px] bg-muted/30 z-20">S/N</TableHead>
+                        <TableHead className="w-[50px] sticky left-0 bg-muted/30 z-20"><Checkbox checked={selectedStockIds.size === pagedJumbos.length && pagedJumbos.length > 0} onCheckedChange={(checked) => checked ? setSelectedStockIds(new Set(pagedJumbos.map(j => j.id))) : setSelectedStockIds(new Set())} /></TableHead>
+                        <TableHead className="w-[60px] text-center font-black text-[10px] uppercase sticky left-[50px] bg-muted/30 z-20 border-r">S/N</TableHead>
                         {[
                           { label: 'RELL NO', field: 'rollNo' },
                           { label: 'PAPER COMPANY', field: 'paperCompany' },
@@ -508,7 +577,13 @@ export default function MasterDataPage() {
                     <TableBody>
                       {isPageLoading ? <TableRow><TableCell colSpan={22} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow> : pagedJumbos.map((j, idx) => (
                         <TableRow key={j.id} className="hover:bg-primary/5 h-12">
-                          <TableCell className="sticky left-0 bg-background z-10"><Checkbox checked={selectedStockIds.has(j.id)} onCheckedChange={() => { const next = new Set(selectedStockIds); if (next.has(j.id)) next.delete(j.id); else next.add(j.id); setSelectedStockIds(next); }} /></TableCell>
+                          <TableCell className="sticky left-0 bg-background z-10">
+                            <Checkbox checked={selectedStockIds.has(j.id)} onCheckedChange={(checked) => { 
+                              const next = new Set(selectedStockIds); 
+                              if (checked) next.add(j.id); else next.delete(j.id); 
+                              setSelectedStockIds(next); 
+                            }} />
+                          </TableCell>
                           <TableCell className="text-center font-bold text-[10px] text-muted-foreground sticky left-[50px] bg-background z-10 border-r">{(currentPage-1)*pageSize+idx+1}</TableCell>
                           <TableCell className="font-black text-primary font-mono text-xs">{j.rollNo}</TableCell>
                           <TableCell className="text-[11px] font-bold">{j.paperCompany}</TableCell>
@@ -525,7 +600,7 @@ export default function MasterDataPage() {
                           <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
                             <div className="flex justify-end gap-1">
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleOpenEdit(j, 'jumbo_stock')}><Pencil className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => { setDialogType('paper_stock'); handleSingleDelete(j); }}><Trash2 className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleSingleDelete(j, 'paper_stock')} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -535,6 +610,28 @@ export default function MasterDataPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* BULK ACTION BAR */}
+            {selectedStockIds.size > 0 && (
+              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
+                <Card className="bg-zinc-900 text-white border-none shadow-2xl px-6 py-3 flex items-center gap-6">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-black uppercase text-zinc-500 tracking-widest">Bulk Registry</span>
+                    <span className="text-lg font-black text-primary leading-tight">{selectedStockIds.size} selected</span>
+                  </div>
+                  <div className="h-10 w-px bg-zinc-800" />
+                  <div className="flex items-center gap-3">
+                    <Button variant="destructive" className="h-10 font-bold" onClick={handleBulkDelete} disabled={isDeleting}>
+                      {isDeleting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                      Delete Permanent
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => setSelectedStockIds(new Set())} className="text-zinc-400 hover:text-white hover:bg-zinc-800">
+                      <X className="h-5 w-5" />
+                    </Button>
+                  </div>
+                </Card>
+              </div>
+            )}
           </div>
         </TabsContent>
 
@@ -552,7 +649,7 @@ export default function MasterDataPage() {
                     <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit}</TableCell><TableCell>₹{m.rate_per_unit}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "raw_materials")}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'raw_materials', m.id))}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(m, "raw_materials")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -576,7 +673,7 @@ export default function MasterDataPage() {
                     <TableRow key={s.id}><TableCell className="font-bold">{s.name}</TableCell><TableCell>{s.unit || 'Substrates'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(s, "suppliers")}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'suppliers', s.id))}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(s, "suppliers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -600,7 +697,7 @@ export default function MasterDataPage() {
                     <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit || '250mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "machines")}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'machines', m.id))}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(m, "machines")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -624,7 +721,7 @@ export default function MasterDataPage() {
                     <TableRow key={c.id}><TableCell className="font-bold">{c.name}</TableCell><TableCell>{c.unit || '508mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "cylinders")}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'cylinders', c.id))}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "cylinders")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -648,7 +745,7 @@ export default function MasterDataPage() {
                     <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "customers")}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'customers', c.id))}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "customers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -672,7 +769,7 @@ export default function MasterDataPage() {
                     <TableRow key={b.id}><TableCell className="font-bold">{b.name || b.bomNumber}</TableCell><TableCell className="text-xs truncate max-w-[200px]">{b.unit || b.description}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(b, "boms")}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteDocumentNonBlocking(doc(firestore!, 'boms', b.id))}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(b, "boms")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -751,7 +848,7 @@ export default function MasterDataPage() {
       {/* CRUD DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className={cn("sm:max-w-[500px]", dialogType === 'jumbo_stock' && "sm:max-w-[800px]")}>
-          <form onSubmit={(e) => {
+          <form onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
             const data: any = Object.fromEntries(formData.entries());
@@ -771,14 +868,16 @@ export default function MasterDataPage() {
               if (data.rate_per_unit) data.rate_per_unit = Number(data.rate_per_unit);
             }
 
-            if (editingItem) updateDocumentNonBlocking(doc(firestore!, dialogType, editingItem.id), data);
-            else addDocumentNonBlocking(collection(firestore!, dialogType), { ...data, createdAt: serverTimestamp() });
+            if (editingItem) updateDocumentNonBlocking(doc(firestore!, dialogType === 'paper_stock' ? 'jumbo_stock' : dialogType, editingItem.id), data);
+            else addDocumentNonBlocking(collection(firestore!, dialogType === 'paper_stock' ? 'jumbo_stock' : dialogType), { ...data, createdAt: serverTimestamp() });
+            
+            setRefreshTrigger(prev => prev + 1);
             setIsDialogOpen(false);
           }}>
             <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Create'} {dialogType.replace('_', ' ')}</DialogTitle></DialogHeader>
             
             <div className="grid gap-4 py-4">
-              {dialogType === 'jumbo_stock' ? (
+              {dialogType === 'jumbo_stock' || dialogType === 'paper_stock' ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" defaultValue={editingItem?.paperCompany} required /></div>
