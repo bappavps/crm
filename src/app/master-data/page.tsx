@@ -54,7 +54,7 @@ import {
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
-import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, QueryDocumentSnapshot, DocumentData, deleteDoc, onSnapshot } from "firebase/firestore"
+import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot } from "firebase/firestore"
 import { updateDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
@@ -120,7 +120,7 @@ export default function MasterDataPage() {
   
   // Generic CRUD state
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [dialogType, setDialogType] = useState<any>("raw_materials")
+  const [dialogType, setDialogType] = useState<string>("raw_materials")
   const [editingItem, setEditingItem] = useState<any>(null)
 
   // Paper Stock Specific State
@@ -165,7 +165,7 @@ export default function MasterDataPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  // Authorization check
+  // Auth & Permissions
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
@@ -173,7 +173,7 @@ export default function MasterDataPage() {
   const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Master Tabs Data Queries - Always top-level for hook stability
+  // Master Tabs Data Queries
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -191,6 +191,13 @@ export default function MasterDataPage() {
 
   const bomsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'boms') : null), [firestore]);
   const { data: boms } = useCollection(bomsQuery);
+
+  const activeFiltersCount = useMemo(() => {
+    return Object.entries(filters).reduce((acc, [k, v]) => {
+      if (Array.isArray(v)) return acc + v.length;
+      return v ? acc + 1 : acc;
+    }, 0);
+  }, [filters]);
 
   useEffect(() => { setIsMounted(true) }, [])
 
@@ -285,7 +292,7 @@ export default function MasterDataPage() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const ab = evt.target?.result;
+        const ab = evt.target?.result as ArrayBuffer;
         const wb = XLSX.read(ab, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws);
@@ -323,7 +330,7 @@ export default function MasterDataPage() {
       const batch = writeBatch(firestore);
       const chunk = excelData.slice(i, i + 500);
 
-      chunk.forEach((row) => {
+      chunk.forEach((row: any) => {
         const rollId = String(row[rollNoMapping]);
         if (existingRolls.has(rollId)) {
           skipped++;
@@ -376,8 +383,8 @@ export default function MasterDataPage() {
 
   const handleOpenEdit = (item: any, type: string) => {
     setEditingItem(item);
-    setDialogType(type);
-    if (type === 'jumbo_stock') {
+    setDialogType(type === 'paper_stock' ? 'jumbo_stock' : type);
+    if (type === 'jumbo_stock' || type === 'paper_stock') {
       setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
     }
     setIsDialogOpen(true);
@@ -385,7 +392,7 @@ export default function MasterDataPage() {
 
   const handleSingleDelete = async (item: any, type: string) => {
     if (!firestore || !isAdmin) return;
-    const collName = type === 'paper_stock' ? 'jumbo_stock' : type;
+    const collName = (type === 'paper_stock' || type === 'jumbo_stock') ? 'jumbo_stock' : type;
     if (confirm(`Permanently delete this record from ${collName}?`)) {
       setIsDeleting(true);
       try {
@@ -440,7 +447,10 @@ export default function MasterDataPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div><h2 className="text-3xl font-bold tracking-tight text-primary uppercase">Master Control Panel</h2><p className="text-muted-foreground font-medium">Manage enterprise-wide technical constants and inventory.</p></div>
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight text-primary uppercase">Master Control Panel</h2>
+          <p className="text-muted-foreground font-medium">Manage enterprise-wide technical constants and inventory.</p>
+        </div>
       </div>
 
       <Tabs defaultValue="raw_materials" className="w-full">
@@ -599,7 +609,7 @@ export default function MasterDataPage() {
                           <TableCell className="text-[11px] font-mono font-bold text-accent">{j.lotNo}</TableCell>
                           <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
                             <div className="flex justify-end gap-1">
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleOpenEdit(j, 'jumbo_stock')}><Pencil className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => handleOpenEdit(j, 'paper_stock')}><Pencil className="h-4 w-4" /></Button>
                               <Button variant="ghost" size="icon" className="text-destructive h-8 w-8" onClick={() => handleSingleDelete(j, 'paper_stock')} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                             </div>
                           </TableCell>
@@ -739,7 +749,7 @@ export default function MasterDataPage() {
             </CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableHeader>
                 <TableBody>
                   {customers?.map((c) => (
                     <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
@@ -847,13 +857,15 @@ export default function MasterDataPage() {
 
       {/* CRUD DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className={cn("sm:max-w-[500px]", dialogType === 'jumbo_stock' && "sm:max-w-[800px]")}>
+        <DialogContent className={cn("sm:max-w-[500px]", (dialogType === 'jumbo_stock' || dialogType === 'paper_stock') && "sm:max-w-[800px]")}>
           <form onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
             const data: any = Object.fromEntries(formData.entries());
             
-            if (dialogType === 'jumbo_stock') {
+            const collName = (dialogType === 'jumbo_stock' || dialogType === 'paper_stock') ? 'jumbo_stock' : dialogType;
+
+            if (collName === 'jumbo_stock') {
               const width = Number(data.widthMm);
               const length = Number(data.lengthMeters);
               if (width <= 0 || length <= 0) {
@@ -868,8 +880,8 @@ export default function MasterDataPage() {
               if (data.rate_per_unit) data.rate_per_unit = Number(data.rate_per_unit);
             }
 
-            if (editingItem) updateDocumentNonBlocking(doc(firestore!, dialogType === 'paper_stock' ? 'jumbo_stock' : dialogType, editingItem.id), data);
-            else addDocumentNonBlocking(collection(firestore!, dialogType === 'paper_stock' ? 'jumbo_stock' : dialogType), { ...data, createdAt: serverTimestamp() });
+            if (editingItem) updateDocumentNonBlocking(doc(firestore!, collName, editingItem.id), data);
+            else addDocumentNonBlocking(collection(firestore!, collName), { ...data, createdAt: serverTimestamp() });
             
             setRefreshTrigger(prev => prev + 1);
             setIsDialogOpen(false);

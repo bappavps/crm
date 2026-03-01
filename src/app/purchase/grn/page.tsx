@@ -57,8 +57,6 @@ import {
   limit, 
   startAfter, 
   getCountFromServer,
-  QueryDocumentSnapshot,
-  DocumentData,
   onSnapshot,
   deleteDoc,
   writeBatch,
@@ -149,6 +147,13 @@ export default function GRNPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
+  const activeFiltersCount = useMemo(() => {
+    return Object.entries(filters).reduce((acc, [k, v]) => {
+      if (Array.isArray(v)) return acc + v.length;
+      return v ? acc + 1 : acc;
+    }, 0);
+  }, [filters]);
+
   useEffect(() => { setIsMounted(true) }, [])
 
   // Auth check
@@ -226,7 +231,6 @@ export default function GRNPage() {
         if (dataQ) {
           const snap = await getDocs(dataQ);
           setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          // Update stack for next navigation
           if (snap.docs.length > 0) {
             const last = snap.docs[snap.docs.length - 1];
             setPageStack(prev => {
@@ -318,12 +322,7 @@ export default function GRNPage() {
     setIsDialogOpen(true);
   }
 
-  if (!isMounted) return null;
-
-  const activeFiltersCount = Object.entries(filters).reduce((acc, [k, v]) => {
-    if (Array.isArray(v)) return acc + v.length;
-    return v ? acc + 1 : acc;
-  }, 0);
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
 
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
@@ -637,7 +636,7 @@ export default function GRNPage() {
                   <Input 
                     name="lengthMeters" 
                     type="number" 
-                    min="0.01"
+                    min="0.01" 
                     step="0.01"
                     defaultValue={editingRoll?.lengthMeters} 
                     required 
