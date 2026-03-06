@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -11,7 +10,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Separator } from "@/components/ui/separator"
 import { useToast } from "@/hooks/use-toast"
 import { 
   Dialog, 
@@ -41,11 +39,9 @@ import {
   FileUp, 
   Settings2,
   Download,
-  AlertTriangle,
-  CheckCircle2,
-  Sparkles,
+  FilterX,
   Search,
-  FilterX
+  Sparkles
 } from "lucide-react"
 import {
   Popover,
@@ -53,9 +49,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
+import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot } from "firebase/firestore"
-import { updateDocumentNonBlocking, addDocumentNonBlocking, deleteDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { updateDocumentNonBlocking, addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
@@ -123,7 +119,7 @@ export default function MasterDataPage() {
   const [dialogType, setDialogType] = useState<string>("raw_materials")
   const [editingItem, setEditingItem] = useState<any>(null)
 
-  // Paper Stock Specific State
+  // Paper Stock State
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importStep, setImportStep] = useState(1) 
   const [excelData, setExcelData] = useState<any[]>([])
@@ -165,15 +161,15 @@ export default function MasterDataPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  // Auth & Permissions
+  // Authorization
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
+  const { data: adminData } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Master Tabs Data Queries
+  // Master Data Queries (moved to top level to avoid Rules of Hooks violations)
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -199,9 +195,9 @@ export default function MasterDataPage() {
     }, 0);
   }, [filters]);
 
-  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { setIsMounted(true) }, []);
 
-  // Dynamic filter options generator
+  // Filter Generator
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -234,11 +230,7 @@ export default function MasterDataPage() {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
     } else if (filters.lotNo) {
-      constraints.push(where('lotNo', '>=', filters.lotNo));
-      constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
-    } else if (filters.grnNo) {
-      constraints.push(where('rollNo', '>=', filters.grnNo));
-      constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
+      constraints.push(where('lotNo', '>=', filters.lotNo), where('lotNo', '<=', filters.lotNo + '\uf8ff'));
     }
 
     if (isCount) return query(q, ...constraints);
@@ -249,9 +241,8 @@ export default function MasterDataPage() {
     constraints.push(limit(pageSize));
 
     return query(q, ...constraints);
-  }
+  };
 
-  // Load Paper Stock Data
   useEffect(() => {
     if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
@@ -262,7 +253,6 @@ export default function MasterDataPage() {
           const countSnap = await getCountFromServer(countQ);
           setTotalRecords(countSnap.data().count);
         }
-
         const dataQ = buildQuery();
         if (dataQ) {
           const snap = await getDocs(dataQ);
@@ -277,7 +267,7 @@ export default function MasterDataPage() {
           }
         }
       } catch (e) {
-        console.error("Master Query Error:", e);
+        console.error("Query Error:", e);
       } finally {
         setIsPageLoading(false);
       }
@@ -288,7 +278,6 @@ export default function MasterDataPage() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
@@ -297,7 +286,6 @@ export default function MasterDataPage() {
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(ws);
         const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
-
         setExcelData(data);
         setExcelHeaders(headers);
         setImportStep(2);
@@ -306,37 +294,30 @@ export default function MasterDataPage() {
       }
     };
     reader.readAsArrayBuffer(file);
-  }
+  };
 
   const executeBulkImport = async () => {
     if (!firestore || !user || !excelData.length) return;
-    
     const rollNoMapping = Object.keys(columnMapping).find(k => columnMapping[k] === 'rollNo');
     if (!rollNoMapping) {
       toast({ variant: "destructive", title: "Roll No Required", description: "Map 'Roll No' to continue." });
       return;
     }
-
     setImportStep(3);
     setUploadProgress(0);
-
     const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
     const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
-
     let imported = 0;
     let skipped = 0;
-
     for (let i = 0; i < excelData.length; i += 500) {
       const batch = writeBatch(firestore);
       const chunk = excelData.slice(i, i + 500);
-
       chunk.forEach((row: any) => {
         const rollId = String(row[rollNoMapping]);
         if (existingRolls.has(rollId)) {
           skipped++;
           return;
         }
-
         const data: any = { status: 'In Stock', createdAt: serverTimestamp(), createdById: user.uid };
         Object.entries(columnMapping).forEach(([excelHeader, systemKey]) => {
           let val = row[excelHeader];
@@ -345,41 +326,37 @@ export default function MasterDataPage() {
           }
           data[systemKey] = val;
         });
-
         const w = Number(data.widthMm) || 0;
         const l = Number(data.lengthMeters) || 0;
         data.sqm = Number(((w * l) / 1000).toFixed(2));
-
         batch.set(doc(collection(firestore, 'jumbo_stock')), data);
         imported++;
       });
-
       await batch.commit();
       setUploadProgress(Math.round(((i + chunk.length) / excelData.length) * 100));
     }
-
     setImportSummary({ total: excelData.length, imported, skipped });
     setRefreshTrigger(prev => prev + 1);
     setImportStep(4);
-  }
+  };
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
     setCurrentPage(1);
     setPageStack([null]);
-  }
+  };
 
   const toggleMultiSelect = (field: keyof FilterState, value: string) => {
     const current = (filters[field] as string[]) || [];
     const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
     handleFilterChange(field, next);
-  }
+  };
 
   const resetFilters = () => {
     setFilters(INITIAL_FILTERS);
     setCurrentPage(1);
     setPageStack([null]);
-  }
+  };
 
   const handleOpenEdit = (item: any, type: string) => {
     setEditingItem(item);
@@ -388,58 +365,51 @@ export default function MasterDataPage() {
       setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
     }
     setIsDialogOpen(true);
-  }
+  };
 
   const handleSingleDelete = async (item: any, type: string) => {
     if (!firestore || !isAdmin) return;
     const collName = (type === 'paper_stock' || type === 'jumbo_stock') ? 'jumbo_stock' : type;
-    if (confirm(`Permanently delete this record from ${collName}?`)) {
+    if (confirm(`Permanently delete this record?`)) {
       setIsDeleting(true);
       try {
         await deleteDoc(doc(firestore, collName, item.id));
-        toast({ title: "Deleted", description: "Record removed successfully." });
-        setRefreshTrigger(prev => prev + 1);
+        toast({ title: "Deleted" });
+        setRefreshTrigger(p => p + 1);
       } finally {
         setIsDeleting(false);
       }
     }
-  }
+  };
 
   const handleBulkDelete = async () => {
     if (!isAdmin || !firestore || selectedStockIds.size === 0) return;
-    if (!confirm(`Are you sure you want to permanently delete ${selectedStockIds.size} rolls?`)) return;
-
+    if (!confirm(`Delete ${selectedStockIds.size} rolls?`)) return;
     setIsDeleting(true);
-    const ids = Array.from(selectedStockIds);
     try {
+      const ids = Array.from(selectedStockIds);
       for (let i = 0; i < ids.length; i += 500) {
         const batch = writeBatch(firestore);
-        const chunk = ids.slice(i, i + 500);
-        chunk.forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
+        ids.slice(i, i + 500).forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
         await batch.commit();
       }
-      toast({ title: "Bulk Delete Successful", description: `${ids.length} rolls removed.` });
       setSelectedStockIds(new Set());
-      setRefreshTrigger(prev => prev + 1);
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Error", description: e.message });
+      setRefreshTrigger(p => p + 1);
     } finally {
       setIsDeleting(false);
     }
-  }
+  };
 
   const handleExport = async () => {
     setIsExporting(true);
     try {
       await exportPaperStockToExcel(firestore!, filters as any);
-    } catch (e) {
-      toast({ variant: "destructive", title: "Export Error", description: "Could not generate stock export." });
     } finally {
       setIsExporting(false);
     }
-  }
+  };
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
@@ -449,7 +419,7 @@ export default function MasterDataPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary uppercase">Master Control Panel</h2>
-          <p className="text-muted-foreground font-medium">Manage enterprise-wide technical constants and inventory.</p>
+          <p className="text-muted-foreground font-medium">Enterprise technical constants and inventory.</p>
         </div>
       </div>
 
@@ -585,7 +555,11 @@ export default function MasterDataPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {isPageLoading ? <TableRow><TableCell colSpan={22} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow> : pagedJumbos.map((j, idx) => (
+                      {isPageLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={15} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell>
+                        </TableRow>
+                      ) : pagedJumbos.map((j, idx) => (
                         <TableRow key={j.id} className="hover:bg-primary/5 h-12">
                           <TableCell className="sticky left-0 bg-background z-10">
                             <Checkbox checked={selectedStockIds.has(j.id)} onCheckedChange={(checked) => { 
@@ -621,7 +595,6 @@ export default function MasterDataPage() {
               </CardContent>
             </Card>
 
-            {/* BULK ACTION BAR */}
             {selectedStockIds.size > 0 && (
               <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4">
                 <Card className="bg-zinc-900 text-white border-none shadow-2xl px-6 py-3 flex items-center gap-6">
@@ -648,7 +621,7 @@ export default function MasterDataPage() {
         <TabsContent value="raw_materials">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle>Raw Material Catalog</CardTitle><CardDescription>Manage unit costs for inks, varnishes, and base substrates.</CardDescription></div>
+              <div><CardTitle>Raw Material Catalog</CardTitle><CardDescription>Unit costs for inks and substrates.</CardDescription></div>
               <Button onClick={() => { setDialogType("raw_materials"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Material</Button>
             </CardHeader>
             <CardContent>
@@ -656,7 +629,10 @@ export default function MasterDataPage() {
                 <TableHeader><TableRow><TableHead>Material Name</TableHead><TableHead>Unit</TableHead><TableHead>Rate (₹)</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {rawMaterials?.map((m) => (
-                    <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit}</TableCell><TableCell>₹{m.rate_per_unit}</TableCell>
+                    <TableRow key={m.id}>
+                      <TableCell className="font-bold">{m.name}</TableCell>
+                      <TableCell>{m.unit}</TableCell>
+                      <TableCell>₹{m.rate_per_unit}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "raw_materials")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(m, "raw_materials")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -672,7 +648,7 @@ export default function MasterDataPage() {
         <TabsContent value="suppliers">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle>Vendor Directory</CardTitle><CardDescription>Manage material and substrate suppliers.</CardDescription></div>
+              <div><CardTitle>Vendor Directory</CardTitle><CardDescription>Manage suppliers.</CardDescription></div>
               <Button onClick={() => { setDialogType("suppliers"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Supplier</Button>
             </CardHeader>
             <CardContent>
@@ -680,7 +656,9 @@ export default function MasterDataPage() {
                 <TableHeader><TableRow><TableHead>Supplier Name</TableHead><TableHead>Category</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {suppliers?.map((s) => (
-                    <TableRow key={s.id}><TableCell className="font-bold">{s.name}</TableCell><TableCell>{s.unit || 'Substrates'}</TableCell>
+                    <TableRow key={s.id}>
+                      <TableCell className="font-bold">{s.name}</TableCell>
+                      <TableCell>{s.unit || 'Substrates'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(s, "suppliers")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(s, "suppliers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -696,7 +674,7 @@ export default function MasterDataPage() {
         <TabsContent value="machines">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle>Production Lines</CardTitle><CardDescription>Manage machine capacity and technical limits.</CardDescription></div>
+              <div><CardTitle>Production Lines</CardTitle><CardDescription>Manage machines.</CardDescription></div>
               <Button onClick={() => { setDialogType("machines"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Machine</Button>
             </CardHeader>
             <CardContent>
@@ -704,7 +682,9 @@ export default function MasterDataPage() {
                 <TableHeader><TableRow><TableHead>Machine Name</TableHead><TableHead>Max Width</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {machines?.map((m) => (
-                    <TableRow key={m.id}><TableCell className="font-bold">{m.name}</TableCell><TableCell>{m.unit || '250mm'}</TableCell>
+                    <TableRow key={m.id}>
+                      <TableCell className="font-bold">{m.name}</TableCell>
+                      <TableCell>{m.unit || '250mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "machines")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(m, "machines")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -720,7 +700,7 @@ export default function MasterDataPage() {
         <TabsContent value="cylinders">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle>Cylinder Library</CardTitle><CardDescription>Tooling registry for plate cylinders and repeat lengths.</CardDescription></div>
+              <div><CardTitle>Cylinder Library</CardTitle><CardDescription>Plate cylinders.</CardDescription></div>
               <Button onClick={() => { setDialogType("cylinders"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Cylinder</Button>
             </CardHeader>
             <CardContent>
@@ -728,7 +708,9 @@ export default function MasterDataPage() {
                 <TableHeader><TableRow><TableHead>Tool ID</TableHead><TableHead>Repeat Length</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {cylinders?.map((c) => (
-                    <TableRow key={c.id}><TableCell className="font-bold">{c.name}</TableCell><TableCell>{c.unit || '508mm'}</TableCell>
+                    <TableRow key={c.id}>
+                      <TableCell className="font-bold">{c.name}</TableCell>
+                      <TableCell>{c.unit || '508mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "cylinders")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "cylinders")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -744,15 +726,23 @@ export default function MasterDataPage() {
         <TabsContent value="customers">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle>Client Registry</CardTitle><CardDescription>Manage customer profiles and account settings.</CardDescription></div>
+              <div><CardTitle>Client Registry</CardTitle><CardDescription>Manage customer profiles.</CardDescription></div>
               <Button onClick={() => { setDialogType("customers"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Client</Button>
             </CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Company Name</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {customers?.map((c) => (
-                    <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
+                    <TableRow key={c.id}>
+                      <TableCell className="font-bold">{c.name || c.companyName}</TableCell>
+                      <TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "customers")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "customers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -768,15 +758,23 @@ export default function MasterDataPage() {
         <TabsContent value="boms">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <div><CardTitle>BOM Master Templates</CardTitle><CardDescription>Pre-defined technical specifications for standard jobs.</CardDescription></div>
+              <div><CardTitle>BOM Master Templates</CardTitle><CardDescription>Technical Bill-of-Materials templates.</CardDescription></div>
               <Button onClick={() => { setDialogType("boms"); setEditingItem(null); setIsDialogOpen(true); }}><Plus className="mr-2 h-4 w-4" /> Add Template</Button>
             </CardHeader>
             <CardContent>
               <Table>
-                <TableHeader><TableRow><TableHead>Template Name</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Template Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                   {boms?.map((b) => (
-                    <TableRow key={b.id}><TableCell className="font-bold">{b.name || b.bomNumber}</TableCell><TableCell className="text-xs truncate max-w-[200px]">{b.unit || b.description}</TableCell>
+                    <TableRow key={b.id}>
+                      <TableCell className="font-bold">{b.name || b.bomNumber}</TableCell>
+                      <TableCell className="text-xs truncate max-w-[200px]">{b.unit || b.description}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(b, "boms")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(b, "boms")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -790,7 +788,6 @@ export default function MasterDataPage() {
         </TabsContent>
       </Tabs>
 
-      {/* UPLOAD DIALOG */}
       <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
         <DialogContent className="sm:max-w-[700px]">
           <DialogHeader>
@@ -799,23 +796,19 @@ export default function MasterDataPage() {
               {importStep === 1 ? "Select Excel File" : importStep === 2 ? "Verify Column Mapping" : importStep === 3 ? "Importing Data..." : "Import Summary"}
             </DialogTitle>
           </DialogHeader>
-          
           {importStep === 1 && (
             <div className="py-10 text-center border-2 border-dashed rounded-xl space-y-4">
               <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" id="excel-upload" />
               <Label htmlFor="excel-upload" className="cursor-pointer flex flex-col items-center">
                 <FileUp className="h-12 w-12 text-muted-foreground opacity-20 mb-2" />
                 <span className="font-bold text-primary underline">Browse Excel Files</span>
-                <span className="text-[10px] text-muted-foreground mt-1">.xlsx or .xls supported</span>
               </Label>
             </div>
           )}
-
           {importStep === 2 && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4 bg-muted/30 p-2 rounded text-[10px] font-black uppercase">
-                <span>Excel Column</span>
-                <span>System Field</span>
+                <span>Excel Column</span><span>System Field</span>
               </div>
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {excelHeaders.map(header => (
@@ -823,25 +816,20 @@ export default function MasterDataPage() {
                     <span className="text-xs font-bold truncate">{header}</span>
                     <Select value={columnMapping[header] || ""} onValueChange={v => setColumnMapping(p => ({...p, [header]: v}))}>
                       <SelectTrigger className="h-8 text-[10px]"><SelectValue placeholder="Map to..." /></SelectTrigger>
-                      <SelectContent>
-                        {SYSTEM_FIELDS.map(sf => <SelectItem key={sf.value} value={sf.value}>{sf.label}</SelectItem>)}
-                      </SelectContent>
+                      <SelectContent>{SYSTEM_FIELDS.map(sf => <SelectItem key={sf.value} value={sf.value}>{sf.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 ))}
               </div>
-              <Button onClick={executeBulkImport} className="w-full h-12 font-black uppercase tracking-widest"><Sparkles className="mr-2 h-4 w-4" /> Execute Multi-Stock Import</Button>
+              <Button onClick={executeBulkImport} className="w-full h-12 font-black uppercase tracking-widest"><Sparkles className="mr-2 h-4 w-4" /> Execute Import</Button>
             </div>
           )}
-
           {importStep === 3 && (
             <div className="py-10 space-y-6">
               <div className="flex justify-between text-xs font-black uppercase"><span>Processing Chunks...</span><span>{uploadProgress}%</span></div>
               <Progress value={uploadProgress} className="h-3" />
-              <p className="text-center text-[10px] text-muted-foreground animate-pulse">DO NOT CLOSE WINDOW DURING TRANSACTION</p>
             </div>
           )}
-
           {importStep === 4 && importSummary && (
             <div className="py-6 space-y-6">
               <div className="grid grid-cols-3 gap-4 text-center">
@@ -849,83 +837,56 @@ export default function MasterDataPage() {
                 <div className="p-4 bg-emerald-50 rounded-lg text-emerald-700"><p className="text-[10px] font-black uppercase">New</p><p className="text-2xl font-black">{importSummary.imported}</p></div>
                 <div className="p-4 bg-amber-50 rounded-lg text-amber-700"><p className="text-[10px] font-black uppercase">Exists</p><p className="text-2xl font-black">{importSummary.skipped}</p></div>
               </div>
-              <Button onClick={() => setIsImportDialogOpen(false)} className="w-full">Close Registry Assistant</Button>
+              <Button onClick={() => setIsImportDialogOpen(false)} className="w-full">Close</Button>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* CRUD DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className={cn("sm:max-w-[500px]", (dialogType === 'jumbo_stock' || dialogType === 'paper_stock') && "sm:max-w-[800px]")}>
           <form onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
             const data: any = Object.fromEntries(formData.entries());
-            
-            const collName = (dialogType === 'jumbo_stock' || dialogType === 'paper_stock') ? 'jumbo_stock' : dialogType;
-
+            const collName = (dialogType === 'paper_stock' || dialogType === 'jumbo_stock') ? 'jumbo_stock' : dialogType;
             if (collName === 'jumbo_stock') {
-              const width = Number(data.widthMm);
-              const length = Number(data.lengthMeters);
-              if (width <= 0 || length <= 0) {
-                toast({ variant: "destructive", title: "Validation Error", description: "Width and Length must be greater than zero." });
-                return;
-              }
-              data.widthMm = width;
-              data.lengthMeters = length;
-              data.gsm = Number(data.gsm);
-              data.sqm = Number(((width * length) / 1000).toFixed(2));
-            } else {
-              if (data.rate_per_unit) data.rate_per_unit = Number(data.rate_per_unit);
+              data.widthMm = Number(data.widthMm); data.lengthMeters = Number(data.lengthMeters); data.gsm = Number(data.gsm);
+              data.sqm = Number(((data.widthMm * data.lengthMeters) / 1000).toFixed(2));
+            } else if (data.rate_per_unit) {
+              data.rate_per_unit = Number(data.rate_per_unit);
             }
-
             if (editingItem) updateDocumentNonBlocking(doc(firestore!, collName, editingItem.id), data);
             else addDocumentNonBlocking(collection(firestore!, collName), { ...data, createdAt: serverTimestamp() });
-            
-            setRefreshTrigger(prev => prev + 1);
+            setRefreshTrigger(p => p + 1);
             setIsDialogOpen(false);
           }}>
             <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Create'} {dialogType.replace('_', ' ')}</DialogTitle></DialogHeader>
-            
             <div className="grid gap-4 py-4">
               {dialogType === 'jumbo_stock' || dialogType === 'paper_stock' ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" defaultValue={editingItem?.paperCompany} required /></div>
-                    <div className="space-y-2"><Label>Paper Type</Label><Input name="paperType" defaultValue={editingItem?.paperType} required /></div>
+                    <div className="space-y-2"><Label>Company</Label><Input name="paperCompany" defaultValue={editingItem?.paperCompany} required /></div>
+                    <div className="space-y-2"><Label>Type</Label><Input name="paperType" defaultValue={editingItem?.paperType} required /></div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2">
-                      <Label>Width (mm)</Label>
-                      <Input name="widthMm" type="number" min="0.01" step="0.01" defaultValue={editingItem?.widthMm} required onChange={(e) => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Length (m)</Label>
-                      <Input name="lengthMeters" type="number" min="0.01" step="0.01" defaultValue={editingItem?.lengthMeters} required onChange={(e) => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>SQM (Auto Calculated)</Label>
-                      <Input value={liveSqm} readOnly className="bg-muted font-bold" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" defaultValue={editingItem?.gsm} required /></div>
-                    <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" defaultValue={editingItem?.lotNo} required /></div>
+                    <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" defaultValue={editingItem?.widthMm} required onChange={e => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} /></div>
+                    <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" defaultValue={editingItem?.lengthMeters} required onChange={e => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} /></div>
+                    <div className="space-y-2"><Label>SQM</Label><Input value={liveSqm} readOnly className="bg-muted" /></div>
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="space-y-2"><Label>Name</Label><Input name="name" defaultValue={editingItem?.name || editingItem?.companyName} required /></div>
                   <div className="space-y-2"><Label>Unit/Specs</Label><Input name="unit" defaultValue={editingItem?.unit || editingItem?.description} /></div>
-                  <div className="space-y-2"><Label>Rate (₹)</Label><Input name="rate_per_unit" type="number" defaultValue={editingItem?.rate_per_unit} /></div>
+                  <div className="space-y-2"><Label>Rate</Label><Input name="rate_per_unit" type="number" defaultValue={editingItem?.rate_per_unit} /></div>
                 </>
               )}
             </div>
-            <DialogFooter><Button type="submit">Save Record</Button></DialogFooter>
+            <DialogFooter><Button type="submit">Save</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
