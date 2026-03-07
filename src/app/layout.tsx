@@ -29,8 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={inter.variable}>
-      <body className={cn("font-sans antialiased bg-background")} suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
+      <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")} suppressHydrationWarning>
         <FirebaseClientProvider>
           {/* AuthInitializer handles redirection and profile provisioning */}
           <AuthInitializer />

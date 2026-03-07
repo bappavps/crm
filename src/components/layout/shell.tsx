@@ -1,4 +1,3 @@
-
 "use client"
 
 import { usePathname } from "next/navigation"
@@ -59,7 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full sidebar-wrapper bg-background font-sans">
+      <div className="flex min-h-screen w-full sidebar-wrapper bg-background" suppressHydrationWarning>
         <AppSidebar />
         <SidebarInset className="flex flex-col flex-1 min-w-0">
           <header className="h-16 shrink-0 border-b bg-card flex items-center px-4 md:px-6 sticky top-0 z-20 gap-2 md:gap-4 shadow-sm">
