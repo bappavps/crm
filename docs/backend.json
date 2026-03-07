@@ -1,145 +1,53 @@
+
 {
   "entities": {
     "UserProfile": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "UserProfile",
       "type": "object",
-      "description": "Represents a user within the Shree Label ERP system, holding their profile information and system access status.",
+      "description": "Represents a user within the Shree Label ERP system.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the UserProfile entity."
-        },
-        "email": {
-          "type": "string",
-          "description": "The user's email address, used for authentication and communication.",
-          "format": "email"
-        },
-        "firstName": {
-          "type": "string",
-          "description": "The first name of the user."
-        },
-        "lastName": {
-          "type": "string",
-          "description": "The last name of the user."
-        },
-        "roleId": {
-          "type": "string",
-          "description": "Reference to the SystemRole assigned to this user. (Relationship: SystemRole 1:N UserProfile)"
-        },
-        "mustChangePassword": {
-          "type": "boolean",
-          "description": "A flag indicating if the user is required to change their password upon their next login, typically after a temporary password generation or reset."
-        },
-        "status": {
-          "type": "string",
-          "description": "The current operational status of the user's account ('active' or 'inactive'). Inactive users cannot log in.",
-          "items": {
-            "type": "string"
-          }
-        }
+        "id": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "roles": { "type": "array", "items": { "type": "string" } },
+        "isActive": { "type": "boolean" },
+        "mustChangePassword": { "type": "boolean" }
       },
-      "required": [
-        "id",
-        "email",
-        "firstName",
-        "lastName",
-        "roleId",
-        "mustChangePassword",
-        "status"
-      ]
+      "required": ["id", "email", "firstName", "lastName", "roles", "isActive"]
     },
-    "SystemRole": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "SystemRole",
+    "PaperStock": {
+      "title": "PaperStock",
       "type": "object",
-      "description": "Defines a system role with a name, description, and a set of permissions that can be assigned to users.",
+      "description": "Represents a raw substrate jumbo roll in the inventory.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the SystemRole entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "The distinct name of the system role (e.g., 'System Administrator', 'Production Manager')."
-        },
-        "description": {
-          "type": "string",
-          "description": "A detailed description of the responsibilities and privileges associated with this role."
-        },
-        "permissions": {
-          "type": "array",
-          "description": "An array of strings representing specific permission identifiers granted to this role (e.g., 'user:create', 'role:delete', 'user:password:reset', 'user:status:change').",
-          "items": {
-            "type": "string"
-          }
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "description",
-        "permissions"
-      ]
+        "rollNo": { "type": "string" },
+        "paperCompany": { "type": "string" },
+        "paperType": { "type": "string" },
+        "widthMm": { "type": "number" },
+        "lengthMeters": { "type": "number" },
+        "sqm": { "type": "number" },
+        "gsm": { "type": "number" },
+        "status": { "type": "string", "enum": ["Available", "Reserved", "Partial", "Consumed"] },
+        "receivedDate": { "type": "string", "format": "date" }
+      }
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["password", "anonymous"]
   },
   "firestore": {
-    "structure": [
-      {
-        "path": "/userProfiles/{userId}",
-        "definition": {
-          "entityName": "UserProfile",
-          "schema": {
-            "$ref": "#/backend/entities/UserProfile"
-          },
-          "description": "Stores individual user profile information. The `userId` matches the Firebase Authentication UID. Includes denormalized 'roleId' for application logic, and 'status' and 'mustChangePassword' fields for authorization independence and system-wide access control checks. Users can read/update their own profile, while system administrators have broader read/write capabilities.",
-          "params": [
-            {
-              "name": "userId",
-              "description": "The unique identifier of the user, corresponding to their Firebase Authentication UID."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/systemRoles/{roleId}",
-        "definition": {
-          "entityName": "SystemRole",
-          "schema": {
-            "$ref": "#/backend/entities/SystemRole"
-          },
-          "description": "Contains definitions for all system roles, including their name, description, and assigned permissions. These documents are publicly readable by all authenticated users (e.g., for displaying role options), but only system administrators can create, update, or delete role definitions.",
-          "params": [
-            {
-              "name": "roleId",
-              "description": "The unique identifier for a specific system role."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/adminUsers/{adminUid}",
-        "definition": {
-          "entityName": "AdminUser",
-          "schema": {
-            "$ref": "#/backend/entities/AdminUser"
-          },
-          "description": "A dedicated collection used for database-backed access control (DBAC) to identify system administrators. The existence of a document at `/adminUsers/{request.auth.uid}` grants administrative privileges in security rules, ensuring authorization independence without requiring 'get()' calls on other collections. These documents are managed solely by a trusted backend and are not directly readable or writable by client applications.",
-          "params": [
-            {
-              "name": "adminUid",
-              "description": "The unique identifier (UID) of a user who has been granted system administrator privileges."
-            }
-          ]
-        }
-      }
-    ],
-    "reasoning": "The Firestore structure is designed to adhere strictly to the core design principles, particularly Authorization Independence and DBAC (Database as Canonical Source of Truth for Authorization), ensuring robust, scalable, and easily debuggable security rules.\n\n1.  **Authorization Independence (CRITICAL):** This is achieved primarily through two mechanisms:\n    *   **Self-Contained User Profiles:** The `userProfiles/{userId}` collection directly stores all necessary authorization-relevant fields for a user's own access, such as `mustChangePassword` and `status`. When a user accesses their own profile (`request.auth.uid == userId`), all required data is within the `resource.data` of the document being accessed, eliminating the need for `get()` calls.\n    *   **Dedicated Admin Flag Collection:** For global administrative actions (e.g., creating users, deleting roles, resetting passwords, changing user status), a separate collection, `/adminUsers/{adminUid}`, is used. This collection stores marker documents for users with administrative privileges, where `adminUid` is the user's `uid`. Firestore security rules can then perform an atomic `exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))` check to determine admin status without relying on `get()` calls on `userProfiles` or custom claims. This completely isolates admin authorization logic, fulfilling the Authorization Independence mandate.\n\n2.  **QAPs (Queries are not Filters):**\n    *   **Structural Segregation:** Collections are designed so that all documents within them generally share the same security posture. For example, `systemRoles` can be listed by anyone because the intention is for all authenticated users to be able to view available roles (e.g., for display in a user assignment dropdown). However, only administrators can modify these roles.\n    *   **Explicit Path-Based Ownership:** For user-specific data in `userProfiles/{userId}`, a regular user's `list` operation will be restricted to `request.auth.uid == userId` to ensure QAP compliance; any broader `list` would be rejected for non-admins. Administrators, identified via the `/adminUsers` collection, are explicitly granted `list` access to the entire `userProfiles` collection, allowing them to view all users in the 'User Management' page.\n\n3.  **DBAC (Database as Canonical Source):** All roles and authorization-relevant data (`roleId`, `status`, admin flags) are stored directly in Firestore documents, not in custom claims. `request.auth.uid` is the sole identifier for authorization checks.\n\n4.  **Structural Segregation:**\n    *   `userProfiles` stores only user profile data, with permissions for self-management and admin-level management.\n    *   `systemRoles` stores role definitions, readable by all authenticated users but writable only by admins.\n    *   `adminUsers` serves solely as an authorization mechanism for system administrators, separated from `userProfiles` to enable independent and atomic checks.\n\n5.  **Access Modeling:**\n    *   **Private Data:** `userProfiles/{userId}` directly implements path-based ownership for a user's own data.\n    *   **Global Roles:** The `adminUsers/{adminUid}` collection employs the 'Existence over Content' pattern for global admin roles, allowing for efficient and secure permission checks.\n\nThis structure prioritizes security and performance by eliminating complex, rule-breaking `get()` operations and providing clear, predictable access patterns essential for a secure ERP system."
+    "/users/{userId}": {
+      "schema": { "$ref": "#/backend/entities/UserProfile" },
+      "description": "Employee profiles and access control."
+    },
+    "/paper_stock/{rollId}": {
+      "schema": { "$ref": "#/backend/entities/PaperStock" },
+      "description": "Main substrate inventory registry with 19 technical columns."
+    },
+    "/adminUsers/{adminUid}": {
+      "schema": { "type": "object" },
+      "description": "Authorization markers for system administrators."
+    }
   }
 }

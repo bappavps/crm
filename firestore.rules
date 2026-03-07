@@ -4,7 +4,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.1)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.2)
      */
 
     function isSignedIn() {
@@ -16,7 +16,7 @@ service cloud.firestore {
     }
 
     function isTargetAdmin() {
-      return isSignedIn() && (request.auth.token.email == 'gm.shreelabel@gmail.com');
+      return isSignedIn() && (request.auth.token.email.lower() == 'gm.shreelabel@gmail.com');
     }
 
     function isAdmin() {
@@ -92,17 +92,11 @@ service cloud.firestore {
     match /cylinders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /suppliers/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     
-    // Substrate Management
+    // Paper Stock - Main Substrate Registry
     match /paper_stock/{id} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn() && isUserActive();
       allow delete: if isAdmin();
-    }
-    
-    // Jumbo Stock - Admin controlled writes for bulk uploads
-    match /jumbo_stock/{id} { 
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
     }
     
     match /inventoryItems/{id} { allow read, write: if isSignedIn() && isUserActive(); }
