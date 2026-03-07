@@ -12,25 +12,37 @@
         "lastName": { "type": "string" },
         "roles": { "type": "array", "items": { "type": "string" } },
         "isActive": { "type": "boolean" },
-        "mustChangePassword": { "type": "boolean" }
+        "mustChangePassword": { "type": "boolean" },
+        "salesCode": { "type": "string" }
       },
       "required": ["id", "email", "firstName", "lastName", "roles", "isActive"]
     },
     "PaperStock": {
       "title": "PaperStock",
       "type": "object",
-      "description": "Represents a raw substrate jumbo roll in the inventory.",
+      "description": "Represents a raw substrate jumbo roll in the inventory with 19 technical columns.",
       "properties": {
-        "rollNo": { "type": "string" },
+        "rollNo": { "type": "string", "description": "Unique Roll ID" },
+        "receivedDate": { "type": "string", "format": "date" },
+        "jobNo": { "type": "string" },
         "paperCompany": { "type": "string" },
         "paperType": { "type": "string" },
+        "gsm": { "type": "number" },
+        "size": { "type": "string" },
         "widthMm": { "type": "number" },
         "lengthMeters": { "type": "number" },
-        "sqm": { "type": "number" },
-        "gsm": { "type": "number" },
+        "quantity": { "type": "number" },
+        "sqm": { "type": "number", "description": "Auto-calculated area" },
+        "lotNo": { "type": "string" },
+        "productName": { "type": "string" },
+        "code": { "type": "string" },
         "status": { "type": "string", "enum": ["Available", "Reserved", "Partial", "Consumed"] },
-        "receivedDate": { "type": "string", "format": "date" }
-      }
+        "location": { "type": "string" },
+        "supplier": { "type": "string" },
+        "createdByName": { "type": "string" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["rollNo", "paperCompany", "gsm", "widthMm", "lengthMeters", "quantity"]
     }
   },
   "auth": {
