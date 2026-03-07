@@ -45,7 +45,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -62,10 +62,6 @@ import { cn } from "@/lib/utils"
 import { usePermissions } from "@/components/auth/permission-context"
 import { ActionModal, ModalType } from "@/components/action-modal"
 
-/**
- * PAPER STOCK REGISTRY (V3 - ERP GRADE)
- * restored advanced multi-select filtering logic.
- */
 export default function PaperStockPage() {
   const { user } = useUser()
   const firestore = useFirestore()
@@ -98,7 +94,6 @@ export default function PaperStockPage() {
     autoClose?: boolean;
   }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
-  // RESTORED COMPREHENSIVE FILTER STATE
   const [filters, setFilters] = useState<any>({
     search: "",
     paperCompany: [],
@@ -145,13 +140,13 @@ export default function PaperStockPage() {
     setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
   }, [])
 
-  // Metadata queries
+  // Metadata queries - Limited to save quota
   const companiesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_companies'), limit(100)) : null, [firestore]);
   const typesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_types'), limit(100)) : null, [firestore]);
   const { data: companyList } = useCollection(companiesQuery);
   const { data: paperTypeList } = useCollection(typesQuery);
 
-  // PRIMARY REGISTRY QUERY (Optimized to 100 results)
+  // PRIMARY REGISTRY QUERY (Optimized to 100 results to avoid Quota Exceeded)
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'desc'), limit(100));
@@ -159,9 +154,11 @@ export default function PaperStockPage() {
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
 
-  // RESTORED UNIQUE OPTIONS GENERATOR
+  // Derive unique options for filters from the fetched 100 rolls
   const getUniqueOptions = (key: string) => {
     if (!rolls) return [];
+    if (key === 'paperCompany') return companyList?.map(c => c.name).sort() || [];
+    if (key === 'paperType') return paperTypeList?.map(t => t.name).sort() || [];
     const values = rolls.map(r => r[key]).filter(v => v !== undefined && v !== null && v !== "");
     return Array.from(new Set(values)).sort();
   }
@@ -188,11 +185,9 @@ export default function PaperStockPage() {
     return Number(((w / 1000) * l * q).toFixed(2));
   }, [formData.widthMm, formData.lengthMeters, formData.quantity]);
 
-  // RESTORED FILTER LOGIC (Global Search + Multi-Select)
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     return rolls.filter(row => {
-      // 1. Global Smart Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const searchableKeys = [
@@ -204,7 +199,6 @@ export default function PaperStockPage() {
         if (!isMatch) return false;
       }
 
-      // 2. Multi-Select Dropdowns
       const multiFilters = Object.keys(filters).filter(k => Array.isArray(filters[k]) && filters[k].length > 0);
       for (const key of multiFilters) {
         if (!filters[key].includes(String(row[key]))) return false;
@@ -232,7 +226,6 @@ export default function PaperStockPage() {
     setCurrentPage(1);
   };
 
-  // RESTORED MULTI-SELECT FILTER COMPONENT
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -308,7 +301,7 @@ export default function PaperStockPage() {
           transaction.set(counterRef, { current_number: nextNum }, { merge: true });
         });
         setIsDialogOpen(false);
-        showModal('SUCCESS', 'Roll Created', `Technical ID ${formData.rollNo} initialized.`, undefined, true);
+        showModal('SUCCESS', 'Roll Created', `Technical ID generation complete.`, undefined, true);
       }
     } catch (error: any) {
       showModal('ERROR', 'Transaction Failed', error.message || 'Firestore write denied.');
@@ -353,7 +346,6 @@ export default function PaperStockPage() {
     <div className="flex flex-col h-[calc(100vh-10rem)] space-y-4 font-sans">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} isProcessing={isProcessing} />
 
-      {/* RESTORED QUICK FILTER BAR */}
       <div className="bg-white p-4 rounded-2xl border shadow-sm space-y-4 px-6 shrink-0 border-primary/10">
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
@@ -381,19 +373,17 @@ export default function PaperStockPage() {
         </div>
       </div>
 
-      {/* HEADER SECTION */}
       <div className="bg-[#4db6ac] text-white p-3 flex items-center justify-between shrink-0 px-6 rounded-t-2xl shadow-lg">
         <div className="flex items-center gap-4">
           <h2 className="font-black text-sm uppercase tracking-widest flex items-center gap-2"><LayoutGrid className="h-5 w-5" /> Technical Stock Registry</h2>
           <Badge className="bg-white/20 text-[10px] font-black border-none h-6 px-3">
-            Filtered Results: {filteredRows.length} units
+            Showing {startRange}-{endRange} of {filteredRows.length} units
           </Badge>
           {selectedIds.size > 0 && <Button variant="destructive" size="sm" className="h-7 text-[9px] font-black uppercase px-4 border-2 border-white/20 shadow-xl" onClick={handleBulkDelete}><Trash2 className="h-3 w-3 mr-1.5" /> Bulk Purge ({selectedIds.size})</Button>}
         </div>
         <Button variant="ghost" size="icon" className="h-10 w-10 text-white hover:bg-white/20 rounded-full" onClick={() => handleOpenDialog()}><Plus className="h-6 w-6" /></Button>
       </div>
 
-      {/* REGISTRY GRID */}
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
         <div className="flex-1 overflow-auto scrollbar-thin">
           <Table className="border-separate border-spacing-0 min-w-[3200px]">
@@ -462,7 +452,6 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        {/* PAGINATION FOOTER */}
         <div className="bg-slate-50 p-3 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
@@ -486,7 +475,6 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* TECHNICAL INTAKE FORM */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
           <form onSubmit={handleSave}>
@@ -496,9 +484,7 @@ export default function PaperStockPage() {
               </DialogTitle>
             </DialogHeader>
             <div className="p-8 grid grid-cols-2 gap-x-8 gap-y-6 bg-white font-sans">
-              
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">1. Roll ID (System Generated)</Label><Input value={formData.rollNo || "AUTO-PENDING"} readOnly className="h-11 bg-slate-50 font-black text-teal-600 border-2" /></div>
-              
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">2. Technical Status</Label>
                 <Select value={formData.status} onValueChange={v => handleInputChange('status', v)}>
                   <SelectTrigger className="h-11 font-black uppercase"><SelectValue /></SelectTrigger>
@@ -509,7 +495,6 @@ export default function PaperStockPage() {
                   </SelectContent>
                 </Select>
               </div>
-
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">3. Paper Company</Label>
                 <div className="flex gap-2">
                   <Select value={formData.paperCompany} onValueChange={v => handleInputChange('paperCompany', v)}>
@@ -519,7 +504,6 @@ export default function PaperStockPage() {
                   {isAdmin && <Button type="button" size="icon" className="h-11 w-11 shrink-0 bg-[#4db6ac] hover:bg-[#3d9e94]" onClick={() => { setMetadataType('Company'); setIsMetadataModalOpen(true); }}><Plus className="h-5 w-5" /></Button>}
                 </div>
               </div>
-
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">4. Paper Type (Substrate)</Label>
                 <div className="flex gap-2">
                   <Select value={formData.paperType} onValueChange={v => handleInputChange('paperType', v)}>
@@ -529,22 +513,17 @@ export default function PaperStockPage() {
                   {isAdmin && <Button type="button" size="icon" className="h-11 w-11 shrink-0 bg-[#4db6ac] hover:bg-[#3d9e94]" onClick={() => { setMetadataType('Type'); setIsMetadataModalOpen(true); }}><Plus className="h-5 w-5" /></Button>}
                 </div>
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">5. Width (MM)</Label>
                   <Input type="number" min="0" step="0.01" value={formData.widthMm || ""} onChange={e => handleInputChange('widthMm', e.target.value)} required className={cn("h-11 font-black text-lg", errors.widthMm && "border-destructive border-2")} />
-                  {errors.widthMm && <p className="text-[9px] font-black text-destructive uppercase">{errors.widthMm}</p>}
                 </div>
                 <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">6. Length (MTR)</Label>
                   <Input type="number" min="0" step="0.01" value={formData.lengthMeters || ""} onChange={e => handleInputChange('lengthMeters', e.target.value)} required className={cn("h-11 font-black text-lg", errors.lengthMeters && "border-destructive border-2")} />
-                  {errors.lengthMeters && <p className="text-[9px] font-black text-destructive uppercase">{errors.lengthMeters}</p>}
                 </div>
               </div>
-
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">7. Total SQM (Calculated)</Label>
                 <Input value={calculatedSqm} readOnly className="h-11 font-black bg-primary/5 text-primary border-primary/20 text-xl shadow-inner" />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">8. GSM</Label>
                   <Input type="number" value={formData.gsm || ""} onChange={e => handleInputChange('gsm', e.target.value)} required className={cn("h-11 font-bold", errors.gsm && "border-destructive border-2")} />
@@ -553,11 +532,9 @@ export default function PaperStockPage() {
                   <Input type="number" value={formData.weightKg || ""} onChange={e => handleInputChange('weightKg', e.target.value)} className="h-11 font-bold" />
                 </div>
               </div>
-
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">10. Date of Received</Label>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">10. Date Received</Label>
                 <Input type="date" value={formData.receivedDate} onChange={e => handleInputChange('receivedDate', e.target.value)} required className="h-11 font-black" />
               </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">11. Rate (₹/SQM)</Label>
                   <Input type="number" value={formData.purchaseRate || ""} onChange={e => handleInputChange('purchaseRate', e.target.value)} className="h-11 font-bold" />
@@ -566,30 +543,21 @@ export default function PaperStockPage() {
                   <Input value={formData.dateOfSlit} readOnly className="h-11 bg-slate-50 text-slate-400 italic font-medium" />
                 </div>
               </div>
-
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">13. Job Number</Label>
                 <Input value={formData.jobNo} onChange={e => handleInputChange('jobNo', e.target.value)} className="h-11 font-black text-primary border-2" placeholder="e.g. JB-2026-001" />
               </div>
-
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">14. Job Name / Description</Label>
-                <Input value={formData.jobName} onChange={e => handleInputChange('jobName', e.target.value)} className="h-11 font-bold" placeholder="e.g. Client A - Label V1" />
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">14. Job Name</Label>
+                <Input value={formData.jobName} onChange={e => handleInputChange('jobName', e.target.value)} className="h-11 font-bold" />
               </div>
-
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">15. Lot No / Invoice No</Label>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">15. Lot / Invoice No</Label>
                 <Input value={formData.lotNo} onChange={e => handleInputChange('lotNo', e.target.value)} className="h-11 font-bold border-2" />
               </div>
-
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">16. Remarks</Label>
                 <Textarea value={formData.remarks} onChange={e => handleInputChange('remarks', e.target.value)} className="min-h-[44px] h-11 font-medium" />
               </div>
-
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t rounded-b-2xl">
-              <Button 
-                type="submit" 
-                disabled={isProcessing || Object.keys(errors).length > 0} 
-                className="w-full h-16 uppercase font-black text-xl bg-[#4db6ac] hover:bg-[#3d9e94] transition-all shadow-2xl rounded-xl border-4 border-white/20"
-              >
+              <Button type="submit" disabled={isProcessing} className="w-full h-16 uppercase font-black text-xl bg-[#4db6ac] hover:bg-[#3d9e94] transition-all shadow-2xl rounded-xl border-4 border-white/20">
                 {isProcessing ? <Loader2 className="animate-spin mr-2 h-6 w-6" /> : editingRoll ? 'Commit Technical Updates' : 'Authorize Production Entry'}
               </Button>
             </DialogFooter>
@@ -597,7 +565,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* METADATA QUICK-ADD MODAL */}
       <Dialog open={isMetadataModalOpen} onOpenChange={setIsMetadataModalOpen}>
         <DialogContent className="sm:max-w-[400px] border-none shadow-2xl rounded-2xl">
           <form onSubmit={handleSaveMetadata}>
