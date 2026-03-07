@@ -178,13 +178,18 @@ export default function GRNPage() {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
+    let hasRange = false;
+    let hasIn = false;
 
     const addSafeFilter = (field: string, values: any[]) => {
       if (!values || values.length === 0) return;
       if (values.length === 1) {
         constraints.push(where(field, '==', values[0]));
-      } else {
+      } else if (!hasIn) {
         constraints.push(where(field, 'in', values.slice(0, 10)));
+        hasIn = true;
+      } else {
+        console.warn(`Firestore limitation: Only one 'in' filter allowed. Skipping ${field}.`);
       }
     };
 
@@ -198,17 +203,27 @@ export default function GRNPage() {
     if (filters.lotNo) {
       constraints.push(where('lotNo', '>=', filters.lotNo));
       constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+      hasRange = true;
     } else if (filters.grnNo) {
       constraints.push(where('rollNo', '>=', filters.grnNo));
       constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
+      hasRange = true;
     } else if (filters.startDate || filters.endDate) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
+      hasRange = true;
     }
 
     if (isCount) return query(q, ...constraints);
 
-    constraints.push(orderBy(sortField, sortOrder));
+    if (hasRange) {
+      if (filters.lotNo) constraints.push(orderBy('lotNo', 'asc'));
+      else if (filters.grnNo) constraints.push(orderBy('rollNo', 'asc'));
+      else if (filters.startDate || filters.endDate) constraints.push(orderBy('receivedDate', sortOrder));
+    } else {
+      constraints.push(orderBy(sortField, sortOrder));
+    }
+
     const cursor = pageStack[currentPage - 1];
     if (cursor) constraints.push(startAfter(cursor));
     constraints.push(limit(pageSize));
@@ -221,6 +236,8 @@ export default function GRNPage() {
     const load = async () => {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
+      setPagedJumbos([]); // Explicitly clear before new load
+
       try {
         const countQ = buildQuery(true);
         if (countQ) {
@@ -239,15 +256,16 @@ export default function GRNPage() {
               next[currentPage] = last;
               return next;
             });
-          } else {
-            setPagedJumbos([]);
           }
         }
       } catch (e: any) {
         setPagedJumbos([]);
-        if (e.message?.includes("index")) {
+        if (e.message?.includes("index") || e.code === 'failed-precondition') {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
           if (match) setIndexErrorUrl(match[0]);
+          else console.error("Missing Index:", e.message);
+        } else {
+          console.error("Query Error:", e);
         }
       } finally {
         setIsPageLoading(false);
@@ -464,15 +482,21 @@ export default function GRNPage() {
                 ) : indexErrorUrl ? (
                   <TableRow>
                     <TableCell colSpan={20} className="py-20">
-                      <div className="flex flex-col items-center gap-4 text-center max-w-lg mx-auto">
+                      <div className="flex flex-col items-center gap-4 text-center max-w-2xl mx-auto">
                         <AlertTriangle className="h-12 w-12 text-amber-500" />
                         <div className="space-y-2">
                           <p className="font-bold text-lg">Registry Index Required</p>
-                          <p className="text-sm text-muted-foreground">This filter combination requires a database index. Click the button to authorize it.</p>
+                          <p className="text-sm text-muted-foreground">This filter combination requires a database index. Please authorize it in the Firebase Console.</p>
                         </div>
-                        <Button asChild className="bg-amber-600 hover:bg-amber-700">
-                          <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
-                        </Button>
+                        <div className="flex flex-col gap-3 w-full max-w-md">
+                          <Button asChild className="bg-amber-600 hover:bg-amber-700 h-12">
+                            <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
+                          </Button>
+                          <div className="p-3 bg-muted rounded-md border border-dashed text-left">
+                            <p className="text-[10px] font-black uppercase text-muted-foreground mb-1">Manual Link (if button fails):</p>
+                            <p className="text-[10px] break-all font-mono text-primary select-all">{indexErrorUrl}</p>
+                          </div>
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>
