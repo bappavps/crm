@@ -49,6 +49,16 @@
         "name": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       }
+    },
+    "RoleDefinition": {
+      "title": "RoleDefinition",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "permissions": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "auth": {
@@ -74,6 +84,14 @@
     "/paper_types/{id}": {
       "schema": { "$ref": "#/backend/entities/PaperMetadata" },
       "description": "Master list of paper types/substrates."
+    },
+    "/roles/{roleId}": {
+      "schema": { "$ref": "#/backend/entities/RoleDefinition" },
+      "description": "System access roles and granular permissions."
+    },
+    "/quotation_templates/{templateId}": {
+      "schema": { "type": "object" },
+      "description": "HTML layouts for official client quotations."
     },
     "/counters/{id}": {
       "schema": { "type": "object" },
