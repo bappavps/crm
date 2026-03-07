@@ -31,7 +31,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Sparkles,
-  Pencil
+  Pencil,
+  ExternalLink
 } from "lucide-react"
 import { 
   Dialog, 
@@ -123,6 +124,7 @@ export default function GRNPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [indexErrorUrl, setIndexErrorUrl] = useState<string | null>(null)
   
   // Selection & Pagination
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -188,7 +190,6 @@ export default function GRNPage() {
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    // Filter Logic with Firestore optimization
     let hasInOperator = false;
     const addInFilter = (field: string, values: any[]) => {
       if (!values || values.length === 0) return;
@@ -207,28 +208,24 @@ export default function GRNPage() {
     addInFilter('location', filters.locations);
     addInFilter('status', filters.statuses);
 
-    // Range Logic
-    let hasRangeOperator = false;
-    if (filters.startDate || filters.endDate) {
+    let hasRange = false;
+    if (filters.lotNo) {
+      constraints.push(where('lotNo', '>=', filters.lotNo));
+      constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+      hasRange = true;
+    } else if (filters.grnNo) {
+      constraints.push(where('rollNo', '>=', filters.grnNo));
+      constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
+      hasRange = true;
+    }
+
+    if (!hasRange && (filters.startDate || filters.endDate)) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
-      hasRangeOperator = true;
-    } 
-    
-    // Prefix search Logic (only if no other range is active)
-    if (!hasRangeOperator) {
-      if (filters.lotNo) {
-        constraints.push(where('lotNo', '>=', filters.lotNo));
-        constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
-      } else if (filters.grnNo) {
-        constraints.push(where('rollNo', '>=', filters.grnNo));
-        constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
-      }
     }
 
     if (isCount) return query(q, ...constraints);
 
-    // Sorting & Pagination
     constraints.push(orderBy(sortField, sortOrder));
     const cursor = pageStack[currentPage - 1];
     if (cursor) constraints.push(startAfter(cursor));
@@ -241,6 +238,7 @@ export default function GRNPage() {
     if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
       setIsPageLoading(true);
+      setIndexErrorUrl(null);
       try {
         const countQ = buildQuery(true);
         if (countQ) {
@@ -259,13 +257,17 @@ export default function GRNPage() {
               next[currentPage] = last;
               return next;
             });
+          } else if (currentPage > 1) {
+            setCurrentPage(1);
+            setPageStack([null]);
           }
         }
       } catch (e: any) {
-        console.error("Technical Registry Query Error:", e);
-        setPagedJumbos([]); // Clear on error to avoid showing stale data
+        console.error("Registry Query Error:", e);
+        setPagedJumbos([]);
         if (e.message?.includes("index")) {
-          toast({ variant: "destructive", title: "Missing Database Index", description: "This specific filter combination requires an index." });
+          const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+          if (match) setIndexErrorUrl(match[0]);
         }
       } finally {
         setIsPageLoading(false);
@@ -298,6 +300,8 @@ export default function GRNPage() {
     setIsExporting(true);
     try {
       await exportPaperStockToExcel(firestore!, filters as any);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: e.message });
     } finally { setIsExporting(false); }
   }
 
@@ -508,6 +512,21 @@ export default function GRNPage() {
               <TableBody>
                 {isPageLoading ? (
                   <TableRow><TableCell colSpan={22} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                ) : indexErrorUrl ? (
+                  <TableRow>
+                    <TableCell colSpan={22} className="py-20">
+                      <div className="flex flex-col items-center gap-4 text-center max-w-lg mx-auto">
+                        <AlertTriangle className="h-12 w-12 text-amber-500" />
+                        <div className="space-y-2">
+                          <p className="font-bold text-lg">Registry Index Required</p>
+                          <p className="text-sm text-muted-foreground">This specific filter combination requires a database index. Please click the button below to authorize it in the Firebase Console.</p>
+                        </div>
+                        <Button asChild className="bg-amber-600 hover:bg-amber-700">
+                          <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Create Registry Index</a>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ) : pagedJumbos.map((j, i) => (
                   <TableRow key={j.id} className="hover:bg-primary/5 h-12">
                     <TableCell className="sticky left-0 bg-background z-10">
@@ -549,7 +568,7 @@ export default function GRNPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {pagedJumbos.length === 0 && !isPageLoading && (
+                {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
                   <TableRow>
                     <TableCell colSpan={22} className="text-center py-20 text-muted-foreground italic">No matching inventory records found.</TableCell>
                   </TableRow>

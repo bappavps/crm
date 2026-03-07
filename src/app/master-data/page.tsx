@@ -44,7 +44,9 @@ import {
   Search,
   Sparkles,
   Calendar,
-  Hash
+  Hash,
+  AlertTriangle,
+  ExternalLink
 } from "lucide-react"
 import {
   Popover,
@@ -53,7 +55,7 @@ import {
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
-import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot } from "firebase/firestore"
+import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot, runTransaction } from "firebase/firestore"
 import { updateDocumentNonBlocking, addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
@@ -145,6 +147,7 @@ export default function MasterDataPage() {
   const [pageStack, setPageStack] = useState<any[]>([null])
   const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
   const [isPageLoading, setIsPageLoading] = useState(false)
+  const [indexErrorUrl, setIndexErrorUrl] = useState<string | null>(null)
   
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -159,7 +162,7 @@ export default function MasterDataPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  // Authorization
+  // Authorization Hooks
   const adminDocRef = useMemoFirebase(() => {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
@@ -195,7 +198,7 @@ export default function MasterDataPage() {
 
   useEffect(() => { setIsMounted(true) }, []);
 
-  // Filter Data Synchronizer
+  // Sync unique values for filters
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -217,7 +220,6 @@ export default function MasterDataPage() {
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    // Intelligent Multi-filter builder
     let hasInOperator = false;
     const addSafeFilter = (field: string, values: any[]) => {
       if (!values || values.length === 0) return;
@@ -237,20 +239,19 @@ export default function MasterDataPage() {
     addSafeFilter('status', filters.statuses);
 
     let hasRange = false;
-    if (filters.startDate || filters.endDate) {
-      if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
-      if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
+    if (filters.lotNo) {
+      constraints.push(where('lotNo', '>=', filters.lotNo));
+      constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+      hasRange = true;
+    } else if (filters.grnNo) {
+      constraints.push(where('rollNo', '>=', filters.grnNo));
+      constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
       hasRange = true;
     }
 
-    if (!hasRange) {
-      if (filters.lotNo) {
-        constraints.push(where('lotNo', '>=', filters.lotNo));
-        constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
-      } else if (filters.grnNo) {
-        constraints.push(where('rollNo', '>=', filters.grnNo));
-        constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
-      }
+    if (!hasRange && (filters.startDate || filters.endDate)) {
+      if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
+      if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
     }
 
     if (isCount) return query(q, ...constraints);
@@ -267,6 +268,7 @@ export default function MasterDataPage() {
     if (!firestore || !isAdmin || !isMounted) return;
     const load = async () => {
       setIsPageLoading(true);
+      setIndexErrorUrl(null);
       try {
         const countQ = buildQuery(true);
         if (countQ) {
@@ -284,11 +286,18 @@ export default function MasterDataPage() {
               next[currentPage] = last;
               return next;
             });
+          } else if (currentPage > 1) {
+            setCurrentPage(1);
+            setPageStack([null]);
           }
         }
-      } catch (e) {
-        console.error("Master Registry Load Error:", e);
-        setPagedJumbos([]); // Prevent stale data on failure
+      } catch (e: any) {
+        console.error("Registry Query Error:", e);
+        setPagedJumbos([]);
+        if (e.message?.includes("index")) {
+          const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
+          if (match) setIndexErrorUrl(match[0]);
+        }
       } finally {
         setIsPageLoading(false);
       }
@@ -361,6 +370,8 @@ export default function MasterDataPage() {
     setIsExporting(true);
     try {
       await exportPaperStockToExcel(firestore!, filters as any);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: e.message });
     } finally {
       setIsExporting(false);
     }
@@ -448,7 +459,8 @@ export default function MasterDataPage() {
                 {isAdmin && (
                   <>
                     <Button variant="outline" size="sm" onClick={() => {
-                      const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
+                      const sampleData = [{ "RELL NO": "TLC-1001", "PAPER COMPANY": "Avery", "PAPER TYPE": "CHROMO", "WIDTH (MM)": 1020, "LENGTH (MTR)": 3000, "GSM": 80, "LOT NO": "LOT-998" }];
+                      const ws = XLSX.utils.json_to_sheet(sampleData);
                       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template");
                       XLSX.writeFile(wb, "paper_stock_template.xlsx");
                     }}><Download className="h-4 w-4 mr-2" /> Template</Button>
@@ -560,6 +572,21 @@ export default function MasterDataPage() {
                         <TableRow>
                           <TableCell colSpan={15} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell>
                         </TableRow>
+                      ) : indexErrorUrl ? (
+                        <TableRow>
+                          <TableCell colSpan={15} className="py-20">
+                            <div className="flex flex-col items-center gap-4 text-center max-w-lg mx-auto">
+                              <AlertTriangle className="h-12 w-12 text-amber-500" />
+                              <div className="space-y-2">
+                                <p className="font-bold text-lg">Registry Index Required</p>
+                                <p className="text-sm text-muted-foreground">This specific filter combination requires a database index. Please click the button below to authorize it in the Firebase Console.</p>
+                              </div>
+                              <Button asChild className="bg-amber-600 hover:bg-amber-700">
+                                <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Create Registry Index</a>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       ) : pagedJumbos.map((j, idx) => (
                         <TableRow key={j.id} className="hover:bg-primary/5 h-12">
                           <TableCell className="sticky left-0 bg-background z-10">
@@ -590,7 +617,7 @@ export default function MasterDataPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {pagedJumbos.length === 0 && !isPageLoading && (
+                      {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
                         <TableRow>
                           <TableCell colSpan={15} className="text-center py-20 text-muted-foreground italic">No matching paper stock records found.</TableCell>
                         </TableRow>
@@ -740,7 +767,9 @@ export default function MasterDataPage() {
                 <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {customers?.map((c) => (
-                    <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
+                    <TableRow key={c.id}>
+                      <TableCell className="font-bold">{c.name || c.companyName}</TableCell>
+                      <TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "customers")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "customers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
