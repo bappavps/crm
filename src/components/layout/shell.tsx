@@ -21,9 +21,9 @@ const routePermissionMap: Record<string, PermissionKey> = {
   "/design/production-planning": "jobPlanning",
   "/artwork": "artwork",
   "/purchase": "purchaseOrders",
-  "/purchase/grn": "grn",
+  "/paper-stock": "stockRegistry",
+  "/stock-import": "stockRegistry",
   "/inventory/dashboard": "stockDashboard",
-  "/inventory": "stockRegistry",
   "/inventory/slitting": "slitting",
   "/inventory/finished-goods": "finishedGoods",
   "/die": "dieManagement",
@@ -35,15 +35,12 @@ const routePermissionMap: Record<string, PermissionKey> = {
   "/dispatch": "dispatch",
   "/billing": "billing",
   "/reports": "reports",
-  "/admin/permissions": "admin",
   "/admin/approval": "admin",
   "/admin/migrate": "admin",
-  "/admin/stock-import": "admin",
   "/users": "admin",
   "/master-data": "admin",
   "/master-data/pricing-settings": "admin",
   "/master-data/roll-settings": "admin",
-  "/master-data/job-settings": "admin",
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -62,14 +59,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex min-h-screen w-full sidebar-wrapper bg-background">
+      <div className="flex min-h-screen w-full sidebar-wrapper bg-background font-sans">
         <AppSidebar />
         <SidebarInset className="flex flex-col flex-1 min-w-0">
           <header className="h-16 shrink-0 border-b bg-card flex items-center px-4 md:px-6 sticky top-0 z-20 gap-2 md:gap-4 shadow-sm">
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4 hidden md:block" />
             <div className="flex-1 truncate">
-              <h1 className="text-xs md:text-xl font-bold text-primary truncate uppercase tracking-tighter">Shree Label Creation CRM</h1>
+              <h1 className="text-xs md:text-xl font-black text-primary truncate uppercase tracking-tighter">Shree Label Creation CRM</h1>
             </div>
             <div className="flex items-center gap-1 md:gap-4">
               <NotificationBell />

@@ -29,8 +29,8 @@ import {
   Lock,
   FileText,
   FileJson,
-  FlaskConical,
-  ClipboardType
+  ClipboardType,
+  Boxes
 } from "lucide-react"
 import {
   Sidebar,
@@ -73,35 +73,33 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     ]
   },
   {
+    label: "Inventory Hub",
+    items: [
+      { name: 'Paper Stock', icon: Boxes, href: '/paper-stock', permission: 'stockRegistry' },
+      { name: 'Stock Import', icon: FileUp, href: '/stock-import', permission: 'stockRegistry' },
+      { name: 'Slitting', icon: Scissors, href: '/inventory/slitting', permission: 'slitting' },
+      { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods', permission: 'finishedGoods' },
+      { name: 'Die Tooling', icon: Wrench, href: '/die', permission: 'dieManagement' },
+    ]
+  },
+  {
     label: "Production",
     items: [
       { name: 'Job Cards', icon: IdCard, href: '/production/job-card', permission: 'jobCards' },
       { name: 'BOM Master', icon: Layers, href: '/bom', permission: 'bom' },
-      { name: 'Work Orders', icon: ClipboardList, href: '/work-order', permission: 'workOrders' },
       { name: 'Live Floor', icon: Factory, href: '/production', permission: 'liveFloor' },
     ]
   },
   {
     label: "Purchase",
     items: [
-      { name: 'Purchase Orders', icon: ShoppingCart, href: '/purchase', permission: 'purchaseOrders' },
-      { name: 'GRN (Jumbo Entry)', icon: ClipboardCheck, href: '/purchase/grn', permission: 'grn' },
-    ]
-  },
-  {
-    label: "Inventory",
-    items: [
-      { name: 'Stock Dashboard', icon: LineChart, href: '/inventory/dashboard', permission: 'stockDashboard' },
-      { name: 'Stock Registry', icon: Package, href: '/inventory', permission: 'stockRegistry' },
-      { name: 'Slitting (Conversion)', icon: Scissors, href: '/inventory/slitting', permission: 'slitting' },
-      { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods', permission: 'finishedGoods' },
-      { name: 'Die Management', icon: Wrench, href: '/die', permission: 'dieManagement' },
+      { name: 'Purchase Orders', icon: ShoppingBag, href: '/purchase', permission: 'purchaseOrders' },
     ]
   },
   {
     label: "Quality & Logistics",
     items: [
-      { name: 'Quality Control', icon: ShieldCheck, href: '/qc', permission: 'qualityControl' },
+      { name: 'QC Reports', icon: ShieldCheck, href: '/qc', permission: 'qualityControl' },
       { name: 'Dispatch', icon: Truck, href: '/dispatch', permission: 'dispatch' },
       { name: 'Billing', icon: Receipt, href: '/billing', permission: 'billing' },
     ]
@@ -109,6 +107,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Analytics",
     items: [
+      { name: 'Performance', icon: LineChart, href: '/inventory/dashboard', permission: 'stockDashboard' },
       { name: 'Reports', icon: BarChart, href: '/reports', permission: 'reports' },
     ]
   }
@@ -118,10 +117,7 @@ const adminNavigation = [
   { name: 'Master Data', icon: Settings, href: '/master-data', permission: 'admin' as PermissionKey },
   { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
   { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
-  { name: 'Stock Import', icon: FileUp, href: '/admin/stock-import', permission: 'admin' as PermissionKey },
-  { name: 'Quot. Templates', icon: FileJson, href: '/admin/quotation-templates', permission: 'admin' as PermissionKey },
   { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
-  { name: 'Roll Settings', icon: Hash, href: '/master-data/roll-settings', permission: 'admin' as PermissionKey },
   { name: 'DB Migration', icon: Database, href: '/admin/migrate', permission: 'admin' as PermissionKey },
 ]
 
@@ -141,31 +137,18 @@ export function AppSidebar() {
     }
   }
 
-  if (!mounted) return (
-    <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl">
-      <SidebarHeader className="p-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-            <Lock className="text-white w-6 h-6" />
-          </div>
-          <div>
-            <span className="block font-bold text-white text-lg">Shree Label CRM</span>
-          </div>
-        </div>
-      </SidebarHeader>
-    </Sidebar>
-  )
+  if (!mounted) return null;
 
   return (
-    <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl">
+    <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl font-sans">
       <SidebarHeader className="p-6">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg">
             <Lock className="text-white w-6 h-6" />
           </div>
           <div>
-            <span className="block font-bold text-white text-lg">Shree Label CRM</span>
-            <span className="block text-[10px] text-muted-foreground uppercase tracking-widest">Shree Label Creation</span>
+            <span className="block font-black text-white text-lg tracking-tighter uppercase">Shree Label</span>
+            <span className="block text-[9px] text-muted-foreground uppercase tracking-[0.2em] font-bold">ERP Solutions</span>
           </div>
         </div>
       </SidebarHeader>
@@ -177,7 +160,7 @@ export function AppSidebar() {
                 <SidebarMenuButton asChild isActive={pathname === '/'} onClick={handleNavClick}>
                   <Link href="/">
                     <LayoutDashboard className="mr-3" />
-                    <span>Dashboard</span>
+                    <span className="font-bold">Dashboard</span>
                   </Link>
                 </SidebarMenuButton>
               )}
@@ -191,7 +174,7 @@ export function AppSidebar() {
 
           return (
             <SidebarGroup key={group.label} className="mt-2">
-              <SidebarGroupLabel className="px-4 text-[10px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">
+              <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">
                 {group.label}
               </SidebarGroupLabel>
               <SidebarMenu>
@@ -205,7 +188,7 @@ export function AppSidebar() {
                     >
                       <Link href={item.href}>
                         <item.icon className="mr-3 h-4 w-4" />
-                        <span className="text-sm font-bold">{item.name}</span>
+                        <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -217,7 +200,7 @@ export function AppSidebar() {
         
         {hasPermission('admin') && (
           <SidebarGroup className="mt-4 border-t border-sidebar-border pt-4">
-            <SidebarGroupLabel className="px-4 text-[10px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">System Control</SidebarGroupLabel>
+            <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">Control Center</SidebarGroupLabel>
             <SidebarMenu>
               {adminNavigation.map((item) => (
                 <SidebarMenuItem key={item.name}>
@@ -229,7 +212,7 @@ export function AppSidebar() {
                   >
                     <Link href={item.href}>
                       <item.icon className="mr-3 h-4 w-4" />
-                      <span className="text-sm font-bold">{item.name}</span>
+                      <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
