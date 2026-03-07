@@ -213,7 +213,7 @@ export default function MasterDataPage() {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
-    let hasRange = false;
+    let rangeField: string | null = null;
     let hasIn = false;
 
     const addSafeFilter = (field: string, values: any[]) => {
@@ -223,8 +223,6 @@ export default function MasterDataPage() {
       } else if (!hasIn) {
         constraints.push(where(field, 'in', values.slice(0, 10)));
         hasIn = true;
-      } else {
-        console.warn(`Firestore limitation: Only one 'in' filter allowed. Skipping ${field}.`);
       }
     };
 
@@ -238,24 +236,21 @@ export default function MasterDataPage() {
     if (filters.lotNo) {
       constraints.push(where('lotNo', '>=', filters.lotNo));
       constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
-      hasRange = true;
+      rangeField = 'lotNo';
     } else if (filters.grnNo) {
       constraints.push(where('rollNo', '>=', filters.grnNo));
       constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
-      hasRange = true;
+      rangeField = 'rollNo';
     } else if (filters.startDate || filters.endDate) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
-      hasRange = true;
+      rangeField = 'receivedDate';
     }
 
     if (isCount) return query(q, ...constraints);
 
-    // If we have a range filter, we MUST order by that field first in Firestore
-    if (hasRange) {
-      if (filters.lotNo) constraints.push(orderBy('lotNo', 'asc'));
-      else if (filters.grnNo) constraints.push(orderBy('rollNo', 'asc'));
-      else if (filters.startDate || filters.endDate) constraints.push(orderBy('receivedDate', sortOrder));
+    if (rangeField) {
+      constraints.push(orderBy(rangeField, rangeField === 'receivedDate' ? sortOrder : 'asc'));
     } else {
       constraints.push(orderBy(sortField, sortOrder));
     }
@@ -272,7 +267,7 @@ export default function MasterDataPage() {
     const load = async () => {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
-      setPagedJumbos([]); // Clear table immediately on filter change
+      setPagedJumbos([]); 
 
       try {
         const countQ = buildQuery(true);
@@ -298,9 +293,6 @@ export default function MasterDataPage() {
         if (e.message?.includes("index") || e.code === 'failed-precondition') {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
           if (match) setIndexErrorUrl(match[0]);
-          else console.error("Missing Index Error:", e.message);
-        } else {
-          console.error("Query Error:", e);
         }
       } finally {
         setIsPageLoading(false);
@@ -593,8 +585,8 @@ export default function MasterDataPage() {
                                   <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
                                 </Button>
                                 <div className="p-3 bg-muted rounded-md border border-dashed text-left">
-                                  <p className="text-[10px] font-black uppercase text-muted-foreground mb-1">Manual Link (if button fails):</p>
-                                  <p className="text-[10px] break-all font-mono text-primary select-all">{indexErrorUrl}</p>
+                                  <p className="text-[10px] font-black uppercase text-muted-foreground mb-1">Backup Link (Manual Copy):</p>
+                                  <p className="text-[9px] break-all font-mono text-primary select-all">{indexErrorUrl}</p>
                                 </div>
                               </div>
                             </div>
