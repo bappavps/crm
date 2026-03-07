@@ -4,7 +4,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.2)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.3)
      */
 
     function isSignedIn() {
@@ -53,6 +53,23 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /paper_companies/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /paper_types/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Paper Stock - Main Substrate Registry
+    match /paper_stock/{id} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isUserActive();
+      allow delete: if isAdmin();
+    }
+
     match /customers/{id} { 
       allow get, list: if isSignedIn() && (isAdmin() || resource.data.sales_owner_id == request.auth.uid);
       allow create: if isSignedIn() && isUserActive(); 
@@ -81,24 +98,8 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Transactional & Operational Collections
-    match /raw_materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /quotation_templates/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /jobs/{path=**} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /purchaseOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /dies/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /machines/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /cylinders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /suppliers/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    
-    // Paper Stock - Main Substrate Registry
-    match /paper_stock/{id} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isUserActive();
-      allow delete: if isAdmin();
-    }
-    
+    match /raw_materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /inventoryItems/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /jobCards/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /boms/{id} { allow read, write: if isSignedIn() && isUserActive(); }
@@ -113,7 +114,6 @@ service cloud.firestore {
     match /job_settings/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /alerts/{id} { allow read, write: if isSignedIn() && isUserActive(); }
     match /notifications/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /job_audit_log/{id} { allow read, write: if isAdmin(); }
     
     match /system_logs/{path=**} {
       allow read, write: if isAdmin();

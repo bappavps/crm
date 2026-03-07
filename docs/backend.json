@@ -41,6 +41,14 @@
         "createdByName": { "type": "string" }
       },
       "required": ["rollNo", "paperCompany", "gsm", "widthMm", "lengthMeters"]
+    },
+    "PaperMetadata": {
+      "title": "PaperMetadata",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "auth": {
@@ -58,6 +66,14 @@
     "/adminUsers/{adminUid}": {
       "schema": { "type": "object" },
       "description": "Authorization markers for system administrators."
+    },
+    "/paper_companies/{id}": {
+      "schema": { "$ref": "#/backend/entities/PaperMetadata" },
+      "description": "Master list of paper companies."
+    },
+    "/paper_types/{id}": {
+      "schema": { "$ref": "#/backend/entities/PaperMetadata" },
+      "description": "Master list of paper types/substrates."
     }
   }
 }
