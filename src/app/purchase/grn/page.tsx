@@ -11,26 +11,19 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Separator } from "@/components/ui/separator"
 import { 
   Plus, 
   Loader2, 
   Search, 
   ArrowUpDown, 
   FilterX, 
-  Hash, 
-  Calendar,
   FileDown,
-  FileUp,
   ChevronLeft,
   ChevronRight,
   Trash2,
   X,
   Settings2,
-  Download,
   AlertTriangle,
-  CheckCircle2,
-  Sparkles,
   Pencil,
   ExternalLink
 } from "lucide-react"
@@ -39,15 +32,14 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter,
-  DialogDescription
+  DialogFooter
 } from "@/components/ui/dialog"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { useFirestore, useUser, useMemoFirebase, useDoc, useCollection } from "@/firebase"
+import { useFirestore, useUser, useMemoFirebase, useDoc } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -66,7 +58,6 @@ import {
 } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 
 // --- TYPES & CONSTANTS ---
@@ -169,7 +160,7 @@ export default function GRNPage() {
   const { data: settings } = useDoc(settingsRef);
 
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
+    if (!firestore || !isAdmin || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
       const docs = snap.docs.map(d => d.data());
       setOptions(prev => ({
@@ -182,7 +173,7 @@ export default function GRNPage() {
       }));
     });
     return () => unsub();
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, isMounted]);
 
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
@@ -327,10 +318,10 @@ export default function GRNPage() {
     setIsDialogOpen(true);
   }
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
-
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
+
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
 
   return (
     <div className="space-y-6">
@@ -592,7 +583,15 @@ export default function GRNPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2"><Label>Location</Label><Input name="location" defaultValue={editingRoll?.location} /></div>
-                <div className="space-y-2"><Label>Date Received</Label><Input name="receivedDate" type="date" defaultValue={editingRoll?.receivedDate || new Date().toISOString().split('T')[0]} required /></div>
+                <div className="space-y-2">
+                  <Label>Date Received</Label>
+                  <Input 
+                    name="receivedDate" 
+                    type="date" 
+                    defaultValue={editingRoll?.receivedDate || (new Date().toISOString().split('T')[0])} 
+                    required 
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : 'Save Intake'}</Button></DialogFooter>

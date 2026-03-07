@@ -17,21 +17,14 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter,
-  DialogDescription
+  DialogFooter
 } from "@/components/ui/dialog"
 import { 
   Plus, 
   Trash2, 
   Pencil, 
   Loader2, 
-  FlaskConical, 
-  Layers, 
-  Truck, 
-  Factory, 
-  Ruler, 
-  Users, 
-  Package, 
+  CheckCircle2, 
   ChevronLeft, 
   ChevronRight, 
   ArrowUpDown, 
@@ -41,10 +34,7 @@ import {
   Settings2,
   Download,
   FilterX,
-  Search,
   Sparkles,
-  Calendar,
-  Hash,
   AlertTriangle,
   ExternalLink
 } from "lucide-react"
@@ -56,7 +46,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
 import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot } from "firebase/firestore"
-import { updateDocumentNonBlocking, addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
+import { updateDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
@@ -173,10 +163,10 @@ export default function MasterDataPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
+  const { data: adminData } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Top-Level Data Hooks (Ensures consistent order)
+  // Data Fetching Hooks (Move to top level)
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -206,7 +196,7 @@ export default function MasterDataPage() {
 
   // Sync unique values for filters
   useEffect(() => {
-    if (!firestore || !isAdmin) return;
+    if (!firestore || !isAdmin || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
       const docs = snap.docs.map(d => d.data());
       setOptions(prev => ({
@@ -219,7 +209,7 @@ export default function MasterDataPage() {
       }));
     });
     return () => unsub();
-  }, [firestore, isAdmin]);
+  }, [firestore, isAdmin, isMounted]);
 
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
@@ -393,7 +383,6 @@ export default function MasterDataPage() {
           }
           data[systemKey] = val;
         });
-        // Force auto-SQM
         const w = Number(data.widthMm) || 0;
         const l = Number(data.lengthMeters) || 0;
         data.sqm = Number(((w * l) / 1000).toFixed(2));
@@ -408,10 +397,10 @@ export default function MasterDataPage() {
     setImportStep(4);
   };
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
-
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
+
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="space-y-6">
@@ -565,7 +554,7 @@ export default function MasterDataPage() {
                               <AlertTriangle className="h-12 w-12 text-amber-500" />
                               <div className="space-y-2">
                                 <p className="font-bold text-lg">Registry Index Required</p>
-                                <p className="text-sm text-muted-foreground">This specific filter combination requires a database index. Please click the button below to authorize it in the Firebase Console.</p>
+                                <p className="text-sm text-muted-foreground">This specific filter combination requires a database index. Please authorize it in the Firebase Console.</p>
                               </div>
                               <Button asChild className="bg-amber-600 hover:bg-amber-700">
                                 <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
@@ -648,7 +637,7 @@ export default function MasterDataPage() {
                       <TableCell>{m.unit}</TableCell>
                       <TableCell>₹{m.rate_per_unit}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "raw_materials")}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("raw_materials"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(m, "raw_materials")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -674,7 +663,7 @@ export default function MasterDataPage() {
                       <TableCell className="font-bold">{s.name}</TableCell>
                       <TableCell>{s.unit || 'Substrates'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(s, "suppliers")}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(s); setDialogType("suppliers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(s, "suppliers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -700,7 +689,7 @@ export default function MasterDataPage() {
                       <TableCell className="font-bold">{m.name}</TableCell>
                       <TableCell>{m.unit || '250mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(m, "machines")}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(m); setDialogType("machines"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(m, "machines")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -726,7 +715,7 @@ export default function MasterDataPage() {
                       <TableCell className="font-bold">{c.name}</TableCell>
                       <TableCell>{c.unit || '508mm'}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "cylinders")}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("cylinders"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "cylinders")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -752,7 +741,7 @@ export default function MasterDataPage() {
                       <TableCell className="font-bold">{c.name || c.companyName}</TableCell>
                       <TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "customers")}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(c); setDialogType("customers"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "customers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
@@ -778,7 +767,7 @@ export default function MasterDataPage() {
                       <TableCell className="font-bold">{b.name || b.bomNumber}</TableCell>
                       <TableCell className="text-xs truncate max-w-[200px]">{b.unit || b.description}</TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(b, "boms")}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" onClick={() => { setEditingItem(b); setDialogType("boms"); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(b, "boms")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
                       </TableCell>
                     </TableRow>
