@@ -1,3 +1,4 @@
+
 "use client"
 
 import { 
@@ -76,7 +77,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Inventory Hub",
     items: [
       { name: 'Paper Stock', icon: Boxes, href: '/paper-stock', permission: 'stockRegistry' },
-      { name: 'Stock Import', icon: FileUp, href: '/stock-import', permission: 'stockRegistry' },
       { name: 'Slitting', icon: Scissors, href: '/inventory/slitting', permission: 'slitting' },
       { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods', permission: 'finishedGoods' },
       { name: 'Die Tooling', icon: Wrench, href: '/die', permission: 'dieManagement' },
@@ -114,6 +114,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 ]
 
 const adminNavigation = [
+  { name: 'Stock Import', icon: FileUp, href: '/stock-import', permission: 'admin' as PermissionKey },
   { name: 'Master Data', icon: Settings, href: '/master-data', permission: 'admin' as PermissionKey },
   { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
   { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },

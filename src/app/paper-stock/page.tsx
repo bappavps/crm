@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useFirestore, useUser, useMemoFirebase, useCollection, useDoc } from "@/firebase"
+import { useFirestore, useUser, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -53,7 +53,6 @@ import {
   getCountFromServer,
   onSnapshot,
   deleteDoc,
-  writeBatch,
   serverTimestamp,
   runTransaction
 } from "firebase/firestore"
@@ -61,6 +60,7 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 import { usePermissions } from "@/components/auth/permission-context"
+import { ActionModal, ModalType } from "@/components/action-modal"
 
 // --- TYPES & CONSTANTS ---
 type SortField = 'rollNo' | 'receivedDate' | 'gsm' | 'widthMm' | 'sqm';
@@ -93,7 +93,27 @@ export default function PaperStockPage() {
   const { hasPermission } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
   
-  // States
+  // --- MODAL STATE ---
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: ModalType;
+    title: string;
+    description?: string;
+    onConfirm?: () => void;
+    autoClose?: boolean;
+  }>({
+    isOpen: false,
+    type: 'SUCCESS',
+    title: '',
+  });
+
+  const showModal = (type: ModalType, title: string, description?: string, onConfirm?: () => void, autoClose = false) => {
+    setModal({ isOpen: true, type, title, description, onConfirm, autoClose });
+  };
+
+  const closeModal = () => setModal(prev => ({ ...prev, isOpen: false }));
+
+  // --- REGISTRY STATES ---
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [intakeForm, setIntakeForm] = useState({ widthMm: 0, lengthMeters: 0, quantity: 1 })
@@ -101,7 +121,7 @@ export default function PaperStockPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   
-  // Pagination & Index
+  // Pagination
   const [pageSize, setPageSize] = useState<number>(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalRecords, setTotalRecords] = useState(0)
@@ -126,6 +146,7 @@ export default function PaperStockPage() {
     const w = intakeForm.widthMm || 0;
     const l = intakeForm.lengthMeters || 0;
     const q = intakeForm.quantity || 1;
+    // Formula: SQM = (Width / 1000) * Length * Quantity
     return w > 0 && l > 0 ? ((w / 1000) * l * q).toFixed(2) : "0.00";
   }, [intakeForm]);
 
@@ -141,13 +162,14 @@ export default function PaperStockPage() {
   // Sync Filter Options
   useEffect(() => {
     if (!firestore || !isMounted) return;
-    const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
+    const jumboRef = collection(firestore, 'jumbo_stock');
+    const unsub = onSnapshot(jumboRef, (snap) => {
       const docs = snap.docs.map(d => d.data());
       setOptions(prev => ({
         ...prev,
-        companies: Array.from(new Set(docs.map(d => d.paperCompany).filter(Boolean))).sort(),
-        types: Array.from(new Set(docs.map(d => d.paperType).filter(Boolean))).sort(),
-        gsms: Array.from(new Set(docs.map(d => d.gsm?.toString()).filter(Boolean))).sort((a,b) => Number(a)-Number(b)),
+        companies: Array.from(new Set(docs.map(d => d.paperCompany).filter(Boolean))).sort() as string[],
+        types: Array.from(new Set(docs.map(d => d.paperType).filter(Boolean))).sort() as string[],
+        gsms: Array.from(new Set(docs.map(d => d.gsm?.toString()).filter(Boolean))).sort((a,b) => Number(a)-Number(b)) as string[],
       }));
     });
     return () => unsub();
@@ -157,8 +179,8 @@ export default function PaperStockPage() {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
-    let rangeField: string | null = null;
 
+    // ONLY add where clauses if values exist (STRICT REBUILD RULE)
     if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
     if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
     if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.map(Number).slice(0, 10)));
@@ -166,12 +188,11 @@ export default function PaperStockPage() {
 
     if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
     if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
-    if (filters.startDate || filters.endDate) rangeField = 'receivedDate';
 
     if (isCount) return query(q, ...constraints);
 
     if (!skipSort) {
-      const activeSortField = rangeField || sortField;
+      const activeSortField = (filters.startDate || filters.endDate) ? 'receivedDate' : sortField;
       constraints.push(orderBy(activeSortField, activeSortField === 'receivedDate' ? 'desc' : sortOrder));
     }
 
@@ -188,20 +209,25 @@ export default function PaperStockPage() {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
       setUsingFallback(false);
-      setPagedJumbos([]); 
-
+      
       try {
+        // 1. Get Count
         const countQ = buildQuery(true);
         if (countQ) {
           const countSnap = await getCountFromServer(countQ);
           setTotalRecords(countSnap.data().count);
         }
 
+        // 2. Get Data
         const dataQ = buildQuery();
         if (dataQ) {
           const snap = await getDocs(dataQ);
           let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           
+          // Debugging log as requested
+          console.log("Paper Stock Data Fetched:", docs);
+
+          // Client-side search for hybrid flexibility
           if (filters.search) {
             const s = filters.search.toLowerCase();
             docs = docs.filter(d => 
@@ -212,6 +238,7 @@ export default function PaperStockPage() {
           }
 
           setPagedJumbos(docs);
+          
           if (snap.docs.length > 0) {
             const last = snap.docs[snap.docs.length - 1];
             setPageStack(prev => {
@@ -222,10 +249,12 @@ export default function PaperStockPage() {
           }
         }
       } catch (e: any) {
+        console.error("Firestore Load Error:", e);
         if (e.message?.includes("index") || e.code === 'failed-precondition') {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
           setIndexErrorUrl(match ? match[0] : "unknown");
           setUsingFallback(true);
+          // Fallback fetch without sorting
           const fallbackQ = buildQuery(false, true);
           if (fallbackQ) {
             const snap = await getDocs(fallbackQ);
@@ -257,26 +286,49 @@ export default function PaperStockPage() {
     setPageStack([null]);
   }
 
-  const handleDelete = async (roll: any) => {
-    if (!firestore || !hasPermission('admin')) return;
-    if (confirm(`Delete Roll ID ${roll.rollNo}?`)) {
-      await deleteDoc(doc(firestore, 'jumbo_stock', roll.id));
-      toast({ title: "Roll Removed" });
-      setRefreshTrigger(p => p + 1);
+  const handleDeleteRoll = (roll: any) => {
+    if (!hasPermission('admin')) {
+      showModal('ERROR', 'Access Denied', 'Only administrators can delete stock records.');
+      return;
     }
-  }
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
+    showModal('CONFIRMATION', 'Delete Stock Record?', `Are you sure you want to delete Roll ${roll.rollNo} permanently?`, async () => {
+      setIsProcessing(true);
+      try {
+        await deleteDoc(doc(firestore!, 'jumbo_stock', roll.id));
+        closeModal();
+        showModal('SUCCESS', 'Roll Deleted Successfully', undefined, undefined, true);
+        setRefreshTrigger(p => p + 1);
+      } catch (err: any) {
+        showModal('ERROR', 'Deletion Failed', err.message);
+      } finally {
+        setIsProcessing(false);
+      }
+    });
+  }
 
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
 
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 font-sans">
+      <ActionModal 
+        isOpen={modal.isOpen}
+        onClose={closeModal}
+        type={modal.type}
+        title={modal.title}
+        description={modal.description}
+        onConfirm={modal.onConfirm}
+        isProcessing={isProcessing}
+        autoClose={modal.autoClose}
+      />
+
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Paper Stock Registry</h2>
-          <p className="text-muted-foreground font-medium">Enterprise inventory hub with 19 technical columns and precision tracking.</p>
+          <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Substrate Registry</h2>
+          <p className="text-muted-foreground font-medium">Enterprise inventory hub with precision 19-column technical tracking.</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setShowFilters(!showFilters)} className={cn(activeFiltersCount > 0 && "border-primary text-primary")}>
@@ -286,7 +338,7 @@ export default function PaperStockPage() {
             <FileDown className="mr-2 h-4 w-4" /> Export All
           </Button>
           <Button onClick={() => { setEditingRoll(null); setIntakeForm({ widthMm: 0, lengthMeters: 0, quantity: 1 }); setIsDialogOpen(true); }}>
-            <Plus className="mr-2 h-4 w-4" /> Add Roll
+            <Plus className="mr-2 h-4 w-4" /> New Roll
           </Button>
         </div>
       </div>
@@ -296,7 +348,7 @@ export default function PaperStockPage() {
           <CardContent className="p-6 space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase">Search Registry</Label>
+                <Label className="text-[10px] font-black uppercase">Technical Search</Label>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
@@ -308,7 +360,7 @@ export default function PaperStockPage() {
                 </div>
               </div>
               <div className="md:col-span-2 space-y-2">
-                <Label className="text-[10px] font-black uppercase">Date Received Range</Label>
+                <Label className="text-[10px] font-black uppercase">Received Date Range</Label>
                 <div className="flex items-center gap-2">
                   <Input type="date" value={filters.startDate} onChange={(e) => handleFilterChange('startDate', e.target.value)} className="bg-background h-9 text-xs" />
                   <Input type="date" value={filters.endDate} onChange={(e) => handleFilterChange('endDate', e.target.value)} className="bg-background h-9 text-xs" />
@@ -318,16 +370,16 @@ export default function PaperStockPage() {
                 <Label className="text-[10px] font-black uppercase">Status</Label>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-full justify-between h-9 text-xs bg-background">
+                    <Button variant="outline" size="sm" className="w-full justify-between h-9 text-xs bg-background font-bold">
                       {filters.statuses.length === 0 ? 'All Statuses' : `${filters.statuses.length} selected`}
-                      <ChevronRight className="h-3 w-3 rotate-90" />
+                      <ChevronRight className="h-3 w-3 rotate-90 ml-2" />
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-2">
                     {options.statuses.map(s => (
                       <div key={s} className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggleMultiSelect('statuses', s)}>
                         <Checkbox checked={filters.statuses.includes(s)} />
-                        <span className="text-xs">{s}</span>
+                        <span className="text-xs font-bold">{s}</span>
                       </div>
                     ))}
                   </PopoverContent>
@@ -339,15 +391,15 @@ export default function PaperStockPage() {
               {[
                 { label: 'Paper Company', field: 'companies', opts: options.companies },
                 { label: 'Paper Type', field: 'types', opts: options.types },
-                { label: 'GSM', field: 'gsms', opts: options.gsms },
+                { label: 'GSM Range', field: 'gsms', opts: options.gsms },
               ].map((g) => (
                 <div key={g.field} className="space-y-2">
                   <Label className="text-[9px] font-black uppercase text-muted-foreground">{g.label}</Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button variant="outline" size="sm" className="w-full justify-between h-9 text-xs bg-background font-bold">
-                        {filters[g.field as keyof FilterState].length === 0 ? 'Any' : `${filters[g.field as keyof FilterState].length} selected`}
-                        <ChevronRight className="h-3 w-3 rotate-90" />
+                        {filters[g.field as keyof FilterState].length === 0 ? 'Select Value' : `${filters[g.field as keyof FilterState].length} active`}
+                        <ChevronRight className="h-3 w-3 rotate-90 ml-2" />
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-64 p-2 max-h-64 overflow-y-auto">
@@ -366,9 +418,9 @@ export default function PaperStockPage() {
             </div>
 
             <div className="flex items-center justify-between border-t pt-4">
-              <span className="text-[10px] font-black text-primary uppercase">{activeFiltersCount} Filters Applied</span>
-              <Button variant="ghost" size="sm" onClick={resetFilters} className="text-[10px] font-black uppercase text-destructive">
-                <FilterX className="mr-1 h-3 w-3" /> Clear All Filters
+              <span className="text-[10px] font-black text-primary uppercase">{activeFiltersCount} Filter Parameters Applied</span>
+              <Button variant="ghost" size="sm" onClick={resetFilters} className="text-[10px] font-black uppercase text-destructive hover:bg-destructive/10">
+                <FilterX className="mr-1 h-3 w-3" /> Clear Filters
               </Button>
             </div>
           </CardContent>
@@ -376,20 +428,20 @@ export default function PaperStockPage() {
       )}
 
       {usingFallback && indexErrorUrl && (
-        <Card className="bg-amber-50 border-amber-200 border-2">
+        <Card className="bg-amber-50 border-amber-200 border-2 shadow-sm">
           <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+            <div className="flex items-start gap-3 text-amber-800">
+              <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="font-bold text-amber-900 text-sm">Sorting Disabled: Index Required</p>
-                <p className="text-xs text-amber-700">Database index needed for combined sorting. Results shown in default order.</p>
+                <p className="font-black text-sm uppercase">Index Authorization Required</p>
+                <p className="text-xs font-medium">A Firestore composite index is needed for these combined filters. Results are currently unsorted.</p>
               </div>
             </div>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(indexErrorUrl); toast({ title: "Link Copied" }); }}>
-                <Copy className="h-3 w-3 mr-1" /> Copy Link
+              <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(indexErrorUrl); toast({ title: "Link Copied" }); }} className="font-bold border-amber-300">
+                <Copy className="h-3 w-3 mr-1" /> Copy URL
               </Button>
-              <Button asChild size="sm" className="bg-amber-600">
+              <Button asChild size="sm" className="bg-amber-600 hover:bg-amber-700 font-bold">
                 <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer">Authorize Index</a>
               </Button>
             </div>
@@ -397,28 +449,28 @@ export default function PaperStockPage() {
         </Card>
       )}
 
-      <Card className="shadow-2xl border-none overflow-hidden">
+      <Card className="shadow-2xl border-none overflow-hidden bg-card">
         <div className="bg-muted/30 p-4 border-b flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); setPageStack([null]); }}>
-              <SelectTrigger className="w-[100px] h-8 text-[10px] font-black"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[110px] h-8 text-[10px] font-black uppercase tracking-tighter"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
+                {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Records</SelectItem>)}
               </SelectContent>
             </Select>
-            <span className="text-[10px] font-black uppercase text-muted-foreground">Showing {startIdx}-{endIdx} of {totalRecords.toLocaleString()}</span>
+            <span className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">Showing {startIdx}-{endIdx} of {totalRecords.toLocaleString()} rolls</span>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="h-8 w-8 p-0"><ChevronLeft className="h-4 w-4" /></Button>
-            <Badge variant="secondary" className="h-8 px-3 text-[10px] font-black">PAGE {currentPage}</Badge>
+            <Badge variant="secondary" className="h-8 px-4 text-[10px] font-black uppercase">PAGE {currentPage}</Badge>
             <Button variant="outline" size="sm" onClick={() => setCurrentPage(p => p + 1)} disabled={endIdx >= totalRecords} className="h-8 w-8 p-0"><ChevronRight className="h-4 w-4" /></Button>
           </div>
         </div>
 
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-hidden">
           <div className="overflow-x-auto">
             <Table className="min-w-[2500px]">
-              <TableHeader className="bg-muted/50">
+              <TableHeader className="bg-muted/50 border-b">
                 <TableRow>
                   <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r sticky left-0 bg-muted/50 z-20">S/N</TableHead>
                   <TableHead className="font-black text-[10px] uppercase">RELL NO</TableHead>
@@ -444,38 +496,38 @@ export default function PaperStockPage() {
               </TableHeader>
               <TableBody>
                 {isPageLoading ? (
-                  <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={20} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : pagedJumbos.map((j, i) => (
-                  <TableRow key={j.id} className="hover:bg-primary/5 h-12 font-sans text-xs">
+                  <TableRow key={j.id} className="hover:bg-primary/5 h-12 text-xs font-medium">
                     <TableCell className="text-center font-bold text-[10px] text-muted-foreground border-r sticky left-0 bg-background z-10">{(currentPage-1)*pageSize+i+1}</TableCell>
-                    <TableCell className="font-black text-primary font-mono">{j.rollNo}</TableCell>
+                    <TableCell className="font-black text-primary font-mono tracking-tighter">{j.rollNo}</TableCell>
                     <TableCell className="font-bold">{j.paperCompany}</TableCell>
-                    <TableCell>{j.paperType}</TableCell>
-                    <TableCell className="font-mono">{j.widthMm}mm</TableCell>
-                    <TableCell className="font-mono">{j.lengthMeters}m</TableCell>
-                    <TableCell className="font-black text-primary">{j.sqm}</TableCell>
+                    <TableCell className="font-bold">{j.paperType}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">{j.widthMm}mm</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">{j.lengthMeters}m</TableCell>
+                    <TableCell className="font-black text-emerald-600">{j.sqm}</TableCell>
                     <TableCell className="font-bold">{j.gsm}</TableCell>
                     <TableCell>{j.weightKg}kg</TableCell>
-                    <TableCell className="text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString()}</TableCell>
-                    <TableCell>{j.wastage}%</TableCell>
+                    <TableCell className="font-black">₹{j.purchaseRate?.toLocaleString()}</TableCell>
+                    <TableCell className="text-muted-foreground">{j.wastage}%</TableCell>
                     <TableCell className="font-bold">{j.receivedDate}</TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{j.jobNo || "-"}</TableCell>
-                    <TableCell>{j.size || "-"}</TableCell>
-                    <TableCell className="truncate max-w-[150px]">{j.productName || "-"}</TableCell>
+                    <TableCell className="font-mono font-bold text-blue-600">{j.jobNo || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground">{j.size || "-"}</TableCell>
+                    <TableCell className="truncate max-w-[150px] font-bold">{j.productName || "-"}</TableCell>
                     <TableCell className="font-mono text-muted-foreground">{j.code || "-"}</TableCell>
-                    <TableCell className="font-mono font-bold text-accent">{j.lotNo}</TableCell>
-                    <TableCell>{j.date || "-"}</TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{j.companyRollNo || "-"}</TableCell>
-                    <TableCell className="text-right sticky right-0 bg-background z-10 border-l">
+                    <TableCell className="font-black text-accent">{j.lotNo}</TableCell>
+                    <TableCell className="text-muted-foreground">{j.date || "-"}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground italic">{j.companyRollNo || "-"}</TableCell>
+                    <TableCell className="text-right sticky right-0 bg-background z-10 border-l p-1 px-2">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={() => { setEditingRoll(j); setIntakeForm({ widthMm: j.widthMm, lengthMeters: j.lengthMeters, quantity: j.quantity || 1 }); setIsDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDelete(j)}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleDeleteRoll(j)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
                 ))}
                 {pagedJumbos.length === 0 && !isPageLoading && (
-                  <TableRow><TableCell colSpan={21} className="text-center py-20 text-muted-foreground italic"><div className="flex flex-col items-center gap-2"><Package className="h-10 w-10 opacity-10" /> No records found in current view.</div></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={20} className="text-center py-20 text-muted-foreground italic"><div className="flex flex-col items-center gap-3"><Package className="h-12 w-12 opacity-10" /><p className="font-black uppercase tracking-widest text-xs">Registry Empty or Filter Blocked</p></div></TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -484,7 +536,7 @@ export default function PaperStockPage() {
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[900px] font-sans">
+        <DialogContent className="sm:max-w-[900px]">
           <form onSubmit={async (e) => {
             e.preventDefault();
             setIsProcessing(true);
@@ -503,45 +555,45 @@ export default function PaperStockPage() {
                     ...data, widthMm: width, lengthMeters: length, quantity, sqm, updatedAt: serverTimestamp()
                   });
                 });
-                toast({ title: "Record Updated" });
+                showModal('SUCCESS', 'Roll Updated Successfully', undefined, undefined, true);
               } else {
                 await runTransaction(firestore!, async (tx) => {
                   tx.set(doc(collection(firestore!, 'jumbo_stock')), {
                     ...data, widthMm: width, lengthMeters: length, quantity, sqm, status: 'In Stock', createdAt: serverTimestamp()
                   });
                 });
-                toast({ title: "Roll Added Successfully" });
+                showModal('SUCCESS', 'Roll Added Successfully', undefined, undefined, true);
               }
               setRefreshTrigger(p => p + 1);
               setIsDialogOpen(false);
             } catch (err: any) {
-              toast({ variant: "destructive", title: "Save Failed", description: err.message });
+              showModal('ERROR', 'System Fault', err.message);
             } finally { setIsProcessing(false); }
           }}>
-            <DialogHeader><DialogTitle className="flex items-center gap-2 uppercase font-black"><Info className="h-5 w-5 text-primary" />{editingRoll ? 'Edit Technical Data' : 'New Roll Intake'}</DialogTitle></DialogHeader>
-            <div className="grid gap-6 py-4">
+            <DialogHeader><DialogTitle className="flex items-center gap-2 uppercase font-black text-xl"><Info className="h-6 w-6 text-primary" /> {editingRoll ? 'Edit Technical Profile' : 'New Substrate Intake'}</DialogTitle></DialogHeader>
+            <div className="grid gap-6 py-6 border-y my-2">
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">RELL NO</Label><Input name="rollNo" defaultValue={editingRoll?.rollNo} required /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Company</Label><Input name="paperCompany" defaultValue={editingRoll?.paperCompany} required /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Type</Label><Input name="paperType" defaultValue={editingRoll?.paperType} required /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Paper Company</Label><Input name="paperCompany" defaultValue={editingRoll?.paperCompany} required /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Paper Type</Label><Input name="paperType" defaultValue={editingRoll?.paperType} required /></div>
               </div>
-              <div className="grid grid-cols-4 gap-4">
+              <div className="grid grid-cols-4 gap-4 bg-muted/20 p-4 rounded-xl">
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Width (mm)</Label><Input name="widthMm" type="number" step="0.01" value={intakeForm.widthMm} required onChange={e => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Length (m)</Label><Input name="lengthMeters" type="number" step="0.01" value={intakeForm.lengthMeters} required onChange={e => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Qty</Label><Input name="quantity" type="number" value={intakeForm.quantity} required onChange={e => setIntakeForm(p => ({...p, quantity: Number(e.target.value)}))} /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">SQM (Auto)</Label><Input value={liveSqm} readOnly className="bg-muted font-mono font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-primary">SQM (AUTO)</Label><Input value={liveSqm} readOnly className="bg-background border-primary/30 font-black text-primary" /></div>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">GSM</Label><Input name="gsm" type="number" defaultValue={editingRoll?.gsm} required /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Lot No</Label><Input name="lotNo" defaultValue={editingRoll?.lotNo} required /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Rate (₹)</Label><Input name="purchaseRate" type="number" step="0.01" defaultValue={editingRoll?.purchaseRate} required /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Purchase Rate (₹)</Label><Input name="purchaseRate" type="number" step="0.01" defaultValue={editingRoll?.purchaseRate} required /></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Received Date</Label><Input name="receivedDate" type="date" defaultValue={editingRoll?.receivedDate || new Date().toISOString().split('T')[0]} required /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Co Rell No</Label><Input name="companyRollNo" defaultValue={editingRoll?.companyRollNo} /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Date Received</Label><Input name="receivedDate" type="date" defaultValue={editingRoll?.receivedDate || new Date().toISOString().split('T')[0]} required /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Company Rell No</Label><Input name="companyRollNo" defaultValue={editingRoll?.companyRollNo} /></div>
               </div>
             </div>
-            <DialogFooter><Button type="submit" disabled={isProcessing} className="w-full h-12 uppercase font-black">{isProcessing ? <Loader2 className="animate-spin" /> : 'Confirm Technical Entry'}</Button></DialogFooter>
+            <DialogFooter className="pt-2"><Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-widest text-lg">{isProcessing ? <Loader2 className="animate-spin mr-2" /> : editingRoll ? 'Update Master Record' : 'Confirm Technical Entry'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
