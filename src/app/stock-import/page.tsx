@@ -18,7 +18,7 @@ import {
   ArrowRight
 } from "lucide-react"
 import { useFirestore, useUser } from "@/firebase"
-import { collection, doc, writeBatch, getDocs, serverTimestamp } from "firebase/firestore"
+import { collection, doc, writeBatch, serverTimestamp } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
 import { ActionModal, ModalType } from "@/components/action-modal"
@@ -60,7 +60,6 @@ export default function StockImportPage() {
   const [excelData, setExcelData] = useState<any[]>([])
   const [summary, setSummary] = useState<any>(null)
 
-  // --- MODAL STATE ---
   const [modal, setModal] = useState<{
     isOpen: boolean;
     type: ModalType;
@@ -120,23 +119,19 @@ export default function StockImportPage() {
     setProgress(0);
 
     try {
-      const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
-      const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
+      // Optimization: We use Roll ID as document ID to save reads and prevent duplicates atomically.
+      // Removed full collection fetch which was causing quota issues.
       
       let imported = 0;
-      let skipped = 0;
+      let totalRows = excelData.length;
 
-      const totalRows = excelData.length;
       for (let i = 0; i < totalRows; i += 500) {
         const batch = writeBatch(firestore);
         const chunk = excelData.slice(i, i + 500);
 
         chunk.forEach((row: any) => {
           const rollId = String(row["RELL NO"]);
-          if (!rollId || rollId === "undefined" || existingRolls.has(rollId)) {
-            skipped++;
-            return;
-          }
+          if (!rollId || rollId === "undefined" || rollId.trim() === "") return;
 
           const data: any = { 
             status: 'In Stock', 
@@ -159,7 +154,8 @@ export default function StockImportPage() {
             data.sqm = Number(((w / 1000) * l).toFixed(2));
           }
 
-          batch.set(doc(collection(firestore, 'jumbo_stock')), data);
+          // Optimized: setDoc with unique ID saves a 'get' or full collection 'list'
+          batch.set(doc(firestore, 'jumbo_stock', rollId), data, { merge: true });
           imported++;
         });
 
@@ -167,8 +163,8 @@ export default function StockImportPage() {
         setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
       }
 
-      setSummary({ total: totalRows, imported, skipped });
-      showModal('SUCCESS', 'Stock Imported Successfully', `Migrated ${imported} new rolls to the registry. ${skipped} rows skipped.`, undefined, true);
+      setSummary({ total: totalRows, imported, skipped: totalRows - imported });
+      showModal('SUCCESS', 'Stock Imported Successfully', `Migrated ${imported} technical rolls to the registry.`, undefined, true);
     } catch (err: any) {
       showModal('ERROR', 'Bulk Upload Failure', err.message);
     } finally {
@@ -268,7 +264,7 @@ export default function StockImportPage() {
               
               <div className="grid grid-cols-3 gap-4 border-y border-emerald-200/50 py-8">
                 <div>
-                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Created</p>
+                  <p className="text-[10px] font-black text-emerald-600 uppercase mb-1">Imported</p>
                   <p className="text-4xl font-black text-emerald-900 tracking-tighter">{summary.imported}</p>
                 </div>
                 <div>

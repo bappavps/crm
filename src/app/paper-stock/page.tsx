@@ -23,7 +23,6 @@ import {
   AlertTriangle,
   Info,
   Copy,
-  ExternalLink,
   Package
 } from "lucide-react"
 import { 
@@ -51,7 +50,6 @@ import {
   limit, 
   startAfter, 
   getCountFromServer,
-  onSnapshot,
   deleteDoc,
   serverTimestamp,
   runTransaction
@@ -62,7 +60,6 @@ import { exportPaperStockToExcel } from "@/lib/export-utils"
 import { usePermissions } from "@/components/auth/permission-context"
 import { ActionModal, ModalType } from "@/components/action-modal"
 
-// --- TYPES & CONSTANTS ---
 type SortField = 'rollNo' | 'receivedDate' | 'gsm' | 'widthMm' | 'sqm';
 type SortOrder = 'asc' | 'desc';
 
@@ -93,7 +90,6 @@ export default function PaperStockPage() {
   const { hasPermission } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
   
-  // --- MODAL STATE ---
   const [modal, setModal] = useState<{
     isOpen: boolean;
     type: ModalType;
@@ -107,13 +103,6 @@ export default function PaperStockPage() {
     title: '',
   });
 
-  const showModal = (type: ModalType, title: string, description?: string, onConfirm?: () => void, autoClose = false) => {
-    setModal({ isOpen: true, type, title, description, onConfirm, autoClose });
-  };
-
-  const closeModal = () => setModal(prev => ({ ...prev, isOpen: false }));
-
-  // --- REGISTRY STATES ---
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [intakeForm, setIntakeForm] = useState({ widthMm: 0, lengthMeters: 0, quantity: 1 })
@@ -121,7 +110,6 @@ export default function PaperStockPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   
-  // Pagination
   const [pageSize, setPageSize] = useState<number>(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalRecords, setTotalRecords] = useState(0)
@@ -131,10 +119,11 @@ export default function PaperStockPage() {
   const [indexErrorUrl, setIndexErrorUrl] = useState<string | null>(null)
   const [usingFallback, setUsingFallback] = useState(false)
 
-  // Filter & Sort
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
+  const [debouncedSearch, setDebouncedSearch] = useState("")
+  
   const [options, setOptions] = useState({
     companies: [] as string[],
     types: [] as string[],
@@ -142,11 +131,42 @@ export default function PaperStockPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
+  useEffect(() => { setIsMounted(true) }, [])
+
+  // Optimized search debouncing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(filters.search);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [filters.search]);
+
+  // Optimized Filter Options - One-time fetch with limits to save quota
+  useEffect(() => {
+    if (!firestore || !isMounted) return;
+    const jumboRef = collection(firestore, 'jumbo_stock');
+    const q = query(jumboRef, limit(100)); // Only sample recent rolls for filter options
+    getDocs(q).then((snap) => {
+      const docs = snap.docs.map(d => d.data());
+      setOptions(prev => ({
+        ...prev,
+        companies: Array.from(new Set(docs.map(d => d.paperCompany).filter(Boolean))).sort() as string[],
+        types: Array.from(new Set(docs.map(d => d.paperType).filter(Boolean))).sort() as string[],
+        gsms: Array.from(new Set(docs.map(d => d.gsm?.toString()).filter(Boolean))).sort((a,b) => Number(a)-Number(b)) as string[],
+      }));
+    });
+  }, [firestore, isMounted, refreshTrigger]);
+
+  const showModal = (type: ModalType, title: string, description?: string, onConfirm?: () => void, autoClose = false) => {
+    setModal({ isOpen: true, type, title, description, onConfirm, autoClose });
+  };
+
+  const closeModal = () => setModal(prev => ({ ...prev, isOpen: false }));
+
   const liveSqm = useMemo(() => {
     const w = intakeForm.widthMm || 0;
     const l = intakeForm.lengthMeters || 0;
     const q = intakeForm.quantity || 1;
-    // Formula: SQM = (Width / 1000) * Length * Quantity
     return w > 0 && l > 0 ? ((w / 1000) * l * q).toFixed(2) : "0.00";
   }, [intakeForm]);
 
@@ -157,30 +177,11 @@ export default function PaperStockPage() {
     }, 0);
   }, [filters]);
 
-  useEffect(() => { setIsMounted(true) }, [])
-
-  // Sync Filter Options
-  useEffect(() => {
-    if (!firestore || !isMounted) return;
-    const jumboRef = collection(firestore, 'jumbo_stock');
-    const unsub = onSnapshot(jumboRef, (snap) => {
-      const docs = snap.docs.map(d => d.data());
-      setOptions(prev => ({
-        ...prev,
-        companies: Array.from(new Set(docs.map(d => d.paperCompany).filter(Boolean))).sort() as string[],
-        types: Array.from(new Set(docs.map(d => d.paperType).filter(Boolean))).sort() as string[],
-        gsms: Array.from(new Set(docs.map(d => d.gsm?.toString()).filter(Boolean))).sort((a,b) => Number(a)-Number(b)) as string[],
-      }));
-    });
-    return () => unsub();
-  }, [firestore, isMounted]);
-
   const buildQuery = (isCount = false, skipSort = false) => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    // ONLY add where clauses if values exist (STRICT REBUILD RULE)
     if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
     if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
     if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.map(Number).slice(0, 10)));
@@ -211,25 +212,19 @@ export default function PaperStockPage() {
       setUsingFallback(false);
       
       try {
-        // 1. Get Count
         const countQ = buildQuery(true);
         if (countQ) {
           const countSnap = await getCountFromServer(countQ);
           setTotalRecords(countSnap.data().count);
         }
 
-        // 2. Get Data
         const dataQ = buildQuery();
         if (dataQ) {
           const snap = await getDocs(dataQ);
           let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
           
-          // Debugging log as requested
-          console.log("Paper Stock Data Fetched:", docs);
-
-          // Client-side search for hybrid flexibility
-          if (filters.search) {
-            const s = filters.search.toLowerCase();
+          if (debouncedSearch) {
+            const s = debouncedSearch.toLowerCase();
             docs = docs.filter(d => 
               (d.rollNo || "").toLowerCase().includes(s) || 
               (d.lotNo || "").toLowerCase().includes(s) || 
@@ -249,12 +244,10 @@ export default function PaperStockPage() {
           }
         }
       } catch (e: any) {
-        console.error("Firestore Load Error:", e);
         if (e.message?.includes("index") || e.code === 'failed-precondition') {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
           setIndexErrorUrl(match ? match[0] : "unknown");
           setUsingFallback(true);
-          // Fallback fetch without sorting
           const fallbackQ = buildQuery(false, true);
           if (fallbackQ) {
             const snap = await getDocs(fallbackQ);
@@ -266,7 +259,7 @@ export default function PaperStockPage() {
       }
     };
     load();
-  }, [firestore, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
+  }, [firestore, isMounted, filters.companies, filters.types, filters.gsms, filters.statuses, filters.startDate, filters.endDate, debouncedSearch, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -352,7 +345,7 @@ export default function PaperStockPage() {
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input 
-                    placeholder="Roll ID, Lot, Job..." 
+                    placeholder="Search by ID or Lot..." 
                     value={filters.search} 
                     onChange={(e) => handleFilterChange('search', e.target.value)} 
                     className="bg-background h-9 text-xs pl-8" 
@@ -433,7 +426,7 @@ export default function PaperStockPage() {
             <div className="flex items-start gap-3 text-amber-800">
               <AlertTriangle className="h-5 w-5 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="font-black text-sm uppercase">Index Authorization Required</p>
+                <p className="font-black text-sm uppercase">Index Required for Sorting</p>
                 <p className="text-xs font-medium">A Firestore composite index is needed for these combined filters. Results are currently unsorted.</p>
               </div>
             </div>
@@ -549,21 +542,15 @@ export default function PaperStockPage() {
             const sqm = Number(((width / 1000) * length * quantity).toFixed(2));
 
             try {
-              if (editingRoll) {
-                await runTransaction(firestore!, async (tx) => {
-                  tx.update(doc(firestore!, 'jumbo_stock', editingRoll.id), {
-                    ...data, widthMm: width, lengthMeters: length, quantity, sqm, updatedAt: serverTimestamp()
-                  });
-                });
-                showModal('SUCCESS', 'Roll Updated Successfully', undefined, undefined, true);
-              } else {
-                await runTransaction(firestore!, async (tx) => {
-                  tx.set(doc(collection(firestore!, 'jumbo_stock')), {
-                    ...data, widthMm: width, lengthMeters: length, quantity, sqm, status: 'In Stock', createdAt: serverTimestamp()
-                  });
-                });
-                showModal('SUCCESS', 'Roll Added Successfully', undefined, undefined, true);
-              }
+              // Use rollNo as the primary document ID to save reads and prevent duplicates
+              const docRef = doc(firestore!, 'jumbo_stock', String(data.rollNo));
+              await runTransaction(firestore!, async (tx) => {
+                tx.set(docRef, {
+                  ...data, widthMm: width, lengthMeters: length, quantity, sqm, updatedAt: serverTimestamp(),
+                  ...(editingRoll ? {} : { status: 'In Stock', createdAt: serverTimestamp() })
+                }, { merge: true });
+              });
+              showModal('SUCCESS', 'Registry Updated', undefined, undefined, true);
               setRefreshTrigger(p => p + 1);
               setIsDialogOpen(false);
             } catch (err: any) {
@@ -573,7 +560,7 @@ export default function PaperStockPage() {
             <DialogHeader><DialogTitle className="flex items-center gap-2 uppercase font-black text-xl"><Info className="h-6 w-6 text-primary" /> {editingRoll ? 'Edit Technical Profile' : 'New Substrate Intake'}</DialogTitle></DialogHeader>
             <div className="grid gap-6 py-6 border-y my-2">
               <div className="grid grid-cols-3 gap-4">
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">RELL NO</Label><Input name="rollNo" defaultValue={editingRoll?.rollNo} required /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black">RELL NO</Label><Input name="rollNo" defaultValue={editingRoll?.rollNo} required readOnly={!!editingRoll} /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Paper Company</Label><Input name="paperCompany" defaultValue={editingRoll?.paperCompany} required /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Paper Type</Label><Input name="paperType" defaultValue={editingRoll?.paperType} required /></div>
               </div>
