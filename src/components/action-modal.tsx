@@ -36,7 +36,7 @@ export function ActionModal({
 }: ActionModalProps) {
   
   useEffect(() => {
-    if (isOpen && autoClose && (type === 'SUCCESS' || type === 'INFO')) {
+    if (isOpen && autoClose && (type === 'SUCCESS')) {
       const timer = setTimeout(() => {
         onClose();
       }, 2500);
@@ -46,8 +46,8 @@ export function ActionModal({
 
   const getIcon = () => {
     switch (type) {
-      case 'SUCCESS': return <CheckCircle2 className="h-12 w-12 text-emerald-500 animate-in zoom-in duration-300" />;
-      case 'ERROR': return <XCircle className="h-12 w-12 text-destructive animate-in shake-1 duration-300" />;
+      case 'SUCCESS': return <CheckCircle2 className="h-12 w-12 text-emerald-500" />;
+      case 'ERROR': return <XCircle className="h-12 w-12 text-destructive" />;
       case 'WARNING': return <AlertTriangle className="h-12 w-12 text-amber-500" />;
       case 'CONFIRMATION': return <Info className="h-12 w-12 text-primary" />;
       default: return null;

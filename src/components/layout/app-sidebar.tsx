@@ -56,6 +56,17 @@ interface NavItem {
   permission: PermissionKey;
 }
 
+const masterGroup = {
+  label: "MASTER",
+  items: [
+    { name: 'Stock Import', icon: FileUp, href: '/stock-import', permission: 'admin' as PermissionKey },
+    { name: 'Master Data', icon: Settings, href: '/master-data', permission: 'admin' as PermissionKey },
+    { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
+    { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
+    { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
+  ]
+}
+
 const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Sales & Estimating",
@@ -113,15 +124,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   }
 ]
 
-const adminNavigation = [
-  { name: 'Stock Import', icon: FileUp, href: '/stock-import', permission: 'admin' as PermissionKey },
-  { name: 'Master Data', icon: Settings, href: '/master-data', permission: 'admin' as PermissionKey },
-  { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
-  { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
-  { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
-  { name: 'DB Migration', icon: Database, href: '/admin/migrate', permission: 'admin' as PermissionKey },
-]
-
 export function AppSidebar() {
   const pathname = usePathname()
   const { hasPermission } = usePermissions()
@@ -169,6 +171,28 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
+        {/* MASTER GROUP FIRST */}
+        {hasPermission('admin') && (
+          <SidebarGroup className="mt-2">
+            <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">
+              {masterGroup.label}
+            </SidebarGroupLabel>
+            <SidebarMenu>
+              {masterGroup.items.map((item) => (
+                <SidebarMenuItem key={item.name}>
+                  <SidebarMenuButton asChild isActive={pathname === item.href} className="px-4 py-1.5 h-9" onClick={handleNavClick}>
+                    <Link href={item.href}>
+                      <item.icon className="mr-3 h-4 w-4" />
+                      <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+
+        {/* OTHER GROUPS */}
         {navGroups.map((group) => {
           const visibleItems = group.items.filter(item => hasPermission(item.permission));
           if (visibleItems.length === 0) return null;
@@ -198,29 +222,6 @@ export function AppSidebar() {
             </SidebarGroup>
           );
         })}
-        
-        {hasPermission('admin') && (
-          <SidebarGroup className="mt-4 border-t border-sidebar-border pt-4">
-            <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">Control Center</SidebarGroupLabel>
-            <SidebarMenu>
-              {adminNavigation.map((item) => (
-                <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={pathname === item.href}
-                    className="px-4 py-1.5 transition-all duration-200 h-9"
-                    onClick={handleNavClick}
-                  >
-                    <Link href={item.href}>
-                      <item.icon className="mr-3 h-4 w-4" />
-                      <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        )}
       </SidebarContent>
     </Sidebar>
   )
