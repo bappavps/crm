@@ -188,26 +188,47 @@ export default function GRNPage() {
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
-    if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
-    if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.slice(0, 10).map(Number)));
-    if (filters.suppliers.length > 0) constraints.push(where('supplier', 'in', filters.suppliers.slice(0, 10)));
-    if (filters.locations.length > 0) constraints.push(where('location', 'in', filters.locations.slice(0, 10)));
-    if (filters.statuses.length > 0) constraints.push(where('status', 'in', filters.statuses.slice(0, 10)));
+    // Filter Logic with Firestore optimization
+    let hasInOperator = false;
+    const addInFilter = (field: string, values: any[]) => {
+      if (!values || values.length === 0) return;
+      if (values.length === 1) {
+        constraints.push(where(field, '==', values[0]));
+      } else if (!hasInOperator) {
+        constraints.push(where(field, 'in', values.slice(0, 10)));
+        hasInOperator = true;
+      }
+    };
 
+    addInFilter('paperCompany', filters.companies);
+    addInFilter('paperType', filters.types);
+    addInFilter('gsm', filters.gsms.map(Number));
+    addInFilter('supplier', filters.suppliers);
+    addInFilter('location', filters.locations);
+    addInFilter('status', filters.statuses);
+
+    // Range Logic
+    let hasRangeOperator = false;
     if (filters.startDate || filters.endDate) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
-    } else if (filters.lotNo) {
-      constraints.push(where('lotNo', '>=', filters.lotNo));
-      constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
-    } else if (filters.grnNo) {
-      constraints.push(where('rollNo', '>=', filters.grnNo));
-      constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
+      hasRangeOperator = true;
+    } 
+    
+    // Prefix search Logic (only if no other range is active)
+    if (!hasRangeOperator) {
+      if (filters.lotNo) {
+        constraints.push(where('lotNo', '>=', filters.lotNo));
+        constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+      } else if (filters.grnNo) {
+        constraints.push(where('rollNo', '>=', filters.grnNo));
+        constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
+      }
     }
 
     if (isCount) return query(q, ...constraints);
 
+    // Sorting & Pagination
     constraints.push(orderBy(sortField, sortOrder));
     const cursor = pageStack[currentPage - 1];
     if (cursor) constraints.push(startAfter(cursor));
@@ -240,8 +261,12 @@ export default function GRNPage() {
             });
           }
         }
-      } catch (e) {
-        console.error("Query Error:", e);
+      } catch (e: any) {
+        console.error("Technical Registry Query Error:", e);
+        setPagedJumbos([]); // Clear on error to avoid showing stale data
+        if (e.message?.includes("index")) {
+          toast({ variant: "destructive", title: "Missing Database Index", description: "This specific filter combination requires an index." });
+        }
       } finally {
         setIsPageLoading(false);
       }
@@ -292,7 +317,7 @@ export default function GRNPage() {
 
   const handleBulkDelete = async () => {
     if (!isAdmin || !firestore || selectedIds.size === 0) return;
-    if (!confirm(`You are about to delete ${selectedIds.size} rolls. This action is permanent and cannot be undone. Proceed?`)) return;
+    if (!confirm(`You are about to delete ${selectedIds.size} rolls. This action is permanent. Proceed?`)) return;
 
     setIsDeleting(true);
     const ids = Array.from(selectedIds);
@@ -306,7 +331,7 @@ export default function GRNPage() {
         });
         await batch.commit();
       }
-      toast({ title: "Bulk Delete Successful", description: `${ids.length} records removed from registry.` });
+      toast({ title: "Bulk Delete Successful", description: `${ids.length} records removed.` });
       setSelectedIds(new Set());
       setRefreshTrigger(prev => prev + 1);
     } catch (e: any) {
@@ -505,7 +530,7 @@ export default function GRNPage() {
                     <TableCell className="text-[11px] font-black text-primary">{j.sqm}</TableCell>
                     <TableCell className="text-[11px]">{j.gsm}</TableCell>
                     <TableCell className="text-[11px] font-bold">{j.weightKg}kg</TableCell>
-                    <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate}</TableCell>
+                    <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString()}</TableCell>
                     <TableCell className="text-[11px]">{j.wastage}%</TableCell>
                     <TableCell className="text-[10px]">{j.dateOfUse || '-'}</TableCell>
                     <TableCell className="text-[10px] font-bold">{j.receivedDate}</TableCell>
@@ -524,6 +549,11 @@ export default function GRNPage() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {pagedJumbos.length === 0 && !isPageLoading && (
+                  <TableRow>
+                    <TableCell colSpan={22} className="text-center py-20 text-muted-foreground italic">No matching inventory records found.</TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
@@ -617,43 +647,30 @@ export default function GRNPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label>Paper Company</Label><Input name="paperCompany" defaultValue={editingRoll?.paperCompany} required /></div>
                 <div className="space-y-2"><Label>Paper Type</Label><Input name="paperType" defaultValue={editingRoll?.paperType} required /></div>
-                <div className="space-y-2">
-                  <Label>Width (mm)</Label>
-                  <Input 
-                    name="widthMm" 
-                    type="number" 
-                    min="0.01"
-                    step="0.01"
-                    defaultValue={editingRoll?.widthMm} 
-                    required 
-                    onChange={(e) => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))}
-                  />
-                </div>
+                <div className="space-y-2"><Label>Supplier / Vendor</Label><Input name="supplier" defaultValue={editingRoll?.supplier} placeholder="e.g. Avery Dennison" /></div>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
+                  <Label>Width (mm)</Label>
+                  <Input name="widthMm" type="number" step="0.01" defaultValue={editingRoll?.widthMm} required onChange={(e) => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} />
+                </div>
+                <div className="space-y-2">
                   <Label>Length (m)</Label>
-                  <Input 
-                    name="lengthMeters" 
-                    type="number" 
-                    min="0.01" 
-                    step="0.01"
-                    defaultValue={editingRoll?.lengthMeters} 
-                    required 
-                    onChange={(e) => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))}
-                  />
+                  <Input name="lengthMeters" type="number" step="0.01" defaultValue={editingRoll?.lengthMeters} required onChange={(e) => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} />
                 </div>
                 <div className="space-y-2">
                   <Label>SQM (Auto Calculated)</Label>
                   <Input value={liveSqm} readOnly className="bg-muted font-bold" />
-                  <p className="text-[9px] text-muted-foreground italic">Auto calculated: (W / 1000) * L</p>
                 </div>
-                <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" defaultValue={editingRoll?.gsm} required /></div>
               </div>
               <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" defaultValue={editingRoll?.gsm} required /></div>
                 <div className="space-y-2"><Label>Lot No</Label><Input name="lotNo" defaultValue={editingRoll?.lotNo} required /></div>
                 <div className="space-y-2"><Label>Purchase Rate</Label><Input name="purchaseRate" type="number" step="0.01" defaultValue={editingRoll?.purchaseRate} required /></div>
-                <div className="space-y-2"><Label>Location</Label><Input name="location" defaultValue={editingRoll?.location} /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-2"><Label>Location</Label><Input name="location" defaultValue={editingRoll?.location} placeholder="Warehouse A-1" /></div>
+                <div className="space-y-2"><Label>Date Received</Label><Input name="receivedDate" type="date" defaultValue={editingRoll?.receivedDate || new Date().toISOString().split('T')[0]} required /></div>
               </div>
             </div>
             <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : editingRoll ? 'Update Roll' : 'Complete Intake'}</Button></DialogFooter>

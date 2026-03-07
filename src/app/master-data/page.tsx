@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -41,7 +42,9 @@ import {
   Download,
   FilterX,
   Search,
-  Sparkles
+  Sparkles,
+  Calendar,
+  Hash
 } from "lucide-react"
 import {
   Popover,
@@ -86,12 +89,6 @@ const INITIAL_FILTERS: FilterState = {
   endDate: ""
 };
 
-const TEMPLATE_HEADERS = [
-  "RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", 
-  "GSM", "WEIGHT(KG)", "PURCHASE RATE", "WASTAGE", "DATE RECEIVED", 
-  "LOT NO", "COMPANY RELL NO", "LOCATION"
-];
-
 const SYSTEM_FIELDS = [
   { label: "Roll No (Mandatory)", value: "rollNo" },
   { label: "Paper Company", value: "paperCompany" },
@@ -105,7 +102,8 @@ const SYSTEM_FIELDS = [
   { label: "Date Received", value: "receivedDate" },
   { label: "Lot No", value: "lotNo" },
   { label: "Company Roll No", value: "companyRollNo" },
-  { label: "Location", value: "location" }
+  { label: "Location", value: "location" },
+  { label: "Supplier", value: "supplier" }
 ];
 
 export default function MasterDataPage() {
@@ -169,7 +167,7 @@ export default function MasterDataPage() {
   const { data: adminData } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Master Data Queries (moved to top level to avoid Rules of Hooks violations)
+  // Master Data Queries
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -197,7 +195,7 @@ export default function MasterDataPage() {
 
   useEffect(() => { setIsMounted(true) }, []);
 
-  // Filter Generator
+  // Filter Data Synchronizer
   useEffect(() => {
     if (!firestore || !isAdmin) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -219,18 +217,40 @@ export default function MasterDataPage() {
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
-    if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
-    if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.slice(0, 10).map(Number)));
-    if (filters.suppliers.length > 0) constraints.push(where('supplier', 'in', filters.suppliers.slice(0, 10)));
-    if (filters.locations.length > 0) constraints.push(where('location', 'in', filters.locations.slice(0, 10)));
-    if (filters.statuses.length > 0) constraints.push(where('status', 'in', filters.statuses.slice(0, 10)));
+    // Intelligent Multi-filter builder
+    let hasInOperator = false;
+    const addSafeFilter = (field: string, values: any[]) => {
+      if (!values || values.length === 0) return;
+      if (values.length === 1) {
+        constraints.push(where(field, '==', values[0]));
+      } else if (!hasInOperator) {
+        constraints.push(where(field, 'in', values.slice(0, 10)));
+        hasInOperator = true;
+      }
+    };
 
+    addSafeFilter('paperCompany', filters.companies);
+    addSafeFilter('paperType', filters.types);
+    addSafeFilter('gsm', filters.gsms.map(Number));
+    addSafeFilter('supplier', filters.suppliers);
+    addSafeFilter('location', filters.locations);
+    addSafeFilter('status', filters.statuses);
+
+    let hasRange = false;
     if (filters.startDate || filters.endDate) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
-    } else if (filters.lotNo) {
-      constraints.push(where('lotNo', '>=', filters.lotNo), where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+      hasRange = true;
+    }
+
+    if (!hasRange) {
+      if (filters.lotNo) {
+        constraints.push(where('lotNo', '>=', filters.lotNo));
+        constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
+      } else if (filters.grnNo) {
+        constraints.push(where('rollNo', '>=', filters.grnNo));
+        constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
+      }
     }
 
     if (isCount) return query(q, ...constraints);
@@ -267,7 +287,8 @@ export default function MasterDataPage() {
           }
         }
       } catch (e) {
-        console.error("Query Error:", e);
+        console.error("Master Registry Load Error:", e);
+        setPagedJumbos([]); // Prevent stale data on failure
       } finally {
         setIsPageLoading(false);
       }
@@ -275,32 +296,81 @@ export default function MasterDataPage() {
     load();
   }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const ab = evt.target?.result as ArrayBuffer;
-        const wb = XLSX.read(ab, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data = XLSX.utils.sheet_to_json(ws);
-        const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
-        setExcelData(data);
-        setExcelHeaders(headers);
-        setImportStep(2);
-      } catch (err) {
-        toast({ variant: "destructive", title: "Parse Error", description: "Invalid Excel format." });
-      }
-    };
-    reader.readAsArrayBuffer(file);
+  const handleFilterChange = (field: keyof FilterState, value: any) => {
+    setFilters(prev => ({ ...prev, [field]: value }));
+    setCurrentPage(1);
+    setPageStack([null]);
   };
 
-  const executeBulkImport = async () => {
+  const toggleMultiSelect = (field: keyof FilterState, value: string) => {
+    const current = (filters[field] as string[]) || [];
+    const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
+    handleFilterChange(field, next);
+  };
+
+  const resetFilters = () => {
+    setFilters(INITIAL_FILTERS);
+    setCurrentPage(1);
+    setPageStack([null]);
+  };
+
+  const handleOpenEdit = (item: any, type: string) => {
+    setEditingItem(item);
+    setDialogType(type === 'paper_stock' ? 'jumbo_stock' : type);
+    if (type === 'jumbo_stock' || type === 'paper_stock') {
+      setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
+    }
+    setIsDialogOpen(true);
+  };
+
+  const handleSingleDelete = async (item: any, type: string) => {
+    if (!firestore || !isAdmin) return;
+    const collName = (type === 'paper_stock' || type === 'jumbo_stock') ? 'jumbo_stock' : type;
+    if (confirm(`Permanently delete this record?`)) {
+      setIsDeleting(true);
+      try {
+        await deleteDoc(doc(firestore, collName, item.id));
+        toast({ title: "Record Deleted" });
+        setRefreshTrigger(p => p + 1);
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!isAdmin || !firestore || selectedStockIds.size === 0) return;
+    if (!confirm(`Delete ${selectedStockIds.size} rolls?`)) return;
+    setIsDeleting(true);
+    try {
+      const ids = Array.from(selectedStockIds);
+      for (let i = 0; i < ids.length; i += 500) {
+        const batch = writeBatch(firestore);
+        ids.slice(i, i + 500).forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
+        await batch.commit();
+      }
+      setSelectedStockIds(new Set());
+      setRefreshTrigger(p => p + 1);
+      toast({ title: "Bulk Delete Successful" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await exportPaperStockToExcel(firestore!, filters as any);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExcelImport = async () => {
     if (!firestore || !user || !excelData.length) return;
     const rollNoMapping = Object.keys(columnMapping).find(k => columnMapping[k] === 'rollNo');
     if (!rollNoMapping) {
-      toast({ variant: "destructive", title: "Roll No Required", description: "Map 'Roll No' to continue." });
+      toast({ variant: "destructive", title: "Mapping Error", description: "You must map 'Roll No' to continue." });
       return;
     }
     setImportStep(3);
@@ -338,75 +408,6 @@ export default function MasterDataPage() {
     setImportSummary({ total: excelData.length, imported, skipped });
     setRefreshTrigger(prev => prev + 1);
     setImportStep(4);
-  };
-
-  const handleFilterChange = (field: keyof FilterState, value: any) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
-    setCurrentPage(1);
-    setPageStack([null]);
-  };
-
-  const toggleMultiSelect = (field: keyof FilterState, value: string) => {
-    const current = (filters[field] as string[]) || [];
-    const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
-    handleFilterChange(field, next);
-  };
-
-  const resetFilters = () => {
-    setFilters(INITIAL_FILTERS);
-    setCurrentPage(1);
-    setPageStack([null]);
-  };
-
-  const handleOpenEdit = (item: any, type: string) => {
-    setEditingItem(item);
-    setDialogType(type === 'paper_stock' ? 'jumbo_stock' : type);
-    if (type === 'jumbo_stock' || type === 'paper_stock') {
-      setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
-    }
-    setIsDialogOpen(true);
-  };
-
-  const handleSingleDelete = async (item: any, type: string) => {
-    if (!firestore || !isAdmin) return;
-    const collName = (type === 'paper_stock' || type === 'jumbo_stock') ? 'jumbo_stock' : type;
-    if (confirm(`Permanently delete this record?`)) {
-      setIsDeleting(true);
-      try {
-        await deleteDoc(doc(firestore, collName, item.id));
-        toast({ title: "Deleted" });
-        setRefreshTrigger(p => p + 1);
-      } finally {
-        setIsDeleting(false);
-      }
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (!isAdmin || !firestore || selectedStockIds.size === 0) return;
-    if (!confirm(`Delete ${selectedStockIds.size} rolls?`)) return;
-    setIsDeleting(true);
-    try {
-      const ids = Array.from(selectedStockIds);
-      for (let i = 0; i < ids.length; i += 500) {
-        const batch = writeBatch(firestore);
-        ids.slice(i, i + 500).forEach(id => batch.delete(doc(firestore, 'jumbo_stock', id)));
-        await batch.commit();
-      }
-      setSelectedStockIds(new Set());
-      setRefreshTrigger(p => p + 1);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      await exportPaperStockToExcel(firestore!, filters as any);
-    } finally {
-      setIsExporting(false);
-    }
   };
 
   if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
@@ -577,7 +578,7 @@ export default function MasterDataPage() {
                           <TableCell className="text-[11px] font-black text-primary">{j.sqm}</TableCell>
                           <TableCell className="text-[11px]">{j.gsm}</TableCell>
                           <TableCell className="text-[11px] font-bold">{j.weightKg}kg</TableCell>
-                          <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate}</TableCell>
+                          <TableCell className="text-[11px] text-emerald-700 font-bold">₹{j.purchaseRate?.toLocaleString()}</TableCell>
                           <TableCell className="text-[11px]">{j.wastage}%</TableCell>
                           <TableCell className="text-[10px] font-bold">{j.receivedDate}</TableCell>
                           <TableCell className="text-[11px] font-mono font-bold text-accent">{j.lotNo}</TableCell>
@@ -589,6 +590,11 @@ export default function MasterDataPage() {
                           </TableCell>
                         </TableRow>
                       ))}
+                      {pagedJumbos.length === 0 && !isPageLoading && (
+                        <TableRow>
+                          <TableCell colSpan={15} className="text-center py-20 text-muted-foreground italic">No matching paper stock records found.</TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -731,18 +737,10 @@ export default function MasterDataPage() {
             </CardHeader>
             <CardContent>
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Company Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
+                <TableHeader><TableRow><TableHead>Company Name</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {customers?.map((c) => (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-bold">{c.name || c.companyName}</TableCell>
-                      <TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
+                    <TableRow key={c.id}><TableCell className="font-bold">{c.name || c.companyName}</TableCell><TableCell><Badge variant="outline">{c.status || 'Active'}</Badge></TableCell>
                       <TableCell className="text-right flex justify-end gap-2">
                         <Button variant="ghost" size="icon" onClick={() => handleOpenEdit(c, "customers")}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleSingleDelete(c, "customers")} disabled={isDeleting}><Trash2 className="h-4 w-4" /></Button>
@@ -763,13 +761,7 @@ export default function MasterDataPage() {
             </CardHeader>
             <CardContent>
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Template Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
+                <TableHeader><TableRow><TableHead>Template Name</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {boms?.map((b) => (
                     <TableRow key={b.id}>
@@ -798,7 +790,22 @@ export default function MasterDataPage() {
           </DialogHeader>
           {importStep === 1 && (
             <div className="py-10 text-center border-2 border-dashed rounded-xl space-y-4">
-              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} className="hidden" id="excel-upload" />
+              <input type="file" accept=".xlsx,.xls" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                  const ab = evt.target?.result as ArrayBuffer;
+                  const wb = XLSX.read(ab, { type: 'array' });
+                  const ws = wb.Sheets[wb.SheetNames[0]];
+                  const data = XLSX.utils.sheet_to_json(ws);
+                  const headers = XLSX.utils.sheet_to_json(ws, { header: 1 })[0] as string[];
+                  setExcelData(data);
+                  setExcelHeaders(headers);
+                  setImportStep(2);
+                };
+                reader.readAsArrayBuffer(file);
+              }} className="hidden" id="excel-upload" />
               <Label htmlFor="excel-upload" className="cursor-pointer flex flex-col items-center">
                 <FileUp className="h-12 w-12 text-muted-foreground opacity-20 mb-2" />
                 <span className="font-bold text-primary underline">Browse Excel Files</span>
@@ -821,7 +828,7 @@ export default function MasterDataPage() {
                   </div>
                 ))}
               </div>
-              <Button onClick={executeBulkImport} className="w-full h-12 font-black uppercase tracking-widest"><Sparkles className="mr-2 h-4 w-4" /> Execute Import</Button>
+              <Button onClick={handleExcelImport} className="w-full h-12 font-black uppercase tracking-widest"><Sparkles className="mr-2 h-4 w-4" /> Execute Import</Button>
             </div>
           )}
           {importStep === 3 && (
@@ -870,9 +877,13 @@ export default function MasterDataPage() {
                     <div className="space-y-2"><Label>Type</Label><Input name="paperType" defaultValue={editingItem?.paperType} required /></div>
                   </div>
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" defaultValue={editingItem?.widthMm} required onChange={e => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} /></div>
-                    <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" defaultValue={editingItem?.lengthMeters} required onChange={e => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} /></div>
-                    <div className="space-y-2"><Label>SQM</Label><Input value={liveSqm} readOnly className="bg-muted" /></div>
+                    <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" step="0.01" defaultValue={editingItem?.widthMm} required onChange={e => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} /></div>
+                    <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" step="0.01" defaultValue={editingItem?.lengthMeters} required onChange={e => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} /></div>
+                    <div className="space-y-2"><Label>SQM (Auto)</Label><Input value={liveSqm} readOnly className="bg-muted" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Supplier</Label><Input name="supplier" defaultValue={editingItem?.supplier} /></div>
+                    <div className="space-y-2"><Label>Location</Label><Input name="location" defaultValue={editingItem?.location} /></div>
                   </div>
                 </div>
               ) : (
@@ -883,7 +894,7 @@ export default function MasterDataPage() {
                 </>
               )}
             </div>
-            <DialogFooter><Button type="submit">Save</Button></DialogFooter>
+            <DialogFooter><Button type="submit">Save Record</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
