@@ -20,7 +20,7 @@
     "PaperStock": {
       "title": "PaperStock",
       "type": "object",
-      "description": "Represents a raw substrate jumbo roll in the inventory with 17 technical columns.",
+      "description": "Represents a raw substrate jumbo roll in the inventory with technical columns.",
       "properties": {
         "rollNo": { "type": "string", "description": "System-generated Unique Roll ID (RL-0001)" },
         "status": { "type": "string", "enum": ["Available", "Reserved", "Used"] },
@@ -61,7 +61,7 @@
     },
     "/paper_stock/{rollId}": {
       "schema": { "$ref": "#/backend/entities/PaperStock" },
-      "description": "Main substrate inventory registry with 17 technical columns."
+      "description": "Main substrate inventory registry with sequential Roll ID."
     },
     "/adminUsers/{adminUid}": {
       "schema": { "type": "object" },
@@ -74,6 +74,10 @@
     "/paper_types/{id}": {
       "schema": { "$ref": "#/backend/entities/PaperMetadata" },
       "description": "Master list of paper types/substrates."
+    },
+    "/counters/{id}": {
+      "schema": { "type": "object" },
+      "description": "Atomic sequence counters for unique ID generation."
     }
   }
 }
