@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -24,7 +25,8 @@ import {
   Settings2,
   AlertTriangle,
   Pencil,
-  ExternalLink
+  ExternalLink,
+  Info
 } from "lucide-react"
 import { 
   Dialog, 
@@ -143,18 +145,12 @@ export default function GRNPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  const activeFiltersCount = useMemo(() => {
-    return Object.entries(filters).reduce((acc, [k, v]) => {
-      if (Array.isArray(v)) return acc + v.length;
-      return v ? acc + 1 : acc;
-    }, 0);
-  }, [filters]);
-
   useEffect(() => { setIsMounted(true) }, [])
 
   const settingsRef = useMemoFirebase(() => (!firestore ? null : doc(firestore, 'roll_settings', 'global_config')), [firestore]);
   const { data: settings } = useDoc(settingsRef);
 
+  // Sync Options from DB
   useEffect(() => {
     if (!firestore || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -170,6 +166,13 @@ export default function GRNPage() {
     });
     return () => unsub();
   }, [firestore, isMounted]);
+
+  const activeFiltersCount = useMemo(() => {
+    return Object.entries(filters).reduce((acc, [k, v]) => {
+      if (Array.isArray(v)) return acc + v.length;
+      return v ? acc + 1 : acc;
+    }, 0);
+  }, [filters]);
 
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
@@ -236,6 +239,8 @@ export default function GRNPage() {
               next[currentPage] = last;
               return next;
             });
+          } else {
+            setPagedJumbos([]);
           }
         }
       } catch (e: any) {
@@ -403,7 +408,7 @@ export default function GRNPage() {
         <div className="bg-muted/30 p-4 border-b flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Select value={pageSize.toString()} onValueChange={(v) => { setPageSize(Number(v)); setCurrentPage(1); setPageStack([null]); }}>
-              <SelectTrigger className="w-[80px] h-8 text-[10px] font-black"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-[100px] h-8 text-[10px] font-black"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
@@ -455,10 +460,10 @@ export default function GRNPage() {
               </TableHeader>
               <TableBody>
                 {isPageLoading ? (
-                  <TableRow><TableCell colSpan={15} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={20} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
                 ) : indexErrorUrl ? (
                   <TableRow>
-                    <TableCell colSpan={15} className="py-20">
+                    <TableCell colSpan={20} className="py-20">
                       <div className="flex flex-col items-center gap-4 text-center max-w-lg mx-auto">
                         <AlertTriangle className="h-12 w-12 text-amber-500" />
                         <div className="space-y-2">
@@ -501,6 +506,9 @@ export default function GRNPage() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
+                  <TableRow><TableCell colSpan={20} className="text-center py-20 text-muted-foreground italic">No matching records found.</TableCell></TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
@@ -566,7 +574,7 @@ export default function GRNPage() {
               }
             } finally { setIsGenerating(false); }
           }}>
-            <DialogHeader><DialogTitle>{editingRoll ? 'Edit' : 'New'} Technical Intake</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="flex items-center gap-2"><Info className="h-5 w-5 text-primary" />{editingRoll ? 'Edit' : 'New'} Technical Intake</DialogTitle></DialogHeader>
             <div className="grid gap-6 py-4">
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label>Company</Label><Input name="paperCompany" defaultValue={editingRoll?.paperCompany} required /></div>
@@ -576,7 +584,10 @@ export default function GRNPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" step="0.01" defaultValue={editingRoll?.widthMm} required onChange={e => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} /></div>
                 <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" step="0.01" defaultValue={editingRoll?.lengthMeters} required onChange={e => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} /></div>
-                <div className="space-y-2"><Label>SQM (Auto)</Label><Input value={liveSqm} readOnly className="bg-muted" /></div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1">SQM (Auto) <Badge variant="outline" className="text-[8px] h-4">READ-ONLY</Badge></Label>
+                  <Input value={liveSqm} readOnly className="bg-muted font-mono font-bold" />
+                </div>
               </div>
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2"><Label>GSM</Label><Input name="gsm" type="number" defaultValue={editingRoll?.gsm} required /></div>
@@ -596,7 +607,7 @@ export default function GRNPage() {
                 </div>
               </div>
             </div>
-            <DialogFooter><Button type="submit" disabled={isGenerating}>{isGenerating ? <Loader2 className="animate-spin" /> : 'Save Intake'}</Button></DialogFooter>
+            <DialogFooter><Button type="submit" disabled={isGenerating} className="w-full h-12 uppercase font-black">{isGenerating ? <Loader2 className="animate-spin" /> : 'Confirm Technical Entry'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

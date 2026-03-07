@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -35,7 +36,8 @@ import {
   FilterX,
   Sparkles,
   AlertTriangle,
-  ExternalLink
+  ExternalLink,
+  Info
 } from "lucide-react"
 import {
   Popover,
@@ -162,7 +164,7 @@ export default function MasterDataPage() {
   // Authorization
   const isAdmin = hasPermission('admin')
 
-  // Data Fetching Hooks
+  // Top-level hooks for rules compliance
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -181,15 +183,9 @@ export default function MasterDataPage() {
   const bomsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'boms') : null), [firestore]);
   const { data: boms } = useCollection(bomsQuery);
 
-  const activeFiltersCount = useMemo(() => {
-    return Object.entries(filters).reduce((acc, [k, v]) => {
-      if (Array.isArray(v)) return acc + v.length;
-      return v ? acc + 1 : acc;
-    }, 0);
-  }, [filters]);
-
   useEffect(() => { setIsMounted(true) }, []);
 
+  // Sync Data Options
   useEffect(() => {
     if (!firestore || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -205,6 +201,13 @@ export default function MasterDataPage() {
     });
     return () => unsub();
   }, [firestore, isMounted]);
+
+  const activeFiltersCount = useMemo(() => {
+    return Object.entries(filters).reduce((acc, [k, v]) => {
+      if (Array.isArray(v)) return acc + v.length;
+      return v ? acc + 1 : acc;
+    }, 0);
+  }, [filters]);
 
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
@@ -270,6 +273,8 @@ export default function MasterDataPage() {
               next[currentPage] = last;
               return next;
             });
+          } else {
+            setPagedJumbos([]);
           }
         }
       } catch (e: any) {
@@ -455,7 +460,7 @@ export default function MasterDataPage() {
             </div>
 
             {showFilters && (
-              <Card className="bg-muted/30 border-dashed border-2">
+              <Card className="bg-muted/30 border-dashed border-2 animate-in slide-in-from-top-2">
                 <CardContent className="p-6 space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="space-y-1"><Label className="text-[10px] uppercase font-black">Lot Search</Label><Input value={filters.lotNo} onChange={e => handleFilterChange('lotNo', e.target.value)} className="h-9 text-xs bg-background" /></div>
@@ -553,11 +558,11 @@ export default function MasterDataPage() {
                     <TableBody>
                       {isPageLoading ? (
                         <TableRow>
-                          <TableCell colSpan={15} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell>
+                          <TableCell colSpan={20} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell>
                         </TableRow>
                       ) : indexErrorUrl ? (
                         <TableRow>
-                          <TableCell colSpan={15} className="py-20">
+                          <TableCell colSpan={20} className="py-20">
                             <div className="flex flex-col items-center gap-4 text-center max-w-lg mx-auto">
                               <AlertTriangle className="h-12 w-12 text-amber-500" />
                               <div className="space-y-2">
@@ -600,6 +605,9 @@ export default function MasterDataPage() {
                           </TableCell>
                         </TableRow>
                       ))}
+                      {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
+                        <TableRow><TableCell colSpan={20} className="text-center py-20 text-muted-foreground italic">No matching records found.</TableCell></TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -858,7 +866,7 @@ export default function MasterDataPage() {
       </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className={cn("sm:max-w-[500px]", (dialogType === 'jumbo_stock' || dialogType === 'paper_stock') && "sm:max-w-[800px]")}>
+        <DialogContent className={cn("sm:max-w-[500px]", (dialogType === 'paper_stock' || dialogType === 'jumbo_stock') && "sm:max-w-[800px]")}>
           <form onSubmit={async (e) => {
             e.preventDefault();
             const formData = new FormData(e.currentTarget);
@@ -875,9 +883,9 @@ export default function MasterDataPage() {
             setRefreshTrigger(p => p + 1);
             setIsDialogOpen(false);
           }}>
-            <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Create'} {dialogType.replace('_', ' ')}</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="flex items-center gap-2"><Info className="h-5 w-5 text-primary" />{editingItem ? 'Edit' : 'Create'} {dialogType.replace('_', ' ')}</DialogTitle></DialogHeader>
             <div className="grid gap-4 py-4">
-              {dialogType === 'jumbo_stock' || dialogType === 'paper_stock' ? (
+              {dialogType === 'paper_stock' || dialogType === 'jumbo_stock' ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2"><Label>Company</Label><Input name="paperCompany" defaultValue={editingItem?.paperCompany} required /></div>
@@ -886,7 +894,10 @@ export default function MasterDataPage() {
                   <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2"><Label>Width (mm)</Label><Input name="widthMm" type="number" step="0.01" defaultValue={editingItem?.widthMm} required onChange={e => setIntakeForm(p => ({...p, widthMm: Number(e.target.value)}))} /></div>
                     <div className="space-y-2"><Label>Length (m)</Label><Input name="lengthMeters" type="number" step="0.01" defaultValue={editingItem?.lengthMeters} required onChange={e => setIntakeForm(p => ({...p, lengthMeters: Number(e.target.value)}))} /></div>
-                    <div className="space-y-2"><Label>SQM (Auto)</Label><Input value={liveSqm} readOnly className="bg-muted" /></div>
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1">SQM (Auto) <Badge variant="outline" className="text-[8px] h-4">READ-ONLY</Badge></Label>
+                      <Input value={liveSqm} readOnly className="bg-muted font-mono font-bold" />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2"><Label>Supplier</Label><Input name="supplier" defaultValue={editingItem?.supplier} /></div>
@@ -901,7 +912,7 @@ export default function MasterDataPage() {
                 </>
               )}
             </div>
-            <DialogFooter><Button type="submit">Save Record</Button></DialogFooter>
+            <DialogFooter><Button type="submit" className="w-full h-12 uppercase font-black">Save Master Record</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
