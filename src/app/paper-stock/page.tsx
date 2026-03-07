@@ -20,10 +20,9 @@ import {
   Package,
   RefreshCw,
   SlidersHorizontal,
+  ChevronLeft,
   ChevronRight,
   Filter,
-  ChevronLeft,
-  ChevronRight as ChevronRightIcon,
   Eye
 } from "lucide-react"
 import { 
@@ -57,7 +56,9 @@ import {
   serverTimestamp,
   runTransaction,
   writeBatch,
-  orderBy
+  orderBy,
+  getDoc,
+  setDoc
 } from "firebase/firestore"
 import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
@@ -81,6 +82,10 @@ export default function PaperStockPage() {
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  // Quick-Add Modals
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
+  const [metadataType, setMetadataType] = useState<'Company' | 'Type'>('Company')
+
   const [modal, setModal] = useState<{
     isOpen: boolean;
     type: ModalType;
@@ -98,19 +103,17 @@ export default function PaperStockPage() {
     paperType: "all",
     width: "",
     length: "",
-    rollNo: "",
-    jobNo: "",
-    jobName: "",
-    lotNo: "",
-    remarks: "",
     widthMin: "", widthMax: "",
     lengthMin: "", lengthMax: "",
     gsmMin: "", gsmMax: "",
     weightMin: "", weightMax: "",
     sqmMin: "", sqmMax: "",
-    purchaseRateMin: "", purchaseRateMax: "",
     dateReceived: "",
-    dateOfSlit: ""
+    dateOfSlit: "",
+    jobNo: "",
+    jobName: "",
+    lotNo: "",
+    remarks: ""
   })
 
   const [formData, setFormData] = useState({
@@ -130,6 +133,7 @@ export default function PaperStockPage() {
     jobName: "",
     lotNo: "",
     remarks: "",
+    quantity: 1,
     createdByName: ""
   })
 
@@ -138,14 +142,16 @@ export default function PaperStockPage() {
     setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
   }, [])
 
-  const companiesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'paper_companies') : null, [firestore]);
-  const typesQuery = useMemoFirebase(() => firestore ? collection(firestore, 'paper_types') : null, [firestore]);
+  // Optimized fetches for metadata
+  const companiesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_companies'), limit(100)) : null, [firestore]);
+  const typesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_types'), limit(100)) : null, [firestore]);
   const { data: companyList } = useCollection(companiesQuery);
   const { data: paperTypeList } = useCollection(typesQuery);
 
+  // Registry Query: Limited to 100 to save Quota
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'desc'), limit(500));
+    return query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'desc'), limit(100));
   }, [firestore]);
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
@@ -154,31 +160,18 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     return rolls.filter(row => {
-      // Top Level Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         if (!row.rollNo?.toLowerCase().includes(s) && 
             !row.lotNo?.toLowerCase().includes(s) && 
             !row.jobNo?.toLowerCase().includes(s)) return false;
       }
-
-      // Dropdowns
       if (filters.status !== "all" && row.status !== filters.status) return false;
       if (filters.paperCompany !== "all" && row.paperCompany !== filters.paperCompany) return false;
       if (filters.paperType !== "all" && row.paperType !== filters.paperType) return false;
-
-      // Quick Numeric Filters
       if (filters.width && Number(row.widthMm) !== Number(filters.width)) return false;
       if (filters.length && Number(row.lengthMeters) !== Number(filters.length)) return false;
 
-      // Advanced Text Fields
-      if (filters.rollNo && !row.rollNo?.toLowerCase().includes(filters.rollNo.toLowerCase())) return false;
-      if (filters.jobNo && !row.jobNo?.toLowerCase().includes(filters.jobNo.toLowerCase())) return false;
-      if (filters.jobName && !row.jobName?.toLowerCase().includes(filters.jobName.toLowerCase())) return false;
-      if (filters.lotNo && !row.lotNo?.toLowerCase().includes(filters.lotNo.toLowerCase())) return false;
-      if (filters.remarks && !row.remarks?.toLowerCase().includes(filters.remarks.toLowerCase())) return false;
-
-      // Number Ranges
       const checkRange = (val: any, min: string, max: string) => {
         const n = Number(val);
         if (min && n < Number(min)) return false;
@@ -189,13 +182,7 @@ export default function PaperStockPage() {
       if (!checkRange(row.widthMm, filters.widthMin, filters.widthMax)) return false;
       if (!checkRange(row.lengthMeters, filters.lengthMin, filters.lengthMax)) return false;
       if (!checkRange(row.gsm, filters.gsmMin, filters.gsmMax)) return false;
-      if (!checkRange(row.weightKg, filters.weightMin, filters.weightMax)) return false;
       if (!checkRange(row.sqm, filters.sqmMin, filters.sqmMax)) return false;
-      if (!checkRange(row.purchaseRate, filters.purchaseRateMin, filters.purchaseRateMax)) return false;
-
-      // Dates
-      if (filters.dateReceived && row.receivedDate !== filters.dateReceived) return false;
-      if (filters.dateOfSlit && row.dateOfSlit !== filters.dateOfSlit) return false;
 
       return true;
     });
@@ -215,8 +202,9 @@ export default function PaperStockPage() {
   useEffect(() => {
     const w = Number(formData.widthMm) || 0;
     const l = Number(formData.lengthMeters) || 0;
-    setFormData(prev => ({ ...prev, sqm: Number(((w * l) / 1000).toFixed(2)) }));
-  }, [formData.widthMm, formData.lengthMeters]);
+    const q = Number(formData.quantity) || 1;
+    setFormData(prev => ({ ...prev, sqm: Number(((w / 1000) * l * q).toFixed(2)) }));
+  }, [formData.widthMm, formData.lengthMeters, formData.quantity]);
 
   const showModal = (type: ModalType, title: string, description?: string, onConfirm?: () => void, autoClose = false) => {
     setModal({ isOpen: true, type, title, description, onConfirm, autoClose });
@@ -231,7 +219,7 @@ export default function PaperStockPage() {
       setFormData({
         rollNo: "", status: "Available", paperCompany: "", paperType: "", widthMm: 0, lengthMeters: 0, sqm: 0,
         gsm: 0, weightKg: 0, receivedDate: new Date().toISOString().split('T')[0], purchaseRate: 0,
-        dateOfSlit: "Not Used", jobNo: "", jobName: "", lotNo: "", remarks: "",
+        dateOfSlit: "Not Used", jobNo: "", jobName: "", lotNo: "", remarks: "", quantity: 1,
         createdByName: user?.displayName || user?.email || "System"
       });
     }
@@ -247,7 +235,7 @@ export default function PaperStockPage() {
       if (editingRoll) {
         updateDocumentNonBlocking(doc(firestore, 'paper_stock', editingRoll.id), { ...formData, updatedAt: serverTimestamp() });
         setIsDialogOpen(false);
-        showModal('SUCCESS', 'Roll Updated', 'Substrate record has been committed.', true);
+        showModal('SUCCESS', 'Roll Updated', 'Technical record has been committed.', undefined, true);
       } else {
         await runTransaction(firestore, async (transaction) => {
           const counterRef = doc(firestore, 'counters', 'paper_roll');
@@ -260,7 +248,7 @@ export default function PaperStockPage() {
           transaction.set(counterRef, { current_number: nextNum }, { merge: true });
         });
         setIsDialogOpen(false);
-        showModal('SUCCESS', 'Roll Initialized', `Roll ${formData.rollNo} saved.`, true);
+        showModal('SUCCESS', 'Roll Added', `Roll ${formData.rollNo} initialized.`, undefined, true);
       }
     } catch (error: any) {
       showModal('ERROR', 'Transaction Failed', error.message);
@@ -269,47 +257,42 @@ export default function PaperStockPage() {
     }
   };
 
+  const handleSaveMetadata = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formDataObj = new FormData(e.currentTarget);
+    const name = formDataObj.get('name') as string;
+    const col = metadataType === 'Company' ? 'paper_companies' : 'paper_types';
+    
+    if (!name) return;
+
+    const list = metadataType === 'Company' ? companyList : paperTypeList;
+    if (list?.some(item => item.name.toLowerCase() === name.toLowerCase())) {
+      showModal('WARNING', 'Duplicate Value', `This ${metadataType} already exists in the registry.`);
+      return;
+    }
+
+    try {
+      const docId = name.toLowerCase().replace(/\s+/g, '-');
+      await setDoc(doc(firestore!, col, docId), { name, createdAt: serverTimestamp() });
+      setFormData(prev => ({ ...prev, [metadataType === 'Company' ? 'paperCompany' : 'paperType']: name }));
+      setIsMetadataModalOpen(false);
+      showModal('SUCCESS', 'Entry Authorized', `${metadataType} added to system master data.`, undefined, true);
+    } catch (err: any) {
+      showModal('ERROR', 'Authorization Failed', err.message);
+    }
+  }
+
   const handleBulkDelete = () => {
     if (!firestore || selectedIds.size === 0) return;
-    showModal('CONFIRMATION', 'Delete Selected?', `Are you sure you want to delete ${selectedIds.size} rolls?`, async () => {
+    showModal('CONFIRMATION', 'Authorize Bulk Deletion?', `Permanently remove ${selectedIds.size} substrate records?`, async () => {
       setIsProcessing(true);
       const batch = writeBatch(firestore);
-      selectedIds.forEach(id => {
-        batch.delete(doc(firestore, 'paper_stock', id));
-      });
+      selectedIds.forEach(id => batch.delete(doc(firestore, 'paper_stock', id)));
       await batch.commit().then(() => {
         setSelectedIds(new Set());
-        showModal('SUCCESS', 'Deleted', 'Selected records removed.', true);
-      }).catch(err => {
-        showModal('ERROR', 'Batch Failed', err.message);
-      }).finally(() => setIsProcessing(false));
+        showModal('SUCCESS', 'Batch Deleted', 'Selected rolls removed from registry.', undefined, true);
+      }).catch(err => showModal('ERROR', 'Batch Failed', err.message)).finally(() => setIsProcessing(false));
     });
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedIds.size === paginatedRows.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(paginatedRows.map(r => r.id)));
-    }
-  };
-
-  const toggleSelect = (id: string) => {
-    const next = new Set(selectedIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedIds(next);
-  };
-
-  const handleClearFilters = () => {
-    setFilters({
-      search: "", status: "all", paperCompany: "all", paperType: "all", width: "", length: "",
-      rollNo: "", jobNo: "", jobName: "", lotNo: "", remarks: "", widthMin: "", widthMax: "", 
-      lengthMin: "", lengthMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", 
-      sqmMin: "", sqmMax: "", purchaseRateMin: "", purchaseRateMax: "", dateReceived: "", 
-      dateOfSlit: ""
-    });
-    setCurrentPage(1);
   };
 
   if (!isMounted) return null;
@@ -320,13 +303,13 @@ export default function PaperStockPage() {
 
       {/* SEARCH & QUICK FILTERS */}
       <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border shadow-sm px-6 shrink-0">
-        <div className="relative min-w-[240px]">
+        <div className="relative min-w-[200px]">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Search Roll / Lot / Job..." className="pl-8 h-9 text-xs" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
         </div>
         
         <Select value={filters.paperCompany} onValueChange={v => setFilters({ ...filters, paperCompany: v })}>
-          <SelectTrigger className="h-9 text-xs w-[140px]"><SelectValue placeholder="Company" /></SelectTrigger>
+          <SelectTrigger className="h-9 text-xs w-[130px]"><SelectValue placeholder="Company" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Companies</SelectItem>
             {companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
@@ -334,7 +317,7 @@ export default function PaperStockPage() {
         </Select>
 
         <Select value={filters.paperType} onValueChange={v => setFilters({ ...filters, paperType: v })}>
-          <SelectTrigger className="h-9 text-xs w-[140px]"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="h-9 text-xs w-[130px]"><SelectValue placeholder="Paper Type" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             {paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
@@ -351,22 +334,8 @@ export default function PaperStockPage() {
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-2">
-          <Input 
-            type="number" 
-            placeholder="Width" 
-            className="h-9 w-20 text-xs" 
-            value={filters.width} 
-            onChange={e => setFilters({...filters, width: e.target.value})} 
-          />
-          <Input 
-            type="number" 
-            placeholder="Length" 
-            className="h-9 w-20 text-xs" 
-            value={filters.length} 
-            onChange={e => setFilters({...filters, length: e.target.value})} 
-          />
-        </div>
+        <Input type="number" placeholder="Width" className="h-9 w-20 text-xs" value={filters.width} onChange={e => setFilters({...filters, width: e.target.value})} />
+        <Input type="number" placeholder="Length" className="h-9 w-20 text-xs" value={filters.length} onChange={e => setFilters({...filters, length: e.target.value})} />
 
         <div className="flex-1" />
         
@@ -376,57 +345,19 @@ export default function PaperStockPage() {
               <Filter className="h-4 w-4 text-primary" /> Advanced
             </Button>
           </SheetTrigger>
-          <SheetContent className="sm:max-w-[600px] overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle className="font-black uppercase flex items-center gap-2">
-                <SlidersHorizontal className="h-5 w-5 text-primary" /> Technical Filter Suite
-              </SheetTitle>
-            </SheetHeader>
-            <div className="grid grid-cols-2 gap-6 py-10">
-              <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-black">Roll No</Label>
-                <Input value={filters.rollNo} onChange={e => setFilters({...filters, rollNo: e.target.value})} className="h-8 text-xs" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-black">Job No</Label>
-                <Input value={filters.jobNo} onChange={e => setFilters({...filters, jobNo: e.target.value})} className="h-8 text-xs" />
-              </div>
-              
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-teal-600">GSM Range</Label>
-                <div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.gsmMin} onChange={e => setFilters({...filters, gsmMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.gsmMax} onChange={e => setFilters({...filters, gsmMax: e.target.value})} className="h-8 text-xs" /></div>
-              </div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-teal-600">Width Range</Label>
-                <div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.widthMin} onChange={e => setFilters({...filters, widthMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.widthMax} onChange={e => setFilters({...filters, widthMax: e.target.value})} className="h-8 text-xs" /></div>
-              </div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-teal-600">Length Range</Label>
-                <div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.lengthMin} onChange={e => setFilters({...filters, lengthMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.lengthMax} onChange={e => setFilters({...filters, lengthMax: e.target.value})} className="h-8 text-xs" /></div>
-              </div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-teal-600">SQM Range</Label>
-                <div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.sqmMin} onChange={e => setFilters({...filters, sqmMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.sqmMax} onChange={e => setFilters({...filters, sqmMax: e.target.value})} className="h-8 text-xs" /></div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-black">Date Received</Label>
-                <Input type="date" value={filters.dateReceived} onChange={e => setFilters({...filters, dateReceived: e.target.value})} className="h-8 text-xs" />
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-black">Date of Slit</Label>
-                <Input type="date" value={filters.dateOfSlit} onChange={e => setFilters({...filters, dateOfSlit: e.target.value})} className="h-8 text-xs" />
-              </div>
-
-              <div className="col-span-2 space-y-2">
-                <Label className="text-[10px] uppercase font-black">Remarks Search</Label>
-                <Input value={filters.remarks} onChange={e => setFilters({...filters, remarks: e.target.value})} className="h-8 text-xs" />
-              </div>
+          <SheetContent className="sm:max-w-[500px]">
+            <SheetHeader><SheetTitle className="font-black uppercase flex items-center gap-2"><SlidersHorizontal className="h-5 w-5 text-primary" /> Technical Filter Suite</SheetTitle></SheetHeader>
+            <div className="grid grid-cols-2 gap-4 py-8">
+              <div className="space-y-1"><Label className="text-[10px] font-black uppercase">GSM Range</Label><div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.gsmMin} onChange={e => setFilters({...filters, gsmMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.gsmMax} onChange={e => setFilters({...filters, gsmMax: e.target.value})} className="h-8 text-xs" /></div></div>
+              <div className="space-y-1"><Label className="text-[10px] font-black uppercase">SQM Range</Label><div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.sqmMin} onChange={e => setFilters({...filters, sqmMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.sqmMax} onChange={e => setFilters({...filters, sqmMax: e.target.value})} className="h-8 text-xs" /></div></div>
+              <div className="col-span-2 space-y-1"><Label className="text-[10px] font-black uppercase">Technical Remarks</Label><Input value={filters.remarks} onChange={e => setFilters({...filters, remarks: e.target.value})} className="h-8 text-xs" /></div>
             </div>
-            <SheetFooter>
-              <Button className="w-full font-black uppercase" onClick={() => setIsAdvancedFilterOpen(false)}>Apply Global Parameters</Button>
-            </SheetFooter>
+            <SheetFooter><Button className="w-full font-black uppercase" onClick={() => setIsAdvancedFilterOpen(false)}>Apply Analysis</Button></SheetFooter>
           </SheetContent>
         </Sheet>
 
-        <Button variant="ghost" size="sm" onClick={handleClearFilters} className="h-9 text-xs text-destructive hover:bg-destructive/10">
-          <FilterX className="h-4 w-4 mr-1" /> Reset All
+        <Button variant="ghost" size="sm" onClick={() => setFilters({search: "", status: "all", paperCompany: "all", paperType: "all", width: "", length: "", widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", sqmMin: "", sqmMax: "", dateReceived: "", dateOfSlit: "", jobNo: "", jobName: "", lotNo: "", remarks: ""})} className="h-9 text-xs text-destructive hover:bg-destructive/10">
+          <FilterX className="h-4 w-4 mr-1" /> Reset
         </Button>
       </div>
 
@@ -437,7 +368,7 @@ export default function PaperStockPage() {
             <Package className="h-5 w-5" /> Paper Stock Registry
           </h2>
           <Badge className="bg-white/20 text-[10px] font-bold border-none uppercase">
-            Showing {startRange}–{endRange} of {filteredRows.length} Rolls
+            Filtered Results: {filteredRows.length} Rolls
           </Badge>
           {selectedIds.size > 0 && (
             <Button variant="destructive" size="sm" className="h-7 text-[9px] font-black uppercase animate-in zoom-in" onClick={handleBulkDelete}>
@@ -458,11 +389,14 @@ export default function PaperStockPage() {
       {/* THE ERP GRID */}
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
         <div className="flex-1 overflow-auto scrollbar-thin">
-          <Table className="border-separate border-spacing-0 min-w-[2400px]">
+          <Table className="border-separate border-spacing-0 min-w-[2200px]">
             <TableHeader className="sticky top-0 z-40 bg-slate-50 border-b shadow-sm">
               <TableRow>
                 <TableHead className="w-[50px] text-center border-r sticky left-0 bg-slate-50 z-50">
-                  <Checkbox checked={selectedIds.size === paginatedRows.length && paginatedRows.length > 0} onCheckedChange={toggleSelectAll} />
+                  <Checkbox checked={selectedIds.size === paginatedRows.length && paginatedRows.length > 0} onCheckedChange={(val) => {
+                    if (val) setSelectedIds(new Set(paginatedRows.map(r => r.id)));
+                    else setSelectedIds(new Set());
+                  }} />
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r sticky left-[50px] bg-slate-50 z-50">Sl No.</TableHead>
                 <TableHead className="font-black text-[10px] uppercase border-r text-center">Roll No</TableHead>
@@ -490,7 +424,11 @@ export default function PaperStockPage() {
               ) : paginatedRows.map((j, i) => (
                 <TableRow key={j.id} className={cn("hover:bg-slate-50 transition-colors border-b h-10 group", selectedIds.has(j.id) && "bg-primary/5")}>
                   <TableCell className="text-center border-r sticky left-0 bg-white z-20 group-hover:bg-slate-50">
-                    <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={() => toggleSelect(j.id)} />
+                    <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => {
+                      const next = new Set(selectedIds);
+                      if (val) next.add(j.id); else next.delete(j.id);
+                      setSelectedIds(next);
+                    }} />
                   </TableCell>
                   <TableCell className="text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] bg-white z-20 group-hover:bg-slate-50">
                     {(currentPage - 1) * rowsPerPage + i + 1}
@@ -523,11 +461,13 @@ export default function PaperStockPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-blue-50 text-blue-500 hover:bg-blue-500 hover:text-white" onClick={() => handleOpenDialog(j)}>
                         <Pencil className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" onClick={() => {
-                        showModal('CONFIRMATION', 'Delete Roll?', `Remove ${j.rollNo} permanently?`, () => deleteDocumentNonBlocking(doc(firestore!, 'paper_stock', j.id)));
-                      }}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      {isAdmin && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" onClick={() => {
+                          showModal('CONFIRMATION', 'Delete Roll?', `Remove ${j.rollNo} permanently?`, () => deleteDocumentNonBlocking(doc(firestore!, 'paper_stock', j.id)));
+                        }}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -562,14 +502,11 @@ export default function PaperStockPage() {
             </Button>
             <div className="flex items-center gap-1 mx-2">
               <span className="text-xs font-bold">Page</span>
-              <Input className="h-8 w-12 text-center text-xs font-black p-0" value={currentPage} onChange={e => {
-                const val = Number(e.target.value);
-                if (val > 0 && val <= totalPages) setCurrentPage(val);
-              }} />
+              <span className="text-xs font-black px-2">{currentPage}</span>
               <span className="text-xs font-bold text-muted-foreground">of {totalPages || 1}</span>
             </div>
             <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>
-              <ChevronRightIcon className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -585,111 +522,69 @@ export default function PaperStockPage() {
               </DialogTitle>
             </DialogHeader>
             <div className="p-8 grid grid-cols-2 gap-x-8 gap-y-6 bg-white font-sans">
-              {/* Form fields remain the same as previous functional version */}
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Roll No (Automatic)</Label>
-                <Input value={formData.rollNo || "RL-XXXX"} readOnly className="h-10 font-black bg-slate-50 text-teal-600 border-teal-100" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
-                  <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Available">Available</SelectItem>
-                    <SelectItem value="Reserved">Reserved</SelectItem>
-                    <SelectItem value="Used">Used</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5 relative">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Paper Company</Label>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Roll No (Automatic)</Label><Input value={formData.rollNo || "RL-XXXX"} readOnly className="h-10 font-black bg-slate-50 text-teal-600 border-teal-100" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({ ...formData, receivedDate: e.target.value })} required className="h-10 font-bold" /></div>
+              
+              <div className="space-y-1.5 relative"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Company</Label>
                 <div className="flex gap-2">
                   <Select value={formData.paperCompany} onValueChange={v => setFormData({ ...formData, paperCompany: v })}>
                     <SelectTrigger className="h-10 font-bold flex-1"><SelectValue placeholder="Select Company" /></SelectTrigger>
-                    <SelectContent>
-                      {companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                    </SelectContent>
+                    <SelectContent>{companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
                   </Select>
-                  {isAdmin && <Button type="button" size="icon" className="h-10 w-10 shrink-0" variant="outline" onClick={() => toast({ title: "Admin Mode", description: "Use Master Data to add companies." })}><Plus className="h-4 w-4" /></Button>}
+                  {isAdmin && <Button type="button" size="icon" className="h-10 w-10 shrink-0" variant="outline" onClick={() => { setMetadataType('Company'); setIsMetadataModalOpen(true); }}><Plus className="h-4 w-4" /></Button>}
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Paper Type</Label>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Type</Label>
                 <div className="flex gap-2">
                   <Select value={formData.paperType} onValueChange={v => setFormData({ ...formData, paperType: v })}>
                     <SelectTrigger className="h-10 font-bold flex-1"><SelectValue placeholder="Select substrate" /></SelectTrigger>
-                    <SelectContent>
-                      {paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
-                    </SelectContent>
+                    <SelectContent>{paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
                   </Select>
-                  {isAdmin && <Button type="button" size="icon" className="h-10 w-10 shrink-0" variant="outline" onClick={() => toast({ title: "Admin Mode", description: "Use Master Data to add types." })}><Plus className="h-4 w-4" /></Button>}
+                  {isAdmin && <Button type="button" size="icon" className="h-10 w-10 shrink-0" variant="outline" onClick={() => { setMetadataType('Type'); setIsMetadataModalOpen(true); }}><Plus className="h-4 w-4" /></Button>}
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-teal-600">Width (MM)</Label>
-                <Input type="number" value={formData.widthMm} onChange={e => setFormData({ ...formData, widthMm: Number(e.target.value) })} required className="h-10 font-black border-teal-100" />
-              </div>
-              
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-teal-600">Length (MTR)</Label>
-                <Input type="number" value={formData.lengthMeters} onChange={e => setFormData({ ...formData, lengthMeters: Number(e.target.value) })} required className="h-10 font-black border-teal-100" />
-              </div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({ ...formData, gsm: Number(e.target.value) })} required className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Size</Label><Input value={formData.formData?.size || ""} onChange={e => setFormData({ ...formData, size: e.target.value })} placeholder="e.g. 1020mm" className="h-10 font-bold" /></div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-primary">SQM (Auto-Calculated)</Label>
-                <Input value={formData.sqm} readOnly className="h-10 font-black bg-primary/5 text-primary border-primary/20" />
-              </div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-teal-600">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({ ...formData, widthMm: Number(e.target.value) })} required className="h-10 font-black border-teal-100" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-teal-600">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({ ...formData, lengthMeters: Number(e.target.value) })} required className="h-10 font-black border-teal-100" /></div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">GSM</Label>
-                <Input type="number" value={formData.gsm} onChange={e => setFormData({ ...formData, gsm: Number(e.target.value) })} required className="h-10 font-bold" />
-              </div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Quantity (Rolls)</Label><Input type="number" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })} required className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">SQM (Read-Only)</Label><Input value={formData.sqm} readOnly className="h-10 font-black bg-primary/5 text-primary border-primary/20" /></div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Weight (KG)</Label>
-                <Input type="number" value={formData.weightKg} onChange={e => setFormData({ ...formData, weightKg: Number(e.target.value) })} className="h-10 font-bold" />
-              </div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Lot No / Invoice</Label><Input value={formData.lotNo} onChange={e => setFormData({ ...formData, lotNo: e.target.value })} className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} onChange={e => setFormData({ ...formData, jobNo: e.target.value })} className="h-10 font-bold" /></div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Date of Received</Label>
-                <Input type="date" value={formData.receivedDate} onChange={e => setFormData({ ...formData, receivedDate: e.target.value })} required className="h-10 font-bold" />
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Status</Label>
+                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
+                  <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="Available">Available</SelectItem><SelectItem value="Reserved">Reserved</SelectItem><SelectItem value="Used">Used</SelectItem></SelectContent>
+                </Select>
               </div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Location</Label><Input value={formData.location || ""} onChange={e => setFormData({ ...formData, location: e.target.value })} className="h-10 font-bold" /></div>
 
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Purchase Rate (Optional)</Label>
-                <Input type="number" value={formData.purchaseRate} onChange={e => setFormData({ ...formData, purchaseRate: Number(e.target.value) })} className="h-10 font-bold" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Job No</Label>
-                <Input value={formData.jobNo} onChange={e => setFormData({ ...formData, jobNo: e.target.value })} className="h-10 font-bold" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Job Name</Label>
-                <Input value={formData.jobName} onChange={e => setFormData({ ...formData, jobName: e.target.value })} className="h-10 font-bold" />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Lot No / Invoice No</Label>
-                <Input value={formData.lotNo} onChange={e => setFormData({ ...formData, lotNo: e.target.value })} className="h-10 font-bold" />
-              </div>
-
-              <div className="col-span-2 space-y-1.5">
-                <Label className="text-[10px] uppercase font-black text-slate-500">Technical Remarks</Label>
-                <Textarea value={formData.remarks} onChange={e => setFormData({ ...formData, remarks: e.target.value })} className="min-h-[80px]" placeholder="Add production notes..." />
-              </div>
+              <div className="col-span-2 space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({ ...formData, remarks: e.target.value })} className="min-h-[80px]" placeholder="Add production notes..." /></div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t rounded-b-2xl">
               <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black text-lg bg-[#4db6ac] hover:bg-[#3d9e94]">
-                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <ChevronRight className="mr-2 h-6 w-6" />}
-                {editingRoll ? 'Confirm Registry Updates' : 'Authorize substrate intake'}
+                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : editingRoll ? 'Commit Updates' : 'Authorize Substrate Intake'}
               </Button>
             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* QUICK ADD MODAL */}
+      <Dialog open={isMetadataModalOpen} onOpenChange={setIsMetadataModalOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <form onSubmit={handleSaveMetadata}>
+            <DialogHeader><DialogTitle className="uppercase font-black">Add New {metadataType}</DialogTitle></DialogHeader>
+            <div className="py-6 space-y-4">
+              <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Name / Title</Label><Input name="name" required autoFocus /></div>
+            </div>
+            <DialogFooter><Button type="submit" className="w-full h-12 uppercase font-black">Authorize Entry</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
