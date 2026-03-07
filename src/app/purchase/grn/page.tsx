@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -59,6 +58,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { exportPaperStockToExcel } from "@/lib/export-utils"
+import { usePermissions } from "@/components/auth/permission-context"
 
 // --- TYPES & CONSTANTS ---
 type SortField = 'rollNo' | 'receivedDate' | 'gsm' | 'widthMm' | 'sqm' | 'createdAt';
@@ -94,8 +94,12 @@ export default function GRNPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const { hasPermission } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
   
+  // Authorization
+  const isAdmin = hasPermission('admin')
+
   // Dialogs
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRoll, setEditingRoll] = useState<any>(null)
@@ -148,19 +152,11 @@ export default function GRNPage() {
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // Auth check
-  const adminDocRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'adminUsers', user.uid);
-  }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
-  const isAdmin = !!adminData;
-
   const settingsRef = useMemoFirebase(() => (!firestore ? null : doc(firestore, 'roll_settings', 'global_config')), [firestore]);
   const { data: settings } = useDoc(settingsRef);
 
   useEffect(() => {
-    if (!firestore || !isAdmin || !isMounted) return;
+    if (!firestore || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
       const docs = snap.docs.map(d => d.data());
       setOptions(prev => ({
@@ -173,7 +169,7 @@ export default function GRNPage() {
       }));
     });
     return () => unsub();
-  }, [firestore, isAdmin, isMounted]);
+  }, [firestore, isMounted]);
 
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
@@ -218,7 +214,7 @@ export default function GRNPage() {
   }
 
   useEffect(() => {
-    if (!firestore || !isAdmin || !isMounted) return;
+    if (!firestore || !isMounted) return;
     const load = async () => {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
@@ -253,7 +249,7 @@ export default function GRNPage() {
       }
     };
     load();
-  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
+  }, [firestore, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -290,6 +286,8 @@ export default function GRNPage() {
         await deleteDoc(doc(firestore, 'jumbo_stock', roll.id));
         toast({ title: "Roll Deleted" });
         setRefreshTrigger(prev => prev + 1);
+      } catch (e: any) {
+        toast({ variant: "destructive", title: "Delete Failed", description: e.message });
       } finally { setIsDeleting(false); }
     }
   }
@@ -309,6 +307,8 @@ export default function GRNPage() {
       toast({ title: "Bulk Delete Successful" });
       setSelectedIds(new Set());
       setRefreshTrigger(prev => prev + 1);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Bulk Delete Failed", description: e.message });
     } finally { setIsDeleting(false); }
   }
 
@@ -318,13 +318,13 @@ export default function GRNPage() {
     setIsDialogOpen(true);
   }
 
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
+
   const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" suppressHydrationWarning>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-black tracking-tight text-primary uppercase">Substrate Registry (GRN)</h2>
@@ -541,8 +541,10 @@ export default function GRNPage() {
 
             try {
               if (editingRoll) {
-                updateDocumentNonBlocking(doc(firestore!, 'jumbo_stock', editingRoll.id), {
-                  ...data, widthMm: width, lengthMeters: length, sqm, updatedAt: serverTimestamp()
+                await runTransaction(firestore!, async (tx) => {
+                  tx.update(doc(firestore!, 'jumbo_stock', editingRoll.id), {
+                    ...data, widthMm: width, lengthMeters: length, sqm, updatedAt: serverTimestamp()
+                  });
                 });
                 toast({ title: "Roll Updated" });
                 setRefreshTrigger(p => p + 1);
@@ -588,7 +590,7 @@ export default function GRNPage() {
                   <Input 
                     name="receivedDate" 
                     type="date" 
-                    defaultValue={editingRoll?.receivedDate || (new Date().toISOString().split('T')[0])} 
+                    defaultValue={editingRoll?.receivedDate || ""} 
                     required 
                   />
                 </div>

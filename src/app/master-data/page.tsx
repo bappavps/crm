@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -50,6 +49,7 @@ import { updateDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/no
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
+import { usePermissions } from "@/components/auth/permission-context"
 
 // --- TYPES & CONSTANTS ---
 type SortField = 'rollNo' | 'receivedDate' | 'gsm' | 'widthMm' | 'sqm' | 'createdAt';
@@ -108,6 +108,7 @@ export default function MasterDataPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const { hasPermission } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
   
   // Generic CRUD state
@@ -158,15 +159,10 @@ export default function MasterDataPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  // Authorization Hooks
-  const adminDocRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'adminUsers', user.uid);
-  }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
-  const isAdmin = !!adminData;
+  // Authorization
+  const isAdmin = hasPermission('admin')
 
-  // Data Fetching Hooks (Move to top level)
+  // Data Fetching Hooks
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -194,9 +190,8 @@ export default function MasterDataPage() {
 
   useEffect(() => { setIsMounted(true) }, []);
 
-  // Sync unique values for filters
   useEffect(() => {
-    if (!firestore || !isAdmin || !isMounted) return;
+    if (!firestore || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
       const docs = snap.docs.map(d => d.data());
       setOptions(prev => ({
@@ -209,7 +204,7 @@ export default function MasterDataPage() {
       }));
     });
     return () => unsub();
-  }, [firestore, isAdmin, isMounted]);
+  }, [firestore, isMounted]);
 
   const buildQuery = (isCount = false) => {
     if (!firestore) return null;
@@ -254,7 +249,7 @@ export default function MasterDataPage() {
   };
 
   useEffect(() => {
-    if (!firestore || !isAdmin || !isMounted) return;
+    if (!firestore || !isMounted) return;
     const load = async () => {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
@@ -288,7 +283,7 @@ export default function MasterDataPage() {
       }
     };
     load();
-  }, [firestore, isAdmin, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
+  }, [firestore, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -328,6 +323,8 @@ export default function MasterDataPage() {
         await deleteDoc(doc(firestore, collName, item.id));
         toast({ title: "Record Deleted" });
         setRefreshTrigger(p => p + 1);
+      } catch (e: any) {
+        toast({ variant: "destructive", title: "Delete Failed", description: e.message });
       } finally {
         setIsDeleting(false);
       }
@@ -348,6 +345,8 @@ export default function MasterDataPage() {
       setSelectedStockIds(new Set());
       setRefreshTrigger(p => p + 1);
       toast({ title: "Bulk Delete Successful" });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Bulk Delete Failed", description: e.message });
     } finally {
       setIsDeleting(false);
     }
@@ -397,13 +396,22 @@ export default function MasterDataPage() {
     setImportStep(4);
   };
 
-  const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const endIdx = Math.min(currentPage * pageSize, totalRecords);
+  const handleOpenEdit = (item: any, type: string) => {
+    setEditingItem(item);
+    setDialogType(type);
+    if (type === 'paper_stock') {
+      setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
+    }
+    setIsDialogOpen(true);
+  }
 
   if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
 
+  const startIdx = totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endIdx = Math.min(currentPage * pageSize, totalRecords);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" suppressHydrationWarning>
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-primary uppercase">Master Control Panel</h2>
