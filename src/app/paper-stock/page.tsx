@@ -78,9 +78,11 @@ export default function PaperStockPage() {
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
-  // Quick-Add Modals
-  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
-  const [metadataType, setMetadataType] = useState<'Company' | 'Type'>('Company')
+  // Metadata queries - Limited to save quota
+  const companiesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_companies'), limit(100)) : null, [firestore]);
+  const typesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_types'), limit(100)) : null, [firestore]);
+  const { data: companyList } = useCollection(companiesQuery);
+  const { data: paperTypeList } = useCollection(typesQuery);
 
   // Validation State
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -106,8 +108,7 @@ export default function PaperStockPage() {
     weightKg: [],
     jobNo: [],
     jobName: [],
-    lotNo: [],
-    dateOfSlit: []
+    lotNo: []
   })
 
   const [formData, setFormData] = useState({
@@ -140,12 +141,6 @@ export default function PaperStockPage() {
     setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
   }, [])
 
-  // Metadata queries - Limited to save quota
-  const companiesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_companies'), limit(100)) : null, [firestore]);
-  const typesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_types'), limit(100)) : null, [firestore]);
-  const { data: companyList } = useCollection(companiesQuery);
-  const { data: paperTypeList } = useCollection(typesQuery);
-
   // PRIMARY REGISTRY QUERY (Optimized to 100 results to avoid Quota Exceeded)
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -160,7 +155,7 @@ export default function PaperStockPage() {
     if (key === 'paperCompany') return companyList?.map(c => c.name).sort() || [];
     if (key === 'paperType') return paperTypeList?.map(t => t.name).sort() || [];
     const values = rolls.map(r => r[key]).filter(v => v !== undefined && v !== null && v !== "");
-    return Array.from(new Set(values)).sort();
+    return Array.from(new Set(values.map(String))).sort();
   }
 
   const handleInputChange = (name: string, value: any) => {
@@ -209,13 +204,13 @@ export default function PaperStockPage() {
   }, [rolls, filters]);
 
   const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
+  const startRange = filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
+  const endRange = Math.min(currentPage * rowsPerPage, filteredRows.length);
+
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
     return filteredRows.slice(start, start + rowsPerPage);
   }, [filteredRows, currentPage, rowsPerPage]);
-
-  const startRange = filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-  const endRange = Math.min(currentPage * rowsPerPage, filteredRows.length);
 
   const toggleMultiFilter = (key: string, value: any) => {
     setFilters((prev: any) => {
@@ -280,13 +275,22 @@ export default function PaperStockPage() {
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
+    
+    // GUARD: Prevent multiple submissions
     setIsProcessing(true);
+    
+    const finalData = { 
+      ...formData, 
+      sqm: calculatedSqm,
+      updatedAt: serverTimestamp(),
+      updatedById: user.uid
+    };
 
-    const finalData = { ...formData, sqm: calculatedSqm };
+    console.log("Committing technical record:", editingRoll ? "Update" : "New", finalData);
 
     try {
       if (editingRoll) {
-        await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), { ...finalData, updatedAt: serverTimestamp() });
+        await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
         setIsDialogOpen(false);
         showModal('SUCCESS', 'Record Committed', 'Technical updates verified and saved.', undefined, true);
       } else {
@@ -297,35 +301,27 @@ export default function PaperStockPage() {
           const rollId = `RL-${nextNum.toString().padStart(4, '0')}`;
           const newDocRef = doc(collection(firestore, 'paper_stock'), rollId);
           
-          transaction.set(newDocRef, { ...finalData, rollNo: rollId, createdAt: serverTimestamp(), createdById: user.uid, id: rollId });
+          const newRollData = { 
+            ...finalData, 
+            rollNo: rollId, 
+            createdAt: serverTimestamp(), 
+            createdById: user.uid, 
+            id: rollId 
+          };
+          
+          transaction.set(newDocRef, newRollData);
           transaction.set(counterRef, { current_number: nextNum }, { merge: true });
         });
         setIsDialogOpen(false);
-        showModal('SUCCESS', 'Roll Created', `Technical ID generation complete.`, undefined, true);
+        showModal('SUCCESS', 'Roll Created', `Technical ID generated: RL-${formData.rollNo}`, undefined, true);
       }
     } catch (error: any) {
-      showModal('ERROR', 'Transaction Failed', error.message || 'Firestore write denied.');
+      console.error("Technical write failed:", error);
+      showModal('ERROR', 'Transaction Failed', error.message || 'Firestore write denied. Your usage quota may have been exceeded.');
     } finally {
       setIsProcessing(false);
     }
   };
-
-  const handleSaveMetadata = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const formDataObj = new FormData(e.currentTarget);
-    const name = formDataObj.get('name') as string;
-    const col = metadataType === 'Company' ? 'paper_companies' : 'paper_types';
-    if (!name) return;
-    try {
-      const docId = name.toLowerCase().replace(/\s+/g, '-');
-      await setDoc(doc(firestore!, col, docId), { name, createdAt: serverTimestamp() });
-      handleInputChange(metadataType === 'Company' ? 'paperCompany' : 'paperType', name);
-      setIsMetadataModalOpen(false);
-      showModal('SUCCESS', 'System Metadata Saved', `${metadataType} added to directory.`, undefined, true);
-    } catch (err: any) {
-      showModal('ERROR', 'Metadata Error', err.message);
-    }
-  }
 
   const handleBulkDelete = () => {
     if (!firestore || selectedIds.size === 0) return;
@@ -358,8 +354,8 @@ export default function PaperStockPage() {
             />
           </div>
           <Button variant="ghost" size="sm" onClick={() => setFilters({
-            search: "", paperCompany: [], paperType: [], status: [], widthMm: [], lengthMeters: [], sqm: [], gsm: [], weightKg: [], jobNo: [], jobName: [], lotNo: [], dateOfSlit: []
-          })} className="text-[10px] font-black uppercase text-destructive tracking-widest hover:bg-destructive/5"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
+            search: "", paperCompany: [], paperType: [], status: [], widthMm: [], lengthMeters: [], sqm: [], gsm: [], weightKg: [], jobNo: [], jobName: [], lotNo: []
+          })} className="text-[10px] font-black uppercase text-destructive tracking-widest hover:bg-destructive/5"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
         </div>
         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-50">
           <MultiSelectFilter label="Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
@@ -367,9 +363,12 @@ export default function PaperStockPage() {
           <MultiSelectFilter label="Status" field="status" options={['Available', 'Reserved', 'Used']} />
           <MultiSelectFilter label="Width" field="widthMm" options={getUniqueOptions('widthMm')} />
           <MultiSelectFilter label="Length" field="lengthMeters" options={getUniqueOptions('lengthMeters')} />
+          <MultiSelectFilter label="SQM" field="sqm" options={getUniqueOptions('sqm')} />
           <MultiSelectFilter label="GSM" field="gsm" options={getUniqueOptions('gsm')} />
-          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
+          <MultiSelectFilter label="Weight" field="weightKg" options={getUniqueOptions('weightKg')} />
           <MultiSelectFilter label="Job ID" field="jobNo" options={getUniqueOptions('jobNo')} />
+          <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
         </div>
       </div>
 
@@ -496,22 +495,16 @@ export default function PaperStockPage() {
                 </Select>
               </div>
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">3. Paper Company</Label>
-                <div className="flex gap-2">
-                  <Select value={formData.paperCompany} onValueChange={v => handleInputChange('paperCompany', v)}>
-                    <SelectTrigger className="h-11 font-bold flex-1 border-2"><SelectValue placeholder="Select Supplier" /></SelectTrigger>
-                    <SelectContent>{companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {isAdmin && <Button type="button" size="icon" className="h-11 w-11 shrink-0 bg-[#4db6ac] hover:bg-[#3d9e94]" onClick={() => { setMetadataType('Company'); setIsMetadataModalOpen(true); }}><Plus className="h-5 w-5" /></Button>}
-                </div>
+                <Select value={formData.paperCompany} onValueChange={v => handleInputChange('paperCompany', v)}>
+                  <SelectTrigger className="h-11 font-bold border-2"><SelectValue placeholder="Select Supplier" /></SelectTrigger>
+                  <SelectContent>{companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">4. Paper Type (Substrate)</Label>
-                <div className="flex gap-2">
-                  <Select value={formData.paperType} onValueChange={v => handleInputChange('paperType', v)}>
-                    <SelectTrigger className="h-11 font-bold flex-1 border-2"><SelectValue placeholder="Select Material" /></SelectTrigger>
-                    <SelectContent>{paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {isAdmin && <Button type="button" size="icon" className="h-11 w-11 shrink-0 bg-[#4db6ac] hover:bg-[#3d9e94]" onClick={() => { setMetadataType('Type'); setIsMetadataModalOpen(true); }}><Plus className="h-5 w-5" /></Button>}
-                </div>
+                <Select value={formData.paperType} onValueChange={v => handleInputChange('paperType', v)}>
+                  <SelectTrigger className="h-11 font-bold border-2"><SelectValue placeholder="Select Material" /></SelectTrigger>
+                  <SelectContent>{paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">5. Width (MM)</Label>
@@ -557,20 +550,10 @@ export default function PaperStockPage() {
               </div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t rounded-b-2xl">
-              <Button type="submit" disabled={isProcessing} className="w-full h-16 uppercase font-black text-xl bg-[#4db6ac] hover:bg-[#3d9e94] transition-all shadow-2xl rounded-xl border-4 border-white/20">
+              <Button type="submit" disabled={isProcessing || Object.keys(errors).length > 0} className="w-full h-16 uppercase font-black text-xl bg-[#4db6ac] hover:bg-[#3d9e94] transition-all shadow-2xl rounded-xl border-4 border-white/20">
                 {isProcessing ? <Loader2 className="animate-spin mr-2 h-6 w-6" /> : editingRoll ? 'Commit Technical Updates' : 'Authorize Production Entry'}
               </Button>
             </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isMetadataModalOpen} onOpenChange={setIsMetadataModalOpen}>
-        <DialogContent className="sm:max-w-[400px] border-none shadow-2xl rounded-2xl">
-          <form onSubmit={handleSaveMetadata}>
-            <DialogHeader className="p-6 bg-primary text-white rounded-t-2xl"><DialogTitle className="uppercase font-black text-lg tracking-tight">Add New {metadataType}</DialogTitle></DialogHeader>
-            <div className="p-8 space-y-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Name</Label><Input name="name" required autoFocus className="h-12 text-lg font-black border-2 border-primary/20" /></div></div>
-            <DialogFooter className="p-6 pt-0"><Button type="submit" className="w-full h-12 uppercase font-black tracking-widest shadow-xl">Save System Entry</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
