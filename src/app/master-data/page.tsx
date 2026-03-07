@@ -55,13 +55,13 @@ import {
 } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCollection, useFirestore, useMemoFirebase, useUser, useDoc } from "@/firebase"
-import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot, runTransaction } from "firebase/firestore"
+import { collection, doc, query, where, orderBy, getDocs, writeBatch, serverTimestamp, getCountFromServer, limit, startAfter, deleteDoc, onSnapshot } from "firebase/firestore"
 import { updateDocumentNonBlocking, addDocumentNonBlocking, setDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { exportPaperStockToExcel } from "@/lib/export-utils"
 
-// --- TYPES ---
+// --- TYPES & CONSTANTS ---
 type SortField = 'rollNo' | 'receivedDate' | 'gsm' | 'widthMm' | 'sqm' | 'createdAt';
 type SortOrder = 'asc' | 'desc';
 
@@ -106,6 +106,12 @@ const SYSTEM_FIELDS = [
   { label: "Company Roll No", value: "companyRollNo" },
   { label: "Location", value: "location" },
   { label: "Supplier", value: "supplier" }
+];
+
+const TEMPLATE_HEADERS = [
+  "RELL NO", "PAPER COMPANY", "PAPER TYPE", "WIDTH (MM)", "LENGTH (MTR)", 
+  "SQM", "GSM", "WEIGHT(KG)", "Purchase Rate", "WASTAGE", 
+  "DATE OF RECEIVED", "Lot no/BATCH NO", "Company Rell no", "Location", "Supplier"
 ];
 
 export default function MasterDataPage() {
@@ -167,10 +173,10 @@ export default function MasterDataPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
-  // Master Data Queries
+  // Top-Level Data Hooks (Ensures consistent order)
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
 
@@ -220,14 +226,12 @@ export default function MasterDataPage() {
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
-    let hasInOperator = false;
     const addSafeFilter = (field: string, values: any[]) => {
       if (!values || values.length === 0) return;
       if (values.length === 1) {
         constraints.push(where(field, '==', values[0]));
-      } else if (!hasInOperator) {
+      } else {
         constraints.push(where(field, 'in', values.slice(0, 10)));
-        hasInOperator = true;
       }
     };
 
@@ -238,18 +242,13 @@ export default function MasterDataPage() {
     addSafeFilter('location', filters.locations);
     addSafeFilter('status', filters.statuses);
 
-    let hasRange = false;
     if (filters.lotNo) {
       constraints.push(where('lotNo', '>=', filters.lotNo));
       constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
-      hasRange = true;
     } else if (filters.grnNo) {
       constraints.push(where('rollNo', '>=', filters.grnNo));
       constraints.push(where('rollNo', '<=', filters.grnNo + '\uf8ff'));
-      hasRange = true;
-    }
-
-    if (!hasRange && (filters.startDate || filters.endDate)) {
+    } else if (filters.startDate || filters.endDate) {
       if (filters.startDate) constraints.push(where('receivedDate', '>=', filters.startDate));
       if (filters.endDate) constraints.push(where('receivedDate', '<=', filters.endDate));
     }
@@ -286,13 +285,9 @@ export default function MasterDataPage() {
               next[currentPage] = last;
               return next;
             });
-          } else if (currentPage > 1) {
-            setCurrentPage(1);
-            setPageStack([null]);
           }
         }
       } catch (e: any) {
-        console.error("Registry Query Error:", e);
         setPagedJumbos([]);
         if (e.message?.includes("index")) {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
@@ -323,13 +318,15 @@ export default function MasterDataPage() {
     setPageStack([null]);
   };
 
-  const handleOpenEdit = (item: any, type: string) => {
-    setEditingItem(item);
-    setDialogType(type === 'paper_stock' ? 'jumbo_stock' : type);
-    if (type === 'jumbo_stock' || type === 'paper_stock') {
-      setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      await exportPaperStockToExcel(firestore!, filters as any);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Export Failed", description: e.message });
+    } finally {
+      setIsExporting(false);
     }
-    setIsDialogOpen(true);
   };
 
   const handleSingleDelete = async (item: any, type: string) => {
@@ -366,17 +363,6 @@ export default function MasterDataPage() {
     }
   };
 
-  const handleExport = async () => {
-    setIsExporting(true);
-    try {
-      await exportPaperStockToExcel(firestore!, filters as any);
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Export Failed", description: e.message });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const handleExcelImport = async () => {
     if (!firestore || !user || !excelData.length) return;
     const rollNoMapping = Object.keys(columnMapping).find(k => columnMapping[k] === 'rollNo');
@@ -407,6 +393,7 @@ export default function MasterDataPage() {
           }
           data[systemKey] = val;
         });
+        // Force auto-SQM
         const w = Number(data.widthMm) || 0;
         const l = Number(data.lengthMeters) || 0;
         data.sqm = Number(((w * l) / 1000).toFixed(2));
@@ -437,13 +424,13 @@ export default function MasterDataPage() {
 
       <Tabs defaultValue="raw_materials" className="w-full">
         <TabsList className="bg-muted/50 p-1 mb-6 flex overflow-x-auto h-auto whitespace-nowrap rounded-xl">
-          <TabsTrigger value="raw_materials" className="gap-2 font-bold"><FlaskConical className="h-4 w-4" /> Raw Materials</TabsTrigger>
-          <TabsTrigger value="paper_stock" className="gap-2 font-bold"><Package className="h-4 w-4" /> Paper Stock</TabsTrigger>
-          <TabsTrigger value="boms" className="gap-2 font-bold"><Layers className="h-4 w-4" /> BOM Master</TabsTrigger>
-          <TabsTrigger value="suppliers" className="gap-2 font-bold"><Truck className="h-4 w-4" /> Suppliers</TabsTrigger>
-          <TabsTrigger value="machines" className="gap-2 font-bold"><Factory className="h-4 w-4" /> Machines</TabsTrigger>
-          <TabsTrigger value="cylinders" className="gap-2 font-bold"><Ruler className="h-4 w-4" /> Cylinders</TabsTrigger>
-          <TabsTrigger value="customers" className="gap-2 font-bold"><Users className="h-4 w-4" /> Clients</TabsTrigger>
+          <TabsTrigger value="raw_materials" className="gap-2 font-bold px-6">Raw Materials</TabsTrigger>
+          <TabsTrigger value="paper_stock" className="gap-2 font-bold px-6">Paper Stock</TabsTrigger>
+          <TabsTrigger value="boms" className="gap-2 font-bold px-6">BOM Master</TabsTrigger>
+          <TabsTrigger value="suppliers" className="gap-2 font-bold px-6">Suppliers</TabsTrigger>
+          <TabsTrigger value="machines" className="gap-2 font-bold px-6">Machines</TabsTrigger>
+          <TabsTrigger value="cylinders" className="gap-2 font-bold px-6">Cylinders</TabsTrigger>
+          <TabsTrigger value="customers" className="gap-2 font-bold px-6">Clients</TabsTrigger>
         </TabsList>
         
         <TabsContent value="paper_stock">
@@ -459,8 +446,7 @@ export default function MasterDataPage() {
                 {isAdmin && (
                   <>
                     <Button variant="outline" size="sm" onClick={() => {
-                      const sampleData = [{ "RELL NO": "TLC-1001", "PAPER COMPANY": "Avery", "PAPER TYPE": "CHROMO", "WIDTH (MM)": 1020, "LENGTH (MTR)": 3000, "GSM": 80, "LOT NO": "LOT-998" }];
-                      const ws = XLSX.utils.json_to_sheet(sampleData);
+                      const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
                       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template");
                       XLSX.writeFile(wb, "paper_stock_template.xlsx");
                     }}><Download className="h-4 w-4 mr-2" /> Template</Button>
@@ -582,7 +568,7 @@ export default function MasterDataPage() {
                                 <p className="text-sm text-muted-foreground">This specific filter combination requires a database index. Please click the button below to authorize it in the Firebase Console.</p>
                               </div>
                               <Button asChild className="bg-amber-600 hover:bg-amber-700">
-                                <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Create Registry Index</a>
+                                <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
                               </Button>
                             </div>
                           </TableCell>
@@ -617,11 +603,6 @@ export default function MasterDataPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
-                        <TableRow>
-                          <TableCell colSpan={15} className="text-center py-20 text-muted-foreground italic">No matching paper stock records found.</TableCell>
-                        </TableRow>
-                      )}
                     </TableBody>
                   </Table>
                 </div>
