@@ -18,7 +18,7 @@ import {
   ArrowRight,
   AlertCircle
 } from "lucide-react"
-import { useFirestore, useUser } from "@/firebase"
+import { useFirestore, useUser, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
@@ -122,7 +122,6 @@ export default function StockImportPage() {
       let imported = 0;
       const totalRows = excelData.length;
 
-      // Use 500 row batches for high performance
       for (let i = 0; i < totalRows; i += 500) {
         const batch = writeBatch(firestore);
         const chunk = excelData.slice(i, i + 500);
@@ -145,7 +144,6 @@ export default function StockImportPage() {
             data[key] = val;
           });
 
-          // Global SQM formula enforcement: (Width/1000) * Length * Quantity
           const w = Number(data.widthMm) || 0;
           const l = Number(data.lengthMeters) || 0;
           const q = Number(data.quantity) || 1;
@@ -155,7 +153,15 @@ export default function StockImportPage() {
           imported++;
         });
 
-        await batch.commit();
+        await batch.commit().catch(async (serverError) => {
+          const permissionError = new FirestorePermissionError({
+            path: 'paper_stock',
+            operation: 'write',
+          });
+          errorEmitter.emit('permission-error', permissionError);
+          throw serverError;
+        });
+        
         setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
       }
 

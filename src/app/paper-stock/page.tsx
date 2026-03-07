@@ -44,11 +44,9 @@ import {
   orderBy, 
   limit, 
   onSnapshot,
-  deleteDoc,
   serverTimestamp,
-  setDoc,
-  updateDoc
 } from "firebase/firestore"
+import { updateDocumentNonBlocking, setDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/components/auth/permission-context"
@@ -171,21 +169,16 @@ export default function PaperStockPage() {
   }, [firestore, isMounted, filters]);
 
   const handleDeleteRoll = (roll: any) => {
-    showModal('CONFIRMATION', 'Delete Roll?', `Remove ${roll.rollNo} from registry permanently?`, async () => {
+    showModal('CONFIRMATION', 'Delete Roll?', `Remove ${roll.rollNo} from registry permanently?`, () => {
       setIsProcessing(true);
-      try {
-        await deleteDoc(doc(firestore!, 'paper_stock', roll.id));
-        closeModal();
-        showModal('SUCCESS', 'Roll Deleted Successfully', undefined, undefined, true);
-      } catch (err: any) {
-        showModal('ERROR', 'System Error', err.message);
-      } finally {
-        setIsProcessing(false);
-      }
+      deleteDocumentNonBlocking(doc(firestore!, 'paper_stock', roll.id));
+      closeModal();
+      showModal('SUCCESS', 'Roll Deleted Successfully', undefined, undefined, true);
+      setIsProcessing(false);
     });
   }
 
-  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSave = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsProcessing(true);
     const form = new FormData(e.currentTarget);
@@ -196,35 +189,30 @@ export default function PaperStockPage() {
     const quantity = Number(data.quantity) || 1;
     const sqm = Number(((width / 1000) * length * quantity).toFixed(2));
 
-    try {
-      const rollId = String(data.rollNo);
-      const docRef = doc(firestore!, 'paper_stock', rollId);
-      
-      const payload = {
-        ...data,
-        widthMm: width,
-        lengthMeters: length,
-        quantity,
-        gsm: Number(data.gsm),
-        purchaseRate: Number(data.purchaseRate),
-        sqm,
-        updatedAt: serverTimestamp(),
-        ...(editingRoll ? {} : { status: 'Available', createdAt: serverTimestamp(), createdById: user?.uid })
-      };
+    const rollId = String(data.rollNo);
+    const docRef = doc(firestore!, 'paper_stock', rollId);
+    
+    const payload = {
+      ...data,
+      widthMm: width,
+      lengthMeters: length,
+      quantity,
+      gsm: Number(data.gsm),
+      purchaseRate: Number(data.purchaseRate),
+      sqm,
+      updatedAt: serverTimestamp(),
+      ...(editingRoll ? {} : { status: 'Available', createdAt: serverTimestamp(), createdById: user?.uid })
+    };
 
-      if (editingRoll) {
-        await updateDoc(docRef, payload);
-      } else {
-        await setDoc(docRef, payload, { merge: true });
-      }
-
-      setIsDialogOpen(false);
-      showModal('SUCCESS', editingRoll ? 'Roll Updated Successfully' : 'Roll Added Successfully', undefined, undefined, true);
-    } catch (err: any) {
-      showModal('ERROR', 'Save Failed', err.message);
-    } finally {
-      setIsProcessing(false);
+    if (editingRoll) {
+      updateDocumentNonBlocking(docRef, payload);
+    } else {
+      setDocumentNonBlocking(docRef, payload, { merge: true });
     }
+
+    setIsDialogOpen(false);
+    showModal('SUCCESS', editingRoll ? 'Roll Updated Successfully' : 'Roll Added Successfully', undefined, undefined, true);
+    setIsProcessing(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -393,9 +381,11 @@ export default function PaperStockPage() {
                       <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-amber-50 text-amber-500 hover:bg-amber-500 hover:text-white transition-all shadow-sm">
                         <Eye className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm" onClick={() => handleDeleteRoll(j)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      {hasPermission('admin') && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm" onClick={() => handleDeleteRoll(j)}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
