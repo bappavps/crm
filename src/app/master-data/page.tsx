@@ -24,7 +24,6 @@ import {
   Trash2, 
   Pencil, 
   Loader2, 
-  CheckCircle2, 
   ChevronLeft, 
   ChevronRight, 
   ArrowUpDown, 
@@ -37,7 +36,8 @@ import {
   Sparkles,
   AlertTriangle,
   ExternalLink,
-  Info
+  Info,
+  Copy
 } from "lucide-react"
 import {
   Popover,
@@ -113,12 +113,10 @@ export default function MasterDataPage() {
   const { hasPermission } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
   
-  // Generic CRUD state
+  // State variables declared at the top level
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [dialogType, setDialogType] = useState<string>("raw_materials")
   const [editingItem, setEditingItem] = useState<any>(null)
-
-  // Paper Stock State
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importStep, setImportStep] = useState(1) 
   const [excelData, setExcelData] = useState<any[]>([])
@@ -126,19 +124,11 @@ export default function MasterDataPage() {
   const [columnMapping, setColumnMapping] = useState<Record<string, string>>({})
   const [uploadProgress, setUploadProgress] = useState(0)
   const [importSummary, setImportSummary] = useState<any>(null)
-  
   const [intakeForm, setIntakeForm] = useState({ widthMm: 0, lengthMeters: 0 })
-  const liveSqm = useMemo(() => {
-    const w = intakeForm.widthMm || 0;
-    const l = intakeForm.lengthMeters || 0;
-    return w > 0 && l > 0 ? ((w * l) / 1000).toFixed(2) : "0.00";
-  }, [intakeForm]);
-
   const [isExporting, setIsExporting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
-  
   const [selectedStockIds, setSelectedStockIds] = useState<Set<string>>(new Set())
   const [pageSize, setPageSize] = useState<number>(20)
   const [currentPage, setCurrentPage] = useState(1)
@@ -147,11 +137,10 @@ export default function MasterDataPage() {
   const [pagedJumbos, setPagedJumbos] = useState<any[]>([])
   const [isPageLoading, setIsPageLoading] = useState(false)
   const [indexErrorUrl, setIndexErrorUrl] = useState<string | null>(null)
-  
+  const [usingFallbackQuery, setUsingFallbackQuery] = useState(false)
   const [sortField, setSortField] = useState<SortField>('receivedDate')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS)
-
   const [options, setOptions] = useState({
     companies: [] as string[],
     types: [] as string[],
@@ -161,31 +150,37 @@ export default function MasterDataPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
-  // Authorization
-  const isAdmin = hasPermission('admin')
+  const liveSqm = useMemo(() => {
+    const w = intakeForm.widthMm || 0;
+    const l = intakeForm.lengthMeters || 0;
+    return w > 0 && l > 0 ? ((w / 1000) * l).toFixed(2) : "0.00";
+  }, [intakeForm]);
 
-  // Top-level hooks
+  const activeFiltersCount = useMemo(() => {
+    return Object.entries(filters).reduce((acc, [k, v]) => {
+      if (Array.isArray(v)) return acc + v.length;
+      return v ? acc + 1 : acc;
+    }, 0);
+  }, [filters]);
+
+  const isAdmin = hasPermission('admin');
+
+  // Firestore Queries - Declared at top level
   const rawMaterialsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'raw_materials') : null), [firestore]);
   const { data: rawMaterials } = useCollection(rawMaterialsQuery);
-
   const suppliersQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'suppliers') : null), [firestore]);
   const { data: suppliers } = useCollection(suppliersQuery);
-
   const machinesQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'machines') : null), [firestore]);
   const { data: machines } = useCollection(machinesQuery);
-
   const cylindersQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'cylinders') : null), [firestore]);
   const { data: cylinders } = useCollection(cylindersQuery);
-
   const customersQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'customers') : null), [firestore]);
   const { data: customers } = useCollection(customersQuery);
-
   const bomsQuery = useMemoFirebase(() => (firestore ? collection(firestore, 'boms') : null), [firestore]);
   const { data: boms } = useCollection(bomsQuery);
 
   useEffect(() => { setIsMounted(true) }, []);
 
-  // Sync Data Options
   useEffect(() => {
     if (!firestore || !isMounted) return;
     const unsub = onSnapshot(collection(firestore, 'jumbo_stock'), (snap) => {
@@ -202,14 +197,7 @@ export default function MasterDataPage() {
     return () => unsub();
   }, [firestore, isMounted]);
 
-  const activeFiltersCount = useMemo(() => {
-    return Object.entries(filters).reduce((acc, [k, v]) => {
-      if (Array.isArray(v)) return acc + v.length;
-      return v ? acc + 1 : acc;
-    }, 0);
-  }, [filters]);
-
-  const buildQuery = (isCount = false) => {
+  const buildQuery = (isCount = false, skipSort = false) => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
@@ -249,10 +237,12 @@ export default function MasterDataPage() {
 
     if (isCount) return query(q, ...constraints);
 
-    if (rangeField) {
-      constraints.push(orderBy(rangeField, rangeField === 'receivedDate' ? sortOrder : 'asc'));
-    } else {
-      constraints.push(orderBy(sortField, sortOrder));
+    if (!skipSort) {
+      if (rangeField) {
+        constraints.push(orderBy(rangeField, rangeField === 'receivedDate' ? sortOrder : 'asc'));
+      } else {
+        constraints.push(orderBy(sortField, sortOrder));
+      }
     }
 
     const cursor = pageStack[currentPage - 1];
@@ -267,6 +257,7 @@ export default function MasterDataPage() {
     const load = async () => {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
+      setUsingFallbackQuery(false);
       setPagedJumbos([]); 
 
       try {
@@ -289,10 +280,22 @@ export default function MasterDataPage() {
           }
         }
       } catch (e: any) {
-        setPagedJumbos([]);
         if (e.message?.includes("index") || e.code === 'failed-precondition') {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
-          if (match) setIndexErrorUrl(match[0]);
+          setIndexErrorUrl(match ? match[0] : "unknown");
+          
+          setUsingFallbackQuery(true);
+          try {
+            const fallbackQ = buildQuery(false, true);
+            if (fallbackQ) {
+              const snap = await getDocs(fallbackQ);
+              setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            }
+          } catch (err) {
+            setPagedJumbos([]);
+          }
+        } else {
+          setPagedJumbos([]);
         }
       } finally {
         setIsPageLoading(false);
@@ -300,6 +303,12 @@ export default function MasterDataPage() {
     };
     load();
   }, [firestore, isMounted, filters, sortField, sortOrder, pageSize, currentPage, refreshTrigger]);
+
+  const resetFilters = () => {
+    setFilters(INITIAL_FILTERS);
+    setCurrentPage(1);
+    setPageStack([null]);
+  };
 
   const handleFilterChange = (field: keyof FilterState, value: any) => {
     setFilters(prev => ({ ...prev, [field]: value }));
@@ -313,21 +322,13 @@ export default function MasterDataPage() {
     handleFilterChange(field, next);
   };
 
-  const resetFilters = () => {
-    setFilters(INITIAL_FILTERS);
-    setCurrentPage(1);
-    setPageStack([null]);
-  };
-
   const handleExport = async () => {
     setIsExporting(true);
     try {
       await exportPaperStockToExcel(firestore!, filters as any);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Export Failed", description: e.message });
-    } finally {
-      setIsExporting(false);
-    }
+    } finally { setIsExporting(false); }
   };
 
   const handleSingleDelete = async (item: any, type: string) => {
@@ -341,9 +342,7 @@ export default function MasterDataPage() {
         setRefreshTrigger(p => p + 1);
       } catch (e: any) {
         toast({ variant: "destructive", title: "Delete Failed", description: e.message });
-      } finally {
-        setIsDeleting(false);
-      }
+      } finally { setIsDeleting(false); }
     }
   };
 
@@ -363,9 +362,7 @@ export default function MasterDataPage() {
       toast({ title: "Bulk Delete Successful" });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Bulk Delete Failed", description: e.message });
-    } finally {
-      setIsDeleting(false);
-    }
+    } finally { setIsDeleting(false); }
   };
 
   const handleExcelImport = async () => {
@@ -400,7 +397,7 @@ export default function MasterDataPage() {
         });
         const w = Number(data.widthMm) || 0;
         const l = Number(data.lengthMeters) || 0;
-        data.sqm = Number(((w * l) / 1000).toFixed(2));
+        data.sqm = Number(((w / 1000) * l).toFixed(2));
         batch.set(doc(collection(firestore, 'jumbo_stock')), data);
         imported++;
       });
@@ -419,6 +416,13 @@ export default function MasterDataPage() {
       setIntakeForm({ widthMm: item.widthMm || 0, lengthMeters: item.lengthMeters || 0 });
     }
     setIsDialogOpen(true);
+  }
+
+  const handleCopyIndexUrl = () => {
+    if (indexErrorUrl) {
+      navigator.clipboard.writeText(indexErrorUrl);
+      toast({ title: "Copied", description: "Link ready for manual navigation." });
+    }
   }
 
   if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>;
@@ -517,6 +521,30 @@ export default function MasterDataPage() {
               </Card>
             )}
 
+            {usingFallbackQuery && indexErrorUrl && (
+              <Card className="bg-amber-50 border-amber-200 border-2">
+                <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-amber-900 text-sm">Index Required for Chronological Sorting</p>
+                      <p className="text-xs text-amber-700">Displaying unordered filtered results. Authorize the database index to enable sorting for this specific combination.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="h-8 text-[10px] border-amber-300" onClick={handleCopyIndexUrl}>
+                      <Copy className="h-3 w-3 mr-1" /> Copy Index URL
+                    </Button>
+                    <Button asChild size="sm" className="h-8 text-[10px] bg-amber-600 hover:bg-amber-700">
+                      <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3 w-3 mr-1" /> Create Index
+                      </a>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="border-none shadow-xl overflow-hidden relative">
               <div className="p-4 bg-muted/10 border-b flex justify-between items-center">
                 <div className="flex items-center gap-4">
@@ -571,27 +599,6 @@ export default function MasterDataPage() {
                         <TableRow>
                           <TableCell colSpan={20} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell>
                         </TableRow>
-                      ) : indexErrorUrl ? (
-                        <TableRow>
-                          <TableCell colSpan={20} className="py-20">
-                            <div className="flex flex-col items-center gap-4 text-center max-w-2xl mx-auto">
-                              <AlertTriangle className="h-12 w-12 text-amber-500" />
-                              <div className="space-y-2">
-                                <p className="font-bold text-lg">Registry Index Required</p>
-                                <p className="text-sm text-muted-foreground">This filter combination requires a database index. Please authorize it in the Firebase Console.</p>
-                              </div>
-                              <div className="flex flex-col gap-3 w-full max-w-md">
-                                <Button asChild className="bg-amber-600 hover:bg-amber-700 h-12">
-                                  <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
-                                </Button>
-                                <div className="p-3 bg-muted rounded-md border border-dashed text-left">
-                                  <p className="text-[10px] font-black uppercase text-muted-foreground mb-1">Backup Link (Manual Copy):</p>
-                                  <p className="text-[9px] break-all font-mono text-primary select-all">{indexErrorUrl}</p>
-                                </div>
-                              </div>
-                            </div>
-                          </TableCell>
-                        </TableRow>
                       ) : pagedJumbos.map((j, idx) => (
                         <TableRow key={j.id} className="hover:bg-primary/5 h-12">
                           <TableCell className="sticky left-0 bg-background z-10">
@@ -622,7 +629,7 @@ export default function MasterDataPage() {
                           </TableCell>
                         </TableRow>
                       ))}
-                      {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
+                      {pagedJumbos.length === 0 && !isPageLoading && (
                         <TableRow><TableCell colSpan={20} className="text-center py-20 text-muted-foreground italic">No matching records found.</TableCell></TableRow>
                       )}
                     </TableBody>
@@ -891,7 +898,7 @@ export default function MasterDataPage() {
             const collName = (dialogType === 'paper_stock' || dialogType === 'jumbo_stock') ? 'jumbo_stock' : dialogType;
             if (collName === 'jumbo_stock') {
               data.widthMm = Number(data.widthMm); data.lengthMeters = Number(data.lengthMeters); data.gsm = Number(data.gsm);
-              data.sqm = Number(((data.widthMm * data.lengthMeters) / 1000).toFixed(2));
+              data.sqm = Number(((data.widthMm / 1000) * data.lengthMeters).toFixed(2));
             } else if (data.rate_per_unit) {
               data.rate_per_unit = Number(data.rate_per_unit);
             }

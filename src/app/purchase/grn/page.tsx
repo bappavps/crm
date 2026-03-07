@@ -26,7 +26,9 @@ import {
   AlertTriangle,
   Pencil,
   ExternalLink,
-  Info
+  Info,
+  Copy,
+  CheckCircle2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -111,7 +113,7 @@ export default function GRNPage() {
   const liveSqm = useMemo(() => {
     const w = intakeForm.widthMm || 0;
     const l = intakeForm.lengthMeters || 0;
-    return w > 0 && l > 0 ? ((w * l) / 1000).toFixed(2) : "0.00";
+    return w > 0 && l > 0 ? ((w / 1000) * l).toFixed(2) : "0.00";
   }, [intakeForm]);
 
   // Data States
@@ -121,6 +123,7 @@ export default function GRNPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [indexErrorUrl, setIndexErrorUrl] = useState<string | null>(null)
+  const [usingFallbackQuery, setUsingFallbackQuery] = useState(false)
   
   // Selection & Pagination
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -145,6 +148,13 @@ export default function GRNPage() {
     statuses: ['In Stock', 'Consumed', 'Partial', 'Reserved']
   })
 
+  const activeFiltersCount = useMemo(() => {
+    return Object.entries(filters).reduce((acc, [k, v]) => {
+      if (Array.isArray(v)) return acc + v.length;
+      return v ? acc + 1 : acc;
+    }, 0);
+  }, [filters]);
+
   useEffect(() => { setIsMounted(true) }, [])
 
   const settingsRef = useMemoFirebase(() => (!firestore ? null : doc(firestore, 'roll_settings', 'global_config')), [firestore]);
@@ -167,21 +177,13 @@ export default function GRNPage() {
     return () => unsub();
   }, [firestore, isMounted]);
 
-  const activeFiltersCount = useMemo(() => {
-    return Object.entries(filters).reduce((acc, [k, v]) => {
-      if (Array.isArray(v)) return acc + v.length;
-      return v ? acc + 1 : acc;
-    }, 0);
-  }, [filters]);
-
-  const buildQuery = (isCount = false) => {
+  const buildQuery = (isCount = false, skipSort = false) => {
     if (!firestore) return null;
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
     let rangeField: string | null = null;
     let hasIn = false;
 
-    // Helper to add filters intelligently
     const addSafeFilter = (field: string, values: any[]) => {
       if (!values || values.length === 0) return;
       if (values.length === 1) {
@@ -199,7 +201,6 @@ export default function GRNPage() {
     addSafeFilter('location', filters.locations);
     addSafeFilter('status', filters.statuses);
 
-    // Range Logic - Firestore only allows ONE field to have range operators
     if (filters.lotNo) {
       constraints.push(where('lotNo', '>=', filters.lotNo));
       constraints.push(where('lotNo', '<=', filters.lotNo + '\uf8ff'));
@@ -216,11 +217,12 @@ export default function GRNPage() {
 
     if (isCount) return query(q, ...constraints);
 
-    // Sorting Logic - Must match range field if one exists
-    if (rangeField) {
-      constraints.push(orderBy(rangeField, rangeField === 'receivedDate' ? sortOrder : 'asc'));
-    } else {
-      constraints.push(orderBy(sortField, sortOrder));
+    if (!skipSort) {
+      if (rangeField) {
+        constraints.push(orderBy(rangeField, rangeField === 'receivedDate' ? sortOrder : 'asc'));
+      } else {
+        constraints.push(orderBy(sortField, sortOrder));
+      }
     }
 
     const cursor = pageStack[currentPage - 1];
@@ -235,7 +237,8 @@ export default function GRNPage() {
     const load = async () => {
       setIsPageLoading(true);
       setIndexErrorUrl(null);
-      setPagedJumbos([]); // Clear table immediately to prevent stale data
+      setUsingFallbackQuery(false);
+      setPagedJumbos([]); 
 
       try {
         const countQ = buildQuery(true);
@@ -258,10 +261,23 @@ export default function GRNPage() {
           }
         }
       } catch (e: any) {
-        setPagedJumbos([]);
         if (e.message?.includes("index") || e.code === 'failed-precondition') {
           const match = e.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
-          if (match) setIndexErrorUrl(match[0]);
+          setIndexErrorUrl(match ? match[0] : "unknown");
+          
+          // Fallback logic: Retry without sorting
+          setUsingFallbackQuery(true);
+          try {
+            const fallbackQ = buildQuery(false, true);
+            if (fallbackQ) {
+              const snap = await getDocs(fallbackQ);
+              setPagedJumbos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            }
+          } catch (err) {
+            setPagedJumbos([]);
+          }
+        } else {
+          setPagedJumbos([]);
         }
       } finally {
         setIsPageLoading(false);
@@ -335,6 +351,13 @@ export default function GRNPage() {
     setEditingRoll(roll);
     setIntakeForm({ widthMm: roll.widthMm || 0, lengthMeters: roll.lengthMeters || 0 });
     setIsDialogOpen(true);
+  }
+
+  const handleCopyIndexUrl = () => {
+    if (indexErrorUrl) {
+      navigator.clipboard.writeText(indexErrorUrl);
+      toast({ title: "Copied to Clipboard", description: "Authorization link is ready." });
+    }
   }
 
   if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin" /></div>
@@ -418,6 +441,30 @@ export default function GRNPage() {
         </Card>
       )}
 
+      {usingFallbackQuery && indexErrorUrl && (
+        <Card className="bg-amber-50 border-amber-200 border-2">
+          <CardContent className="p-4 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-amber-900 text-sm">Index Required for Professional Sorting</p>
+                <p className="text-xs text-amber-700">Displaying unordered results. Authorize the database index to enable chronological sorting for this filter combination.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" variant="outline" className="h-8 text-[10px] border-amber-300" onClick={handleCopyIndexUrl}>
+                <Copy className="h-3 w-3 mr-1" /> Copy Link
+              </Button>
+              <Button asChild size="sm" className="h-8 text-[10px] bg-amber-600 hover:bg-amber-700">
+                <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="h-3 w-3 mr-1" /> Authorize Now
+                </a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="shadow-2xl border-none overflow-hidden relative">
         <div className="bg-muted/30 p-4 border-b flex justify-between items-center">
           <div className="flex items-center gap-4">
@@ -475,27 +522,6 @@ export default function GRNPage() {
               <TableBody>
                 {isPageLoading ? (
                   <TableRow><TableCell colSpan={20} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary" /></TableCell></TableRow>
-                ) : indexErrorUrl ? (
-                  <TableRow>
-                    <TableCell colSpan={20} className="py-20">
-                      <div className="flex flex-col items-center gap-4 text-center max-w-2xl mx-auto">
-                        <AlertTriangle className="h-12 w-12 text-amber-500" />
-                        <div className="space-y-2">
-                          <p className="font-bold text-lg">Registry Index Required</p>
-                          <p className="text-sm text-muted-foreground">This filter combination requires a database index. Please authorize it in the Firebase Console.</p>
-                        </div>
-                        <div className="flex flex-col gap-3 w-full max-w-md">
-                          <Button asChild className="bg-amber-600 hover:bg-amber-700 h-12">
-                            <a href={indexErrorUrl} target="_blank" rel="noopener noreferrer"><ExternalLink className="mr-2 h-4 w-4" /> Authorize Registry Index</a>
-                          </Button>
-                          <div className="p-3 bg-muted rounded-md border border-dashed text-left">
-                            <p className="text-[10px] font-black uppercase text-muted-foreground mb-1">Backup Link (Manual Copy):</p>
-                            <p className="text-[9px] break-all font-mono text-primary select-all">{indexErrorUrl}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
                 ) : pagedJumbos.map((j, i) => (
                   <TableRow key={j.id} className="hover:bg-primary/5 h-12">
                     <TableCell className="sticky left-0 bg-background z-10">
@@ -526,7 +552,7 @@ export default function GRNPage() {
                     </TableCell>
                   </TableRow>
                 ))}
-                {pagedJumbos.length === 0 && !isPageLoading && !indexErrorUrl && (
+                {pagedJumbos.length === 0 && !isPageLoading && (
                   <TableRow><TableCell colSpan={20} className="text-center py-20 text-muted-foreground italic">No matching records found.</TableCell></TableRow>
                 )}
               </TableBody>
@@ -565,7 +591,7 @@ export default function GRNPage() {
             const data: any = Object.fromEntries(form.entries());
             const width = Number(data.widthMm);
             const length = Number(data.lengthMeters);
-            const sqm = Number(((width * length) / 1000).toFixed(2));
+            const sqm = Number(((width / 1000) * length).toFixed(2));
 
             try {
               if (editingRoll) {
