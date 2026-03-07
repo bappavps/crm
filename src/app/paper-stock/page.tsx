@@ -94,6 +94,9 @@ export default function PaperStockPage() {
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
   const [metadataType, setMetadataType] = useState<'Company' | 'Type'>('Company')
 
+  // Validation State
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
   const [modal, setModal] = useState<{
     isOpen: boolean;
     type: ModalType;
@@ -174,6 +177,43 @@ export default function PaperStockPage() {
     const values = rolls.map(r => r[key]).filter(v => v !== undefined && v !== null && v !== "");
     return Array.from(new Set(values)).sort();
   }
+
+  const formatLabel = (key: string) => {
+    return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+  };
+
+  const validateField = (name: string, value: number) => {
+    let error = "";
+    if (['widthMm', 'lengthMeters', 'gsm', 'quantity'].includes(name) && value <= 0) {
+      error = `${formatLabel(name)} must be greater than 0`;
+    } else if (value < 0) {
+      error = `${formatLabel(name)} cannot be negative`;
+    }
+
+    setErrors(prev => {
+      const newErrors = { ...prev };
+      if (error) newErrors[name] = error;
+      else delete newErrors[name];
+      return newErrors;
+    });
+  };
+
+  const handleInputChange = (name: string, value: any) => {
+    if (['widthMm', 'lengthMeters', 'gsm', 'weightKg', 'purchaseRate', 'quantity'].includes(name)) {
+      const numVal = value === "" ? 0 : Number(value);
+      setFormData(prev => ({ ...prev, [name]: numVal }));
+      validateField(name, numVal);
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const calculatedSqm = useMemo(() => {
+    const w = Number(formData.widthMm) || 0;
+    const l = Number(formData.lengthMeters) || 0;
+    const q = Number(formData.quantity) || 1;
+    return Number(((w / 1000) * l * q).toFixed(2));
+  }, [formData.widthMm, formData.lengthMeters, formData.quantity]);
 
   // Advanced Combinatorial Filtering Logic
   const filteredRows = useMemo(() => {
@@ -284,6 +324,7 @@ export default function PaperStockPage() {
   };
 
   const handleOpenDialog = (roll?: any) => {
+    setErrors({});
     if (roll) {
       setEditingRoll(roll);
       setFormData({ ...formData, ...roll });
@@ -304,9 +345,11 @@ export default function PaperStockPage() {
     if (!firestore || !user) return;
     setIsProcessing(true);
 
+    const finalData = { ...formData, sqm: calculatedSqm };
+
     try {
       if (editingRoll) {
-        updateDocumentNonBlocking(doc(firestore, 'paper_stock', editingRoll.id), { ...formData, updatedAt: serverTimestamp() });
+        updateDocumentNonBlocking(doc(firestore, 'paper_stock', editingRoll.id), { ...finalData, updatedAt: serverTimestamp() });
         setIsDialogOpen(false);
         showModal('SUCCESS', 'Roll Updated', 'Technical record has been committed.', undefined, true);
       } else {
@@ -317,11 +360,11 @@ export default function PaperStockPage() {
           const rollId = `RL-${nextNum.toString().padStart(4, '0')}`;
           const newDocRef = doc(collection(firestore, 'paper_stock'), rollId);
           
-          transaction.set(newDocRef, { ...formData, rollNo: rollId, createdAt: serverTimestamp(), createdById: user.uid, id: rollId });
+          transaction.set(newDocRef, { ...finalData, rollNo: rollId, createdAt: serverTimestamp(), createdById: user.uid, id: rollId });
           transaction.set(counterRef, { current_number: nextNum }, { merge: true });
         });
         setIsDialogOpen(false);
-        showModal('SUCCESS', 'Roll Added', `Roll ${formData.rollNo} initialized.`, undefined, true);
+        showModal('SUCCESS', 'Roll Added', `Roll initialized successfully.`, undefined, true);
       }
     } catch (error: any) {
       showModal('ERROR', 'Transaction Failed', error.message);
@@ -347,7 +390,7 @@ export default function PaperStockPage() {
     try {
       const docId = name.toLowerCase().replace(/\s+/g, '-');
       await setDoc(doc(firestore!, col, docId), { name, createdAt: serverTimestamp() });
-      setFormData(prev => ({ ...prev, [metadataType === 'Company' ? 'paperCompany' : 'paperType']: name }));
+      handleInputChange(metadataType === 'Company' ? 'paperCompany' : 'paperType', name);
       setIsMetadataModalOpen(false);
       showModal('SUCCESS', 'Entry Authorized', `${metadataType} added to system master data.`, undefined, true);
     } catch (err: any) {
@@ -367,6 +410,18 @@ export default function PaperStockPage() {
       }).catch(err => showModal('ERROR', 'Batch Failed', err.message)).finally(() => setIsProcessing(false));
     });
   };
+
+  const isFormInvalid = useMemo(() => {
+    return (
+      Object.keys(errors).length > 0 ||
+      !formData.paperCompany ||
+      !formData.paperType ||
+      formData.widthMm <= 0 ||
+      formData.lengthMeters <= 0 ||
+      formData.gsm <= 0 ||
+      formData.quantity <= 0
+    );
+  }, [errors, formData]);
 
   if (!isMounted) return null;
 
@@ -596,18 +651,18 @@ export default function PaperStockPage() {
             <div className="p-8 grid grid-cols-2 gap-x-8 gap-y-6 bg-white font-sans">
               {/* Row 1: Roll No & Date Received */}
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Roll No (Read Only)</Label><Input value={formData.rollNo || "RL-XXXX"} readOnly className="h-10 font-black bg-slate-50 text-teal-600 border-teal-100" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({ ...formData, receivedDate: e.target.value })} required className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => handleInputChange('receivedDate', e.target.value)} required className="h-10 font-bold" /></div>
               
               {/* Row 2: Status & Paper Company */}
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Inventory Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
+                <Select value={formData.status} onValueChange={v => handleInputChange('status', v)}>
                   <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="Available">Available</SelectItem><SelectItem value="Reserved">Reserved</SelectItem><SelectItem value="Used">Used</SelectItem></SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5 relative"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Company</Label>
                 <div className="flex gap-2">
-                  <Select value={formData.paperCompany} onValueChange={v => setFormData({ ...formData, paperCompany: v })}>
+                  <Select value={formData.paperCompany} onValueChange={v => handleInputChange('paperCompany', v)}>
                     <SelectTrigger className="h-10 font-bold flex-1"><SelectValue placeholder="Select Company" /></SelectTrigger>
                     <SelectContent>{companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent>
                   </Select>
@@ -618,37 +673,96 @@ export default function PaperStockPage() {
               {/* Row 3: Paper Type & Width */}
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Type (Substrate)</Label>
                 <div className="flex gap-2">
-                  <Select value={formData.paperType} onValueChange={v => setFormData({ ...formData, paperType: v })}>
+                  <Select value={formData.paperType} onValueChange={v => handleInputChange('paperType', v)}>
                     <SelectTrigger className="h-10 font-bold flex-1"><SelectValue placeholder="Select substrate" /></SelectTrigger>
                     <SelectContent>{paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}</SelectContent>
                   </Select>
                   {isAdmin && <Button type="button" size="icon" className="h-10 w-10 shrink-0" variant="outline" onClick={() => { setMetadataType('Type'); setIsMetadataModalOpen(true); }}><Plus className="h-4 w-4" /></Button>}
                 </div>
               </div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-teal-600">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({ ...formData, widthMm: Number(e.target.value) })} required className="h-10 font-black border-teal-100" /></div>
+              <div className="space-y-1.5">
+                <Label className={cn("text-[10px] uppercase font-black", errors.widthMm ? "text-destructive" : "text-teal-600")}>Width (MM)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  value={formData.widthMm || ""} 
+                  onChange={e => handleInputChange('widthMm', e.target.value)} 
+                  required 
+                  className={cn("h-10 font-black border-teal-100", errors.widthMm && "border-destructive focus-visible:ring-destructive")} 
+                />
+                {errors.widthMm && <p className="text-[9px] font-bold text-destructive mt-1">{errors.widthMm}</p>}
+              </div>
 
               {/* Row 4: Length & SQM */}
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-teal-600">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({ ...formData, lengthMeters: Number(e.target.value) })} required className="h-10 font-black border-teal-100" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">SQM (Auto-Calculated)</Label><Input value={((Number(formData.widthMm) || 0) * (Number(formData.lengthMeters) || 0) / 1000).toFixed(2)} readOnly className="h-10 font-black bg-primary/5 text-primary border-primary/20" /></div>
+              <div className="space-y-1.5">
+                <Label className={cn("text-[10px] uppercase font-black", errors.lengthMeters ? "text-destructive" : "text-teal-600")}>Length (MTR)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  value={formData.lengthMeters || ""} 
+                  onChange={e => handleInputChange('lengthMeters', e.target.value)} 
+                  required 
+                  className={cn("h-10 font-black border-teal-100", errors.lengthMeters && "border-destructive focus-visible:ring-destructive")} 
+                />
+                {errors.lengthMeters && <p className="text-[9px] font-bold text-destructive mt-1">{errors.lengthMeters}</p>}
+              </div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">SQM (Auto-Calculated)</Label><Input value={calculatedSqm} readOnly className="h-10 font-black bg-primary/5 text-primary border-primary/20" /></div>
 
               {/* Row 5: GSM & Weight */}
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({ ...formData, gsm: Number(e.target.value) })} required className="h-10 font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({ ...formData, weightKg: Number(e.target.value) })} required className="h-10 font-bold" /></div>
+              <div className="space-y-1.5">
+                <Label className={cn("text-[10px] uppercase font-black", errors.gsm ? "text-destructive" : "text-slate-500")}>GSM</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="1"
+                  value={formData.gsm || ""} 
+                  onChange={e => handleInputChange('gsm', e.target.value)} 
+                  required 
+                  className={cn("h-10 font-bold", errors.gsm && "border-destructive focus-visible:ring-destructive")} 
+                />
+                {errors.gsm && <p className="text-[9px] font-bold text-destructive mt-1">{errors.gsm}</p>}
+              </div>
+              <div className="space-y-1.5">
+                <Label className={cn("text-[10px] uppercase font-black", errors.weightKg ? "text-destructive" : "text-slate-500")}>Weight (KG)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  value={formData.weightKg || ""} 
+                  onChange={e => handleInputChange('weightKg', e.target.value)} 
+                  required 
+                  className={cn("h-10 font-bold", errors.weightKg && "border-destructive focus-visible:ring-destructive")} 
+                />
+                {errors.weightKg && <p className="text-[9px] font-bold text-destructive mt-1">{errors.weightKg}</p>}
+              </div>
 
               {/* Row 6: Purchase Rate & Date of Slit */}
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Purchase Rate (Optional)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({ ...formData, purchaseRate: Number(e.target.value) })} className="h-10 font-bold" /></div>
+              <div className="space-y-1.5">
+                <Label className={cn("text-[10px] uppercase font-black", errors.purchaseRate ? "text-destructive" : "text-slate-500")}>Purchase Rate (Optional)</Label>
+                <Input 
+                  type="number" 
+                  min="0"
+                  step="0.01"
+                  value={formData.purchaseRate || ""} 
+                  onChange={e => handleInputChange('purchaseRate', e.target.value)} 
+                  className={cn("h-10 font-bold", errors.purchaseRate && "border-destructive focus-visible:ring-destructive")} 
+                />
+                {errors.purchaseRate && <p className="text-[9px] font-bold text-destructive mt-1">{errors.purchaseRate}</p>}
+              </div>
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date of Slit / Use</Label><Input value={formData.dateOfSlit || "Not Used"} readOnly className="h-10 font-black bg-slate-50 text-slate-400 border-slate-100" /></div>
 
               {/* Row 7: Job No & Job Name */}
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} onChange={e => setFormData({ ...formData, jobNo: e.target.value })} className="h-10 font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job Name / Product</Label><Input value={formData.jobName} onChange={e => setFormData({ ...formData, jobName: e.target.value })} className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} onChange={e => handleInputChange('jobNo', e.target.value)} className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job Name / Product</Label><Input value={formData.jobName} onChange={e => handleInputChange('jobName', e.target.value)} className="h-10 font-bold" /></div>
 
               {/* Row 8: Lot No & Remarks */}
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Lot No / Invoice No</Label><Input value={formData.lotNo} onChange={e => setFormData({ ...formData, lotNo: e.target.value })} className="h-10 font-bold" /></div>
-              <div className="col-span-2 space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Production Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({ ...formData, remarks: e.target.value })} className="min-h-[100px] font-medium" placeholder="Add relevant production notes..." /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Lot No / Invoice No</Label><Input value={formData.lotNo} onChange={e => handleInputChange('lotNo', e.target.value)} className="h-10 font-bold" /></div>
+              <div className="col-span-2 space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Production Remarks</Label><Textarea value={formData.remarks} onChange={e => handleInputChange('remarks', e.target.value)} className="min-h-[100px] font-medium" placeholder="Add relevant production notes..." /></div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t rounded-b-2xl">
-              <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black text-lg bg-[#4db6ac] hover:bg-[#3d9e94] shadow-xl transition-all">
+              <Button type="submit" disabled={isProcessing || isFormInvalid} className="w-full h-14 uppercase font-black text-lg bg-[#4db6ac] hover:bg-[#3d9e94] shadow-xl transition-all disabled:grayscale disabled:opacity-50">
                 {isProcessing ? <Loader2 className="animate-spin mr-2" /> : editingRoll ? 'Commit Technical Updates' : 'Authorize Production Entry'}
               </Button>
             </DialogFooter>
