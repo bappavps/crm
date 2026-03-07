@@ -23,7 +23,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter,
-  Eye
+  Check,
+  ChevronDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -47,6 +48,14 @@ import {
   SheetTrigger,
   SheetFooter,
 } from "@/components/ui/sheet"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
@@ -57,7 +66,6 @@ import {
   runTransaction,
   writeBatch,
   orderBy,
-  getDoc,
   setDoc
 } from "firebase/firestore"
 import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates"
@@ -96,23 +104,27 @@ export default function PaperStockPage() {
   }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
   // Comprehensive Filter State
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<any>({
     search: "",
-    status: "all",
-    paperCompany: "all",
-    paperType: "all",
-    width: "",
-    length: "",
+    paperCompany: [],
+    paperType: [],
+    status: [],
+    widthMm: [],
+    lengthMeters: [],
+    sqm: [],
+    gsm: [],
+    weightKg: [],
+    dateOfSlit: [],
+    jobNo: [],
+    jobName: [],
+    lotNo: [],
+    // Range filters for Advanced Panel
     widthMin: "", widthMax: "",
     lengthMin: "", lengthMax: "",
     gsmMin: "", gsmMax: "",
     weightMin: "", weightMax: "",
     sqmMin: "", sqmMax: "",
     dateReceived: "",
-    dateOfSlit: "",
-    jobNo: "",
-    jobName: "",
-    lotNo: "",
     remarks: ""
   })
 
@@ -156,22 +168,42 @@ export default function PaperStockPage() {
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
 
+  // Helper to extract unique values from table data for filters
+  const getUniqueOptions = (key: string) => {
+    if (!rolls) return [];
+    const values = rolls.map(r => r[key]).filter(v => v !== undefined && v !== null && v !== "");
+    return Array.from(new Set(values)).sort();
+  }
+
   // Advanced Combinatorial Filtering Logic
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     return rolls.filter(row => {
+      // 1. Global Search Logic
       if (filters.search) {
         const s = filters.search.toLowerCase();
-        if (!row.rollNo?.toLowerCase().includes(s) && 
-            !row.lotNo?.toLowerCase().includes(s) && 
-            !row.jobNo?.toLowerCase().includes(s)) return false;
+        const searchableValues = [
+          row.rollNo, row.paperCompany, row.paperType, row.widthMm, 
+          row.lengthMeters, row.sqm, row.gsm, row.weightKg, 
+          row.jobNo, row.jobName, row.lotNo, row.remarks, row.createdByName
+        ].map(v => String(v || "").toLowerCase());
+        
+        if (!searchableValues.some(val => val.includes(s))) return false;
       }
-      if (filters.status !== "all" && row.status !== filters.status) return false;
-      if (filters.paperCompany !== "all" && row.paperCompany !== filters.paperCompany) return false;
-      if (filters.paperType !== "all" && row.paperType !== filters.paperType) return false;
-      if (filters.width && Number(row.widthMm) !== Number(filters.width)) return false;
-      if (filters.length && Number(row.lengthMeters) !== Number(filters.length)) return false;
 
+      // 2. Multi-Select Dropdown Logic (AND between groups, OR within group)
+      const multiFilters = [
+        'paperCompany', 'paperType', 'status', 'widthMm', 'lengthMeters', 
+        'sqm', 'gsm', 'weightKg', 'dateOfSlit', 'jobNo', 'jobName', 'lotNo'
+      ];
+
+      for (const key of multiFilters) {
+        if (filters[key] && filters[key].length > 0) {
+          if (!filters[key].includes(row[key])) return false;
+        }
+      }
+
+      // 3. Advanced Range Filtering
       const checkRange = (val: any, min: string, max: string) => {
         const n = Number(val);
         if (min && n < Number(min)) return false;
@@ -184,6 +216,8 @@ export default function PaperStockPage() {
       if (!checkRange(row.gsm, filters.gsmMin, filters.gsmMax)) return false;
       if (!checkRange(row.sqm, filters.sqmMin, filters.sqmMax)) return false;
 
+      if (filters.remarks && !row.remarks?.toLowerCase().includes(filters.remarks.toLowerCase())) return false;
+
       return true;
     });
   }, [rolls, filters]);
@@ -195,16 +229,52 @@ export default function PaperStockPage() {
     return filteredRows.slice(start, start + rowsPerPage);
   }, [filteredRows, currentPage, rowsPerPage]);
 
-  const startRange = (currentPage - 1) * rowsPerPage + 1;
-  const endRange = Math.min(currentPage * rowsPerPage, filteredRows.length);
+  const toggleMultiFilter = (key: string, value: any) => {
+    setFilters((prev: any) => {
+      const current = prev[key] || [];
+      const next = current.includes(value)
+        ? current.filter((v: any) => v !== value)
+        : [...current, value];
+      return { ...prev, [key]: next };
+    });
+    setCurrentPage(1);
+  };
 
-  // SQM Auto-calculation
-  useEffect(() => {
-    const w = Number(formData.widthMm) || 0;
-    const l = Number(formData.lengthMeters) || 0;
-    const q = Number(formData.quantity) || 1;
-    setFormData(prev => ({ ...prev, sqm: Number(((w / 1000) * l * q).toFixed(2)) }));
-  }, [formData.widthMm, formData.lengthMeters, formData.quantity]);
+  // UI Components for Multi-Select
+  const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className={cn(
+          "h-9 px-3 text-xs gap-2 font-bold bg-white border-primary/10 hover:bg-slate-50 transition-all",
+          filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary"
+        )}>
+          {label}
+          {filters[field]?.length > 0 && (
+            <Badge variant="secondary" className="h-4 px-1 text-[9px] font-black bg-primary text-white">
+              {filters[field].length}
+            </Badge>
+          )}
+          <ChevronDown className="h-3 w-3 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto">
+        <DropdownMenuLabel className="text-[10px] uppercase font-black text-muted-foreground">{label} Options</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {options.length === 0 ? (
+          <div className="p-2 text-[10px] text-muted-foreground italic">No data found</div>
+        ) : options.map(opt => (
+          <DropdownMenuCheckboxItem
+            key={opt}
+            checked={filters[field]?.includes(opt)}
+            onCheckedChange={() => toggleMultiFilter(field, opt)}
+            className="text-xs font-bold"
+          >
+            {String(opt)}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   const showModal = (type: ModalType, title: string, description?: string, onConfirm?: () => void, autoClose = false) => {
     setModal({ isOpen: true, type, title, description, onConfirm, autoClose });
@@ -301,78 +371,77 @@ export default function PaperStockPage() {
     <div className="flex flex-col h-[calc(100vh-10rem)] space-y-4 font-sans">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} isProcessing={isProcessing} />
 
-      {/* SEARCH & QUICK FILTERS */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border shadow-sm px-6 shrink-0">
-        <div className="relative min-w-[200px]">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search Roll / Lot / Job..." className="pl-8 h-9 text-xs" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
-        </div>
-        
-        <Select value={filters.paperCompany} onValueChange={v => setFilters({ ...filters, paperCompany: v })}>
-          <SelectTrigger className="h-9 text-xs w-[130px]"><SelectValue placeholder="Company" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Companies</SelectItem>
-            {companyList?.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-
-        <Select value={filters.paperType} onValueChange={v => setFilters({ ...filters, paperType: v })}>
-          <SelectTrigger className="h-9 text-xs w-[130px]"><SelectValue placeholder="Paper Type" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Types</SelectItem>
-            {paperTypeList?.map(t => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-
-        <Select value={filters.status} onValueChange={v => setFilters({ ...filters, status: v })}>
-          <SelectTrigger className="h-9 text-xs w-[110px]"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="Available">Available</SelectItem>
-            <SelectItem value="Reserved">Reserved</SelectItem>
-            <SelectItem value="Used">Used</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Input type="number" placeholder="Width" className="h-9 w-20 text-xs" value={filters.width} onChange={e => setFilters({...filters, width: e.target.value})} />
-        <Input type="number" placeholder="Length" className="h-9 w-20 text-xs" value={filters.length} onChange={e => setFilters({...filters, length: e.target.value})} />
-
-        <div className="flex-1" />
-        
-        <Sheet open={isAdvancedFilterOpen} onOpenChange={setIsAdvancedFilterOpen}>
-          <SheetTrigger asChild>
-            <Button variant="outline" size="sm" className="h-9 gap-2 font-bold text-xs border-primary/20">
-              <Filter className="h-4 w-4 text-primary" /> Advanced
+      {/* SEARCH & ERP QUICK FILTERS */}
+      <div className="bg-white p-4 rounded-2xl border shadow-sm space-y-4 shrink-0 px-6">
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-primary opacity-50" />
+            <Input 
+              placeholder="Global Search (Roll, Job, Type, Size...)" 
+              className="pl-9 h-10 text-sm font-bold border-primary/10 bg-slate-50/50 focus:bg-white transition-all" 
+              value={filters.search} 
+              onChange={e => setFilters({ ...filters, search: e.target.value })} 
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setFilters({
+                search: "", paperCompany: [], paperType: [], status: [], widthMm: [], lengthMeters: [], sqm: [], gsm: [], weightKg: [], dateOfSlit: [], jobNo: [], jobName: [], lotNo: [],
+                widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", sqmMin: "", sqmMax: "", dateReceived: "", remarks: ""
+              })} 
+              className="h-9 text-[10px] font-black uppercase text-destructive hover:bg-destructive/5 tracking-widest"
+            >
+              <FilterX className="h-4 w-4 mr-1.5" /> Reset All
             </Button>
-          </SheetTrigger>
-          <SheetContent className="sm:max-w-[500px]">
-            <SheetHeader><SheetTitle className="font-black uppercase flex items-center gap-2"><SlidersHorizontal className="h-5 w-5 text-primary" /> Technical Filter Suite</SheetTitle></SheetHeader>
-            <div className="grid grid-cols-2 gap-4 py-8">
-              <div className="space-y-1"><Label className="text-[10px] font-black uppercase">GSM Range</Label><div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.gsmMin} onChange={e => setFilters({...filters, gsmMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.gsmMax} onChange={e => setFilters({...filters, gsmMax: e.target.value})} className="h-8 text-xs" /></div></div>
-              <div className="space-y-1"><Label className="text-[10px] font-black uppercase">SQM Range</Label><div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.sqmMin} onChange={e => setFilters({...filters, sqmMin: e.target.value})} className="h-8 text-xs" /><Input type="number" placeholder="Max" value={filters.sqmMax} onChange={e => setFilters({...filters, sqmMax: e.target.value})} className="h-8 text-xs" /></div></div>
-              <div className="col-span-2 space-y-1"><Label className="text-[10px] font-black uppercase">Technical Remarks</Label><Input value={filters.remarks} onChange={e => setFilters({...filters, remarks: e.target.value})} className="h-8 text-xs" /></div>
-            </div>
-            <SheetFooter><Button className="w-full font-black uppercase" onClick={() => setIsAdvancedFilterOpen(false)}>Apply Analysis</Button></SheetFooter>
-          </SheetContent>
-        </Sheet>
+            <Sheet open={isAdvancedFilterOpen} onOpenChange={setIsAdvancedFilterOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 gap-2 font-black text-[10px] uppercase border-primary/20 tracking-widest">
+                  <SlidersHorizontal className="h-4 w-4 text-primary" /> Advanced Suite
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="sm:max-w-[500px]">
+                <SheetHeader><SheetTitle className="font-black uppercase flex items-center gap-2 tracking-tighter"><SlidersHorizontal className="h-5 w-5 text-primary" /> Technical Filter Suite</SheetTitle></SheetHeader>
+                <div className="grid grid-cols-2 gap-6 py-8">
+                  <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase text-slate-500">GSM Range</Label><div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.gsmMin} onChange={e => setFilters({...filters, gsmMin: e.target.value})} className="h-9 text-xs font-bold" /><Input type="number" placeholder="Max" value={filters.gsmMax} onChange={e => setFilters({...filters, gsmMax: e.target.value})} className="h-9 text-xs font-bold" /></div></div>
+                  <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase text-slate-500">SQM Range</Label><div className="flex gap-2"><Input type="number" placeholder="Min" value={filters.sqmMin} onChange={e => setFilters({...filters, sqmMin: e.target.value})} className="h-9 text-xs font-bold" /><Input type="number" placeholder="Max" value={filters.sqmMax} onChange={e => setFilters({...filters, sqmMax: e.target.value})} className="h-9 text-xs font-bold" /></div></div>
+                  <div className="col-span-2 space-y-1.5"><Label className="text-[10px] font-black uppercase text-slate-500">Technical Remarks Match</Label><Input value={filters.remarks} onChange={e => setFilters({...filters, remarks: e.target.value})} className="h-9 text-xs font-bold" placeholder="Keywords in remarks..." /></div>
+                </div>
+                <SheetFooter><Button className="w-full font-black uppercase tracking-widest h-12" onClick={() => setIsAdvancedFilterOpen(false)}>Apply Global Logic</Button></SheetFooter>
+              </SheetContent>
+            </Sheet>
+          </div>
+        </div>
 
-        <Button variant="ghost" size="sm" onClick={() => setFilters({search: "", status: "all", paperCompany: "all", paperType: "all", width: "", length: "", widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", sqmMin: "", sqmMax: "", dateReceived: "", dateOfSlit: "", jobNo: "", jobName: "", lotNo: "", remarks: ""})} className="h-9 text-xs text-destructive hover:bg-destructive/10">
-          <FilterX className="h-4 w-4 mr-1" /> Reset
-        </Button>
+        <div className="flex flex-wrap gap-2 pt-2">
+          <MultiSelectFilter label="Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
+          <MultiSelectFilter label="Type" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="Status" field="status" options={['Available', 'Reserved', 'Used']} />
+          <MultiSelectFilter label="Width" field="widthMm" options={getUniqueOptions('widthMm')} />
+          <MultiSelectFilter label="Length" field="lengthMeters" options={getUniqueOptions('lengthMeters')} />
+          <MultiSelectFilter label="GSM" field="gsm" options={getUniqueOptions('gsm')} />
+          <MultiSelectFilter label="SQM" field="sqm" options={getUniqueOptions('sqm')} />
+          <MultiSelectFilter label="Weight" field="weightKg" options={getUniqueOptions('weightKg')} />
+          <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
+          <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
+          <MultiSelectFilter label="Slit Date" field="dateOfSlit" options={getUniqueOptions('dateOfSlit')} />
+        </div>
       </div>
 
       {/* ERP GRID HEADER BAR */}
       <div className="bg-[#4db6ac] text-white p-3 flex items-center justify-between shrink-0 px-6 rounded-t-2xl shadow-lg">
         <div className="flex items-center gap-4">
           <h2 className="font-black text-sm uppercase tracking-widest flex items-center gap-2">
-            <Package className="h-5 w-5" /> Paper Stock Registry
+            <Package className="h-5 w-5" /> Technical Registry Hub
           </h2>
-          <Badge className="bg-white/20 text-[10px] font-bold border-none uppercase">
-            Filtered Results: {filteredRows.length} Rolls
+          <Badge className="bg-white/20 text-[10px] font-black border-none uppercase tracking-widest h-6 px-3">
+            {filteredRows.length} Matches Found
           </Badge>
           {selectedIds.size > 0 && (
-            <Button variant="destructive" size="sm" className="h-7 text-[9px] font-black uppercase animate-in zoom-in" onClick={handleBulkDelete}>
-              <Trash2 className="h-3 w-3 mr-1" /> Delete Selected ({selectedIds.size})
+            <Button variant="destructive" size="sm" className="h-7 text-[9px] font-black uppercase animate-in zoom-in px-4" onClick={handleBulkDelete}>
+              <Trash2 className="h-3 w-3 mr-1.5" /> Authorize Wipe ({selectedIds.size})
             </Button>
           )}
         </div>
@@ -435,15 +504,15 @@ export default function PaperStockPage() {
                   </TableCell>
                   <TableCell className="font-bold text-[11px] text-teal-700 border-r text-center font-mono">{j.rollNo}</TableCell>
                   <TableCell className="text-center border-r">
-                    <Badge variant="outline" className={cn("text-[9px] font-bold h-5 uppercase px-2", 
+                    <Badge variant="outline" className={cn("text-[9px] font-black h-5 uppercase px-2", 
                       j.status === 'Available' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
                       j.status === 'Reserved' ? 'bg-amber-100 text-amber-700 border-amber-200' : 
                       'bg-red-100 text-red-700 border-red-200')}>
                       {j.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-[11px] border-r uppercase">{j.paperCompany}</TableCell>
-                  <TableCell className="text-[11px] border-r">{j.paperType}</TableCell>
+                  <TableCell className="text-[11px] border-r uppercase font-bold">{j.paperCompany}</TableCell>
+                  <TableCell className="text-[11px] border-r font-medium">{j.paperType}</TableCell>
                   <TableCell className="text-right text-[11px] border-r font-mono">{j.widthMm}mm</TableCell>
                   <TableCell className="text-right text-[11px] border-r font-mono">{j.lengthMeters}m</TableCell>
                   <TableCell className="text-right text-[11px] border-r font-black text-teal-600 font-mono">{j.sqm}</TableCell>
@@ -453,7 +522,7 @@ export default function PaperStockPage() {
                   <TableCell className="text-right text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>
                   <TableCell className="text-center text-[11px] border-r whitespace-nowrap font-bold text-slate-400">{j.dateOfSlit || 'Not Used'}</TableCell>
                   <TableCell className="text-[11px] border-r font-mono">{j.jobNo || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r truncate max-w-[150px]">{j.jobName || '-'}</TableCell>
+                  <TableCell className="text-[11px] border-r truncate max-w-[150px] font-medium">{j.jobName || '-'}</TableCell>
                   <TableCell className="text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>
                   <TableCell className="text-[11px] border-r truncate max-w-[200px] italic text-slate-400">{j.remarks || '-'}</TableCell>
                   <TableCell className="text-right sticky right-0 bg-white z-20 group-hover:bg-slate-50 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)]">
@@ -463,7 +532,7 @@ export default function PaperStockPage() {
                       </Button>
                       {isAdmin && (
                         <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full bg-red-50 text-red-500 hover:bg-red-500 hover:text-white" onClick={() => {
-                          showModal('CONFIRMATION', 'Delete Roll?', `Remove ${j.rollNo} permanently?`, () => deleteDocumentNonBlocking(doc(firestore!, 'paper_stock', j.id)));
+                          showModal('CONFIRMATION', 'Authorize Deletion?', `Remove technical record ${j.rollNo}?`, () => deleteDocumentNonBlocking(doc(firestore!, 'paper_stock', j.id)));
                         }}>
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -480,7 +549,7 @@ export default function PaperStockPage() {
         <div className="bg-slate-50 p-3 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-muted-foreground">Rows per page:</span>
+              <span className="text-[10px] font-black uppercase text-muted-foreground">Grid Density:</span>
               <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
                 <SelectTrigger className="h-8 w-[70px] bg-white text-xs font-bold"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -491,8 +560,8 @@ export default function PaperStockPage() {
                 </SelectContent>
               </Select>
             </div>
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-              Total {filteredRows.length} technical rolls in registry
+            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest border-l pl-4">
+              Showing {startRange}–{endRange} of {filteredRows.length} Technical Units
             </span>
           </div>
 
@@ -500,10 +569,10 @@ export default function PaperStockPage() {
             <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-1 mx-2">
-              <span className="text-xs font-bold">Page</span>
-              <span className="text-xs font-black px-2">{currentPage}</span>
-              <span className="text-xs font-bold text-muted-foreground">of {totalPages || 1}</span>
+            <div className="flex items-center gap-1 mx-4">
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">Page</span>
+              <span className="text-xs font-black bg-primary text-white h-6 w-6 flex items-center justify-center rounded-md shadow-sm">{currentPage}</span>
+              <span className="text-[10px] font-black uppercase tracking-widest opacity-50">of {totalPages || 1}</span>
             </div>
             <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>
               <ChevronRight className="h-4 w-4" />
@@ -514,17 +583,25 @@ export default function PaperStockPage() {
 
       {/* INTAKE / EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[800px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl">
+        <DialogContent className="sm:max-w-[800px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
           <form onSubmit={handleSave}>
             <DialogHeader className="p-6 bg-[#4db6ac] text-white">
-              <DialogTitle className="uppercase font-black flex items-center gap-2">
-                {editingRoll ? `Edit Registry: ${formData.rollNo}` : 'Initialize New Substrate'}
+              <DialogTitle className="uppercase font-black text-xl tracking-tighter flex items-center gap-2">
+                {editingRoll ? `Edit Tech Registry: ${formData.rollNo}` : 'Initialize Technical Unit Intake'}
               </DialogTitle>
             </DialogHeader>
             <div className="p-8 grid grid-cols-2 gap-x-8 gap-y-6 bg-white font-sans">
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Roll No (Automatic)</Label><Input value={formData.rollNo || "RL-XXXX"} readOnly className="h-10 font-black bg-slate-50 text-teal-600 border-teal-100" /></div>
+              {/* Row 1: Sl No / Roll No & Date Received */}
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Roll No (Read Only)</Label><Input value={formData.rollNo || "RL-XXXX"} readOnly className="h-10 font-black bg-slate-50 text-teal-600 border-teal-100" /></div>
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({ ...formData, receivedDate: e.target.value })} required className="h-10 font-bold" /></div>
               
+              {/* Row 2: Status & Paper Company */}
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Inventory Status</Label>
+                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
+                  <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="Available">Available</SelectItem><SelectItem value="Reserved">Reserved</SelectItem><SelectItem value="Used">Used</SelectItem></SelectContent>
+                </Select>
+              </div>
               <div className="space-y-1.5 relative"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Company</Label>
                 <div className="flex gap-2">
                   <Select value={formData.paperCompany} onValueChange={v => setFormData({ ...formData, paperCompany: v })}>
@@ -535,7 +612,8 @@ export default function PaperStockPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Type</Label>
+              {/* Row 3: Paper Type & Width */}
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Type (Substrate)</Label>
                 <div className="flex gap-2">
                   <Select value={formData.paperType} onValueChange={v => setFormData({ ...formData, paperType: v })}>
                     <SelectTrigger className="h-10 font-bold flex-1"><SelectValue placeholder="Select substrate" /></SelectTrigger>
@@ -544,32 +622,31 @@ export default function PaperStockPage() {
                   {isAdmin && <Button type="button" size="icon" className="h-10 w-10 shrink-0" variant="outline" onClick={() => { setMetadataType('Type'); setIsMetadataModalOpen(true); }}><Plus className="h-4 w-4" /></Button>}
                 </div>
               </div>
-
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({ ...formData, gsm: Number(e.target.value) })} required className="h-10 font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Size</Label><Input value={formData.formData?.size || ""} onChange={e => setFormData({ ...formData, size: e.target.value })} placeholder="e.g. 1020mm" className="h-10 font-bold" /></div>
-
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-teal-600">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({ ...formData, widthMm: Number(e.target.value) })} required className="h-10 font-black border-teal-100" /></div>
+
+              {/* Row 4: Length & SQM */}
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-teal-600">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({ ...formData, lengthMeters: Number(e.target.value) })} required className="h-10 font-black border-teal-100" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">SQM (Auto-Calculated)</Label><Input value={((Number(formData.widthMm) || 0) * (Number(formData.lengthMeters) || 0) / 1000).toFixed(2)} readOnly className="h-10 font-black bg-primary/5 text-primary border-primary/20" /></div>
 
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Quantity (Rolls)</Label><Input type="number" value={formData.quantity} onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })} required className="h-10 font-bold" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">SQM (Read-Only)</Label><Input value={formData.sqm} readOnly className="h-10 font-black bg-primary/5 text-primary border-primary/20" /></div>
+              {/* Row 5: GSM & Weight */}
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({ ...formData, gsm: Number(e.target.value) })} required className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({ ...formData, weightKg: Number(e.target.value) })} required className="h-10 font-bold" /></div>
 
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Lot No / Invoice</Label><Input value={formData.lotNo} onChange={e => setFormData({ ...formData, lotNo: e.target.value })} className="h-10 font-bold" /></div>
+              {/* Row 6: Purchase Rate & Date of Slit */}
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Purchase Rate (Optional)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({ ...formData, purchaseRate: Number(e.target.value) })} className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date of Slit / Use</Label><Input value={formData.dateOfSlit || "Not Used"} readOnly className="h-10 font-black bg-slate-50 text-slate-400 border-slate-100" /></div>
+
+              {/* Row 7: Job No & Job Name */}
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} onChange={e => setFormData({ ...formData, jobNo: e.target.value })} className="h-10 font-bold" /></div>
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Job Name / Product</Label><Input value={formData.jobName} onChange={e => setFormData({ ...formData, jobName: e.target.value })} className="h-10 font-bold" /></div>
 
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData({ ...formData, status: v })}>
-                  <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="Available">Available</SelectItem><SelectItem value="Reserved">Reserved</SelectItem><SelectItem value="Used">Used</SelectItem></SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Location</Label><Input value={formData.location || ""} onChange={e => setFormData({ ...formData, location: e.target.value })} className="h-10 font-bold" /></div>
-
-              <div className="col-span-2 space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({ ...formData, remarks: e.target.value })} className="min-h-[80px]" placeholder="Add production notes..." /></div>
+              {/* Row 8: Lot No & Remarks */}
+              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Lot No / Invoice No</Label><Input value={formData.lotNo} onChange={e => setFormData({ ...formData, lotNo: e.target.value })} className="h-10 font-bold" /></div>
+              <div className="col-span-2 space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Production Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({ ...formData, remarks: e.target.value })} className="min-h-[100px] font-medium" placeholder="Add relevant production notes..." /></div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t rounded-b-2xl">
-              <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black text-lg bg-[#4db6ac] hover:bg-[#3d9e94]">
-                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : editingRoll ? 'Commit Updates' : 'Authorize Substrate Intake'}
+              <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black text-lg bg-[#4db6ac] hover:bg-[#3d9e94] shadow-xl transition-all">
+                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : editingRoll ? 'Commit Technical Updates' : 'Authorize Production Entry'}
               </Button>
             </DialogFooter>
           </form>
@@ -578,13 +655,15 @@ export default function PaperStockPage() {
 
       {/* QUICK ADD MODAL */}
       <Dialog open={isMetadataModalOpen} onOpenChange={setIsMetadataModalOpen}>
-        <DialogContent className="sm:max-w-[400px]">
+        <DialogContent className="sm:max-w-[400px] border-none shadow-2xl rounded-2xl">
           <form onSubmit={handleSaveMetadata}>
-            <DialogHeader><DialogTitle className="uppercase font-black">Add New {metadataType}</DialogTitle></DialogHeader>
-            <div className="py-6 space-y-4">
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black">Name / Title</Label><Input name="name" required autoFocus /></div>
+            <DialogHeader className="p-6 bg-primary text-white rounded-t-2xl">
+              <DialogTitle className="uppercase font-black text-lg tracking-tight">Add New {metadataType}</DialogTitle>
+            </DialogHeader>
+            <div className="p-8 space-y-4">
+              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Authorized Name / Title</Label><Input name="name" required autoFocus className="h-12 text-lg font-black tracking-tight" /></div>
             </div>
-            <DialogFooter><Button type="submit" className="w-full h-12 uppercase font-black">Authorize Entry</Button></DialogFooter>
+            <DialogFooter className="p-6 pt-0"><Button type="submit" className="w-full h-12 uppercase font-black tracking-widest shadow-lg">Authorize System Entry</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
