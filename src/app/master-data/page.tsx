@@ -24,7 +24,7 @@ import {
   DialogTitle, 
   DialogFooter
 } from "@/components/ui/dialog"
-import { useCollection, useFirestore, useUser } from "@/firebase"
+import { useCollection, useFirestore, useUser, useMemoFirebase } from "@/firebase"
 import { collection, doc, serverTimestamp, deleteDoc } from "firebase/firestore"
 import { updateDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { cn } from "@/lib/utils"
@@ -40,15 +40,45 @@ export default function MasterDataPage() {
   const [dialogType, setDialogType] = useState<string>("raw_materials")
   const [editingItem, setEditingItem] = useState<any>(null)
 
-  // Firestore Queries
-  const { data: rawMaterials } = useCollection(firestore ? collection(firestore, 'raw_materials') : null);
-  const { data: suppliers } = useCollection(firestore ? collection(firestore, 'suppliers') : null);
-  const { data: machines } = useCollection(firestore ? collection(firestore, 'machines') : null);
-  const { data: cylinders } = useCollection(firestore ? collection(firestore, 'cylinders') : null);
-  const { data: customers } = useCollection(firestore ? collection(firestore, 'customers') : null);
-  const { data: boms } = useCollection(firestore ? collection(firestore, 'boms') : null);
-
   useEffect(() => { setIsMounted(true) }, []);
+
+  // Firestore Queries - properly memoized per architecture requirements
+  const rawMaterialsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'raw_materials');
+  }, [firestore]);
+
+  const suppliersQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'suppliers');
+  }, [firestore]);
+
+  const machinesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'machines');
+  }, [firestore]);
+
+  const cylindersQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'cylinders');
+  }, [firestore]);
+
+  const customersQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'customers');
+  }, [firestore]);
+
+  const bomsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'boms');
+  }, [firestore]);
+
+  const { data: rawMaterials } = useCollection(rawMaterialsQuery);
+  const { data: suppliers } = useCollection(suppliersQuery);
+  const { data: machines } = useCollection(machinesQuery);
+  const { data: cylinders } = useCollection(cylindersQuery);
+  const { data: customers } = useCollection(customersQuery);
+  const { data: boms } = useCollection(bomsQuery);
 
   const isAdmin = hasPermission('admin');
 
