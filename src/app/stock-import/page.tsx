@@ -29,6 +29,7 @@ import { doc, writeBatch, serverTimestamp, getDoc, runTransaction, collection } 
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
 import { ActionModal, ModalType } from "@/components/action-modal"
+import { cn } from "@/lib/utils"
 
 const REQUIRED_FIELDS = ["paperCompany", "paperType", "widthMm", "lengthMeters", "gsm"];
 
