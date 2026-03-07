@@ -56,7 +56,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -228,6 +228,9 @@ export default function PaperStockPage() {
     const start = (currentPage - 1) * rowsPerPage;
     return filteredRows.slice(start, start + rowsPerPage);
   }, [filteredRows, currentPage, rowsPerPage]);
+
+  const startRange = filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
+  const endRange = Math.min(currentPage * rowsPerPage, filteredRows.length);
 
   const toggleMultiFilter = (key: string, value: any) => {
     setFilters((prev: any) => {
@@ -591,7 +594,7 @@ export default function PaperStockPage() {
               </DialogTitle>
             </DialogHeader>
             <div className="p-8 grid grid-cols-2 gap-x-8 gap-y-6 bg-white font-sans">
-              {/* Row 1: Sl No / Roll No & Date Received */}
+              {/* Row 1: Roll No & Date Received */}
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Technical Roll No (Read Only)</Label><Input value={formData.rollNo || "RL-XXXX"} readOnly className="h-10 font-black bg-slate-50 text-teal-600 border-teal-100" /></div>
               <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({ ...formData, receivedDate: e.target.value })} required className="h-10 font-bold" /></div>
               
