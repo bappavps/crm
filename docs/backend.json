@@ -20,29 +20,27 @@
     "PaperStock": {
       "title": "PaperStock",
       "type": "object",
-      "description": "Represents a raw substrate jumbo roll in the inventory with 19 technical columns.",
+      "description": "Represents a raw substrate jumbo roll in the inventory with 17 technical columns.",
       "properties": {
-        "rollNo": { "type": "string", "description": "Unique Roll ID" },
-        "receivedDate": { "type": "string", "format": "date" },
-        "jobNo": { "type": "string" },
+        "rollNo": { "type": "string", "description": "System-generated Unique Roll ID (RL-0001)" },
+        "status": { "type": "string", "enum": ["Available", "Reserved", "Used"] },
         "paperCompany": { "type": "string" },
         "paperType": { "type": "string" },
-        "gsm": { "type": "number" },
-        "size": { "type": "string" },
         "widthMm": { "type": "number" },
         "lengthMeters": { "type": "number" },
-        "quantity": { "type": "number" },
-        "sqm": { "type": "number", "description": "Auto-calculated area" },
-        "lotNo": { "type": "string" },
-        "productName": { "type": "string" },
-        "code": { "type": "string" },
-        "status": { "type": "string", "enum": ["Available", "Reserved", "Partial", "Consumed"] },
-        "location": { "type": "string" },
-        "supplier": { "type": "string" },
-        "createdByName": { "type": "string" },
-        "remarks": { "type": "string" }
+        "sqm": { "type": "number", "description": "Auto-calculated: (W*L)/1000" },
+        "gsm": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "receivedDate": { "type": "string", "format": "date" },
+        "purchaseRate": { "type": "number" },
+        "dateOfSlit": { "type": "string", "description": "Populated by slitting module" },
+        "jobNo": { "type": "string" },
+        "jobName": { "type": "string" },
+        "lotNo": { "type": "string", "description": "Lot No / Invoice No" },
+        "remarks": { "type": "string" },
+        "createdByName": { "type": "string" }
       },
-      "required": ["rollNo", "paperCompany", "gsm", "widthMm", "lengthMeters", "quantity"]
+      "required": ["rollNo", "paperCompany", "gsm", "widthMm", "lengthMeters"]
     }
   },
   "auth": {
@@ -55,7 +53,7 @@
     },
     "/paper_stock/{rollId}": {
       "schema": { "$ref": "#/backend/entities/PaperStock" },
-      "description": "Main substrate inventory registry with 19 technical columns."
+      "description": "Main substrate inventory registry with 17 technical columns."
     },
     "/adminUsers/{adminUid}": {
       "schema": { "type": "object" },
