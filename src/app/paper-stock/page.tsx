@@ -182,6 +182,7 @@ export default function PaperStockPage() {
     let q = collection(firestore, 'jumbo_stock');
     let constraints: any[] = [];
 
+    // ONLY add where clauses if filter value exists
     if (filters.companies.length > 0) constraints.push(where('paperCompany', 'in', filters.companies.slice(0, 10)));
     if (filters.types.length > 0) constraints.push(where('paperType', 'in', filters.types.slice(0, 10)));
     if (filters.gsms.length > 0) constraints.push(where('gsm', 'in', filters.gsms.map(Number).slice(0, 10)));
