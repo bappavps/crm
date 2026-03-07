@@ -1,4 +1,3 @@
-
 "use client"
 
 import { 
@@ -30,7 +29,8 @@ import {
   FileText,
   FileJson,
   ClipboardType,
-  Boxes
+  Boxes,
+  ShoppingBag
 } from "lucide-react"
 import {
   Sidebar,
