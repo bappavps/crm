@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 const inter = Inter({
   subsets: ["latin"],
   display: "swap",
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -28,8 +29,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={cn(inter.className, "antialiased bg-background")}>
+    <html lang="en" suppressHydrationWarning className={inter.variable}>
+      <body className={cn("font-sans antialiased bg-background")} suppressHydrationWarning>
         <FirebaseClientProvider>
           {/* AuthInitializer handles redirection and profile provisioning */}
           <AuthInitializer />

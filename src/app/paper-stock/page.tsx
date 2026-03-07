@@ -60,6 +60,7 @@ export default function PaperStockPage() {
   const firestore = useFirestore()
   const { hasPermission } = usePermissions()
   const [isMounted, setIsMounted] = useState(false)
+  const [defaultDate, setDefaultDate] = useState("")
   
   // Messaging Modal State
   const [modal, setModal] = useState<{
@@ -95,7 +96,10 @@ export default function PaperStockPage() {
     search: ""
   })
 
-  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { 
+    setIsMounted(true)
+    setDefaultDate(new Date().toISOString().split('T')[0])
+  }, [])
 
   const liveSqm = useMemo(() => {
     const w = intakeForm.widthMm || 0;
@@ -239,10 +243,10 @@ export default function PaperStockPage() {
     }
   };
 
-  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
+  if (!isMounted) return <div className="flex h-[70vh] items-center justify-center" suppressHydrationWarning><Loader2 className="animate-spin text-primary" /></div>
 
   return (
-    <div className="flex flex-col h-[calc(100vh-10rem)] space-y-4 font-sans">
+    <div className="flex flex-col h-[calc(100vh-10rem)] space-y-4 font-sans" suppressHydrationWarning>
       <ActionModal 
         isOpen={modal.isOpen}
         onClose={closeModal}
@@ -439,7 +443,7 @@ export default function PaperStockPage() {
 
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Lot Number</Label><Input name="lotNo" defaultValue={editingRoll?.lotNo} required className="h-11 font-black" /></div>
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Purchase Rate (₹)</Label><Input name="purchaseRate" type="number" step="0.01" defaultValue={editingRoll?.purchaseRate} required className="h-11 font-black text-teal-600" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Received Date</Label><Input name="receivedDate" type="date" defaultValue={editingRoll?.receivedDate || new Date().toISOString().split('T')[0]} required className="h-11 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Received Date</Label><Input name="receivedDate" type="date" defaultValue={editingRoll?.receivedDate || defaultDate} required className="h-11 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500">Location</Label><Input name="location" defaultValue={editingRoll?.location} className="h-11 font-bold" /></div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t">
