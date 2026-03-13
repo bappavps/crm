@@ -87,11 +87,11 @@ import { usePermissions } from "@/components/auth/permission-context"
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 const STATUS_OPTIONS = [
-  { value: "Available", label: "Available", color: "bg-emerald-500" },
-  { value: "Reserved", label: "Reserved", color: "bg-amber-500" },
-  { value: "In Production", label: "In Production", color: "bg-blue-500" },
-  { value: "Slitted", label: "Slitted", color: "bg-purple-500" },
-  { value: "Consumed", label: "Consumed", color: "bg-destructive" },
+  { value: "Available", label: "Available", color: "bg-emerald-500", rowBg: "bg-[#E8F8F1]" },
+  { value: "Reserved", label: "Reserved", color: "bg-amber-500", rowBg: "bg-[#FFF4E5]" },
+  { value: "In Production", label: "In Production", color: "bg-blue-500", rowBg: "bg-[#EAF2FF]" },
+  { value: "Slitted", label: "Slitted", color: "bg-purple-500", rowBg: "bg-[#F4E8FF]" },
+  { value: "Consumed", label: "Consumed", color: "bg-destructive", rowBg: "bg-[#FFECEC]" },
 ];
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -488,6 +488,11 @@ export default function PaperStockPage() {
     );
   };
 
+  const getStatusRowColor = (status: string) => {
+    const option = STATUS_OPTIONS.find(o => o.value === status);
+    return option?.rowBg || "bg-white";
+  }
+
   if (!isMounted) return null;
 
   return (
@@ -613,86 +618,89 @@ export default function PaperStockPage() {
             <TableBody>
               {itemsLoading ? (
                 <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
-              ) : paginatedRows.map((j, i) => (
-                <TableRow key={j.id} className={cn("hover:bg-slate-50 transition-colors border-b h-11 group", selectedIds.has(j.id) && "bg-primary/5")}>
-                  <TableCell className="text-center border-r sticky left-0 bg-white z-20 group-hover:bg-slate-50">
-                    <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
-                  </TableCell>
-                  <TableCell className="text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] bg-white z-20 group-hover:bg-slate-50">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                  <TableCell className="font-black text-[11px] text-primary border-r text-center font-mono sticky left-[110px] bg-white z-20 group-hover:bg-slate-50">{j.rollNo}</TableCell>
-                  <TableCell className="text-center border-r">
-                    <Badge className={cn("text-[9px] font-black uppercase h-5", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>
-                      {j.status || "Available"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-[11px] border-r uppercase font-bold text-center px-4">{j.paperCompany}</TableCell>
-                  <TableCell className="text-[11px] border-r font-medium text-center px-4">{j.paperType}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono">{j.gsm}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r">{j.receivedDate}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r italic text-slate-400">{j.dateOfUsed || '-'}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.jobNo || '-'}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-medium">{j.jobSize || '-'}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r truncate max-w-[150px] font-medium px-4">{j.jobName || '-'}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>
-                  <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>
-                  <TableCell className="text-center sticky right-0 bg-white z-20 group-hover:bg-slate-50 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px]">
-                    <TooltipProvider>
-                      <div className="flex items-center justify-center gap-2">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100" onClick={() => handleViewDetails(j)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent><p className="text-[10px] font-bold uppercase">View Roll</p></TooltipContent>
-                        </Tooltip>
+              ) : paginatedRows.map((j, i) => {
+                const rowColorClass = getStatusRowColor(j.status);
+                return (
+                  <TableRow key={j.id} className={cn("transition-all border-b h-11 group", rowColorClass, selectedIds.has(j.id) && "brightness-90")}>
+                    <TableCell className={cn("text-center border-r sticky left-0 z-20 transition-all group-hover:brightness-95", rowColorClass)}>
+                      <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
+                    </TableCell>
+                    <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("font-black text-[11px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{j.rollNo}</TableCell>
+                    <TableCell className="text-center border-r">
+                      <Badge className={cn("text-[9px] font-black uppercase h-5", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>
+                        {j.status || "Available"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-[11px] border-r uppercase font-bold text-center px-4">{j.paperCompany}</TableCell>
+                    <TableCell className="text-[11px] border-r font-medium text-center px-4">{j.paperType}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono">{j.gsm}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r">{j.receivedDate}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r italic text-slate-400">{j.dateOfUsed || '-'}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.jobNo || '-'}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-medium">{j.jobSize || '-'}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r truncate max-w-[150px] font-medium px-4">{j.jobName || '-'}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>
+                    <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>
+                    <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>
+                    <TableCell className={cn("text-center sticky right-0 z-20 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-95", rowColorClass)}>
+                      <TooltipProvider>
+                        <div className="flex items-center justify-center gap-2">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-black/5" onClick={() => handleViewDetails(j)}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-[10px] font-bold uppercase">View Roll</p></TooltipContent>
+                          </Tooltip>
 
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent><p className="text-[10px] font-bold uppercase">Edit Roll</p></TooltipContent>
-                        </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-500/10" onClick={() => handleOpenDialog(j)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-[10px] font-bold uppercase">Edit Roll</p></TooltipContent>
+                          </Tooltip>
 
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:bg-orange-50" onClick={() => handleSlitRoll(j)}>
-                              <Scissors className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent><p className="text-[10px] font-bold uppercase">Send to Slitting</p></TooltipContent>
-                        </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:bg-orange-500/10" onClick={() => handleSlitRoll(j)}>
+                                <Scissors className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-[10px] font-bold uppercase">Send to Slitting</p></TooltipContent>
+                          </Tooltip>
 
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-700 hover:bg-zinc-100" onClick={() => handleOpenPrint(j)}>
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent><p className="text-[10px] font-bold uppercase">Print Label</p></TooltipContent>
-                        </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-700 hover:bg-zinc-700/10" onClick={() => handleOpenPrint(j)}>
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-[10px] font-bold uppercase">Print Label</p></TooltipContent>
+                          </Tooltip>
 
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteRoll(j)}>
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent><p className="text-[10px] font-bold uppercase">Delete Roll</p></TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </TooltipProvider>
-                  </TableCell>
-                </TableRow>
-              ))}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-500/10" onClick={() => handleDeleteRoll(j)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent><p className="text-[10px] font-bold uppercase">Delete Roll</p></TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </TooltipProvider>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
