@@ -20,30 +20,27 @@
     "PaperStock": {
       "title": "PaperStock",
       "type": "object",
-      "description": "Represents a raw substrate jumbo roll in the inventory with technical columns.",
+      "description": "Represents a technical substrate roll in the inventory following the 18-column grid.",
       "properties": {
-        "rollNo": { "type": "string", "description": "System-generated Unique Roll ID (RL-0001)" },
-        "receivedDate": { "type": "string", "format": "date" },
-        "jobNo": { "type": "string" },
+        "rollNo": { "type": "string", "description": "Auto-generated Unique ID (RL-0001)" },
         "paperCompany": { "type": "string" },
         "paperType": { "type": "string" },
-        "gsm": { "type": "number" },
-        "size": { "type": "string" },
         "widthMm": { "type": "number" },
         "lengthMeters": { "type": "number" },
-        "quantity": { "type": "number" },
-        "sqm": { "type": "number", "description": "Auto-calculated: (W/1000*L*Q)" },
-        "lotNo": { "type": "string" },
-        "productName": { "type": "string" },
-        "code": { "type": "string" },
-        "status": { "type": "string", "enum": ["Available", "Reserved", "Used"] },
-        "location": { "type": "string" },
-        "supplier": { "type": "string" },
-        "createdByName": { "type": "string" },
-        "remarks": { "type": "string" },
-        "dateOfSlit": { "type": "string" }
+        "sqm": { "type": "number", "description": "Auto-calculated: (W/1000*L)" },
+        "gsm": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "purchaseRate": { "type": "number" },
+        "receivedDate": { "type": "string", "format": "date" },
+        "dateOfUsed": { "type": "string", "description": "Updated upon consumption" },
+        "jobNo": { "type": "string" },
+        "jobSize": { "type": "string" },
+        "jobName": { "type": "string" },
+        "lotNo": { "type": "string", "description": "Lot / Batch No" },
+        "companyRollNo": { "type": "string" },
+        "remarks": { "type": "string" }
       },
-      "required": ["rollNo", "paperCompany", "gsm", "widthMm", "lengthMeters", "quantity"]
+      "required": ["rollNo", "paperCompany", "widthMm", "lengthMeters", "gsm"]
     },
     "PaperMetadata": {
       "title": "PaperMetadata",
@@ -52,16 +49,6 @@
         "name": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       }
-    },
-    "RoleDefinition": {
-      "title": "RoleDefinition",
-      "type": "object",
-      "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "permissions": { "type": "object" },
-        "updatedAt": { "type": "string", "format": "date-time" }
-      }
     }
   },
   "auth": {
@@ -69,35 +56,16 @@
   },
   "firestore": {
     "/users/{userId}": {
-      "schema": { "$ref": "#/backend/entities/UserProfile" },
-      "description": "Employee profiles and access control."
+      "schema": { "$ref": "#/backend/entities/UserProfile" }
     },
     "/paper_stock/{rollId}": {
       "schema": { "$ref": "#/backend/entities/PaperStock" },
-      "description": "Main substrate inventory registry with sequential Roll ID."
-    },
-    "/adminUsers/{adminUid}": {
-      "schema": { "type": "object" },
-      "description": "Authorization markers for system administrators."
-    },
-    "/paper_companies/{id}": {
-      "schema": { "$ref": "#/backend/entities/PaperMetadata" },
-      "description": "Master list of paper companies."
-    },
-    "/paper_types/{id}": {
-      "schema": { "$ref": "#/backend/entities/PaperMetadata" },
-      "description": "Master list of paper types/substrates."
+      "description": "Primary substrate inventory registry."
     },
     "/roles/{roleId}": {
-      "schema": { "$ref": "#/backend/entities/RoleDefinition" },
       "description": "System access roles and granular permissions."
     },
-    "/quotation_templates/{templateId}": {
-      "schema": { "type": "object" },
-      "description": "HTML layouts for official client quotations."
-    },
     "/counters/{id}": {
-      "schema": { "type": "object" },
       "description": "Atomic sequence counters for unique ID generation."
     }
   }

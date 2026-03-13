@@ -34,21 +34,23 @@ import { cn } from "@/lib/utils"
 const REQUIRED_FIELDS = ["paperCompany", "paperType", "widthMm", "lengthMeters", "gsm"];
 
 const FIELD_LABELS: Record<string, string> = {
+  rollNo: "Roll No",
   paperCompany: "Paper Company",
   paperType: "Paper Type",
   widthMm: "Width (MM)",
   lengthMeters: "Length (MTR)",
+  sqm: "SQM",
   gsm: "GSM",
-  quantity: "Quantity",
   weightKg: "Weight (KG)",
   purchaseRate: "Purchase Rate",
   receivedDate: "Date of Received",
+  dateOfUsed: "Date of Used",
   jobNo: "Job No",
+  jobSize: "Job Size",
   jobName: "Job Name",
-  lotNo: "Lot / Invoice No",
-  remarks: "Remarks",
-  location: "Location",
-  supplier: "Supplier"
+  lotNo: "Lot No / Batch No",
+  companyRollNo: "Company Roll No",
+  remarks: "Remarks"
 };
 
 const TEMPLATE_HEADERS = Object.values(FIELD_LABELS);
@@ -83,8 +85,8 @@ export default function StockImportPage() {
     const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Import Template");
-    XLSX.writeFile(wb, "Shree_Label_Stock_Template.xlsx");
-    toast({ title: "Template Downloaded", description: "Use this structure for fastest imports." });
+    XLSX.writeFile(wb, "Shree_Label_Stock_Template_V3.xlsx");
+    toast({ title: "Template Downloaded", description: "Use this 18-column structure for fastest imports." });
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,7 +112,6 @@ export default function StockImportPage() {
         setHeaders(fileHeaders);
         setExcelData(rows);
 
-        // Attempt Auto-Mapping
         const initialMapping: Record<string, string> = {};
         Object.entries(FIELD_LABELS).forEach(([key, label]) => {
           const match = fileHeaders.find(h => h.toLowerCase() === label.toLowerCase() || h.toLowerCase() === key.toLowerCase());
@@ -118,7 +119,6 @@ export default function StockImportPage() {
         });
         setMapping(initialMapping);
 
-        // Check if all required fields are mapped automatically
         const allRequiredMapped = REQUIRED_FIELDS.every(f => !!initialMapping[f]);
         if (allRequiredMapped && fileHeaders.length === TEMPLATE_HEADERS.length) {
           setStep('preview');
@@ -126,7 +126,7 @@ export default function StockImportPage() {
           setStep('mapping');
         }
       } catch (err) {
-        showModal('ERROR', 'Parsing Error', 'Could not read the spreadsheet. Ensure it is a valid .xlsx or .csv file.');
+        showModal('ERROR', 'Parsing Error', 'Could not read the spreadsheet.');
       }
     };
     reader.readAsArrayBuffer(file);
@@ -148,15 +148,7 @@ export default function StockImportPage() {
       REQUIRED_FIELDS.forEach(field => {
         const header = mapping[field];
         if (!header || row[header] === undefined || row[header] === "") {
-          errors.push(`Row ${index + 2}: Missing required field "${FIELD_LABELS[field]}"`);
-        }
-      });
-
-      // Numeric Validations
-      ["widthMm", "lengthMeters", "gsm"].forEach(field => {
-        const header = mapping[field];
-        if (header && (Number(row[header]) <= 0 || isNaN(Number(row[header])))) {
-          errors.push(`Row ${index + 2}: Invalid value for "${FIELD_LABELS[field]}". Must be greater than 0.`);
+          errors.push(`Row ${index + 2}: Missing mandatory field "${FIELD_LABELS[field]}"`);
         }
       });
     });
@@ -169,7 +161,6 @@ export default function StockImportPage() {
     setProgress(0);
 
     try {
-      // 1. Get starting serial number
       const counterRef = doc(firestore, 'counters', 'paper_roll');
       const counterSnap = await getDoc(counterRef);
       let currentSerial = counterSnap.exists() ? (counterSnap.data().current_number || 0) : 0;
@@ -177,7 +168,6 @@ export default function StockImportPage() {
       const totalRows = excelData.length;
       let imported = 0;
 
-      // 2. Chunk processing
       for (let i = 0; i < totalRows; i += 500) {
         const batch = writeBatch(firestore);
         const chunk = excelData.slice(i, i + 500);
@@ -189,33 +179,28 @@ export default function StockImportPage() {
           const data: any = {
             rollNo: rollId,
             id: rollId,
-            status: "Available",
-            dateOfSlit: "Not Used",
+            dateOfUsed: "Not Used",
             createdAt: serverTimestamp(),
             createdById: user.uid,
             createdByName: user.displayName || user.email
           };
 
-          // Map values
           Object.entries(mapping).forEach(([key, header]) => {
             let val = row[header];
-            if (["widthMm", "lengthMeters", "gsm", "weightKg", "purchaseRate", "quantity"].includes(key)) {
+            if (["widthMm", "lengthMeters", "gsm", "weightKg", "purchaseRate"].includes(key)) {
               val = Number(val) || 0;
             }
             data[key] = val;
           });
 
-          // Calculations
           const w = Number(data.widthMm) || 0;
           const l = Number(data.lengthMeters) || 0;
-          const q = Number(data.quantity) || 1;
-          data.sqm = Number(((w / 1000) * l * q).toFixed(2));
+          data.sqm = Number(((w / 1000) * l).toFixed(2));
 
           batch.set(doc(firestore, 'paper_stock', rollId), data);
           imported++;
         });
 
-        // 3. Update counter in batch (or at end)
         if (i + 500 >= totalRows) {
           batch.set(counterRef, { current_number: currentSerial }, { merge: true });
         }
@@ -228,7 +213,7 @@ export default function StockImportPage() {
       setStep('success');
       showModal('SUCCESS', 'Bulk Import Complete', `Successfully added ${imported} rolls to the registry.`, true);
     } catch (error: any) {
-      showModal('ERROR', 'Import Failed', error.message || 'Firestore write error.');
+      showModal('ERROR', 'Import Failed', error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -240,11 +225,11 @@ export default function StockImportPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-black text-primary uppercase tracking-tight">Stock Import Engine</h2>
-          <p className="text-muted-foreground font-medium text-xs">Technical technical bulk ingestion from Excel / CSV.</p>
+          <h2 className="text-3xl font-black text-primary uppercase tracking-tight">Technical Stock Import</h2>
+          <p className="text-muted-foreground font-medium text-xs">Bulk technical ingestion following the 18-column technical grid.</p>
         </div>
         <Button variant="outline" onClick={downloadTemplate} className="font-black text-[10px] uppercase h-10 border-2">
-          <Download className="mr-2 h-4 w-4" /> Download Template
+          <Download className="mr-2 h-4 w-4" /> Download V3 Template
         </Button>
       </div>
 
@@ -275,7 +260,6 @@ export default function StockImportPage() {
               </div>
               <Button variant="ghost" size="sm" onClick={() => setStep('upload')}><X className="h-4 w-4" /></Button>
             </CardTitle>
-            <CardDescription>Link your spreadsheet columns to the ERP technical fields.</CardDescription>
           </CardHeader>
           <CardContent className="p-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
@@ -285,7 +269,6 @@ export default function StockImportPage() {
                     <Label className={cn("text-[10px] font-black uppercase", REQUIRED_FIELDS.includes(key) ? "text-primary" : "text-slate-500")}>
                       {label} {REQUIRED_FIELDS.includes(key) && "*"}
                     </Label>
-                    {mapping[key] && <Badge variant="secondary" className="h-4 text-[8px] bg-emerald-50 text-emerald-700">MAPPED</Badge>}
                   </div>
                   <Select value={mapping[key]} onValueChange={(val) => setMapping({ ...mapping, [key]: val })}>
                     <SelectTrigger className="h-10 text-xs font-bold border-2">
@@ -304,7 +287,7 @@ export default function StockImportPage() {
                 disabled={!REQUIRED_FIELDS.every(f => !!mapping[f])}
                 className="h-12 px-8 font-black uppercase tracking-widest bg-primary"
               >
-                Validate & Preview Data
+                Preview Data
               </Button>
             </div>
           </CardContent>
@@ -318,11 +301,7 @@ export default function StockImportPage() {
               <CardTitle className="text-sm font-black uppercase flex items-center justify-between tracking-widest">
                 <div className="flex items-center gap-2">
                   <TableIcon className="h-4 w-4 text-primary" />
-                  <span>Import Preview: {excelData.length} technical rows</span>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setStep('mapping')} className="text-[10px] font-black uppercase">Edit Mapping</Button>
-                  <Button variant="ghost" size="sm" onClick={() => setStep('upload')}><X className="h-4 w-4" /></Button>
+                  <span>Import Preview: {excelData.length} rolls</span>
                 </div>
               </CardTitle>
             </CardHeader>
@@ -343,8 +322,8 @@ export default function StockImportPage() {
                         {REQUIRED_FIELDS.map(f => (
                           <TableCell key={f}>{row[f] || "-"}</TableCell>
                         ))}
-                        <TableCell className="font-black text-teal-600">
-                          {((Number(row.widthMm) / 1000) * Number(row.lengthMeters) * (Number(row.quantity) || 1)).toFixed(2)}
+                        <TableCell className="font-black text-primary">
+                          {((Number(row.widthMm) / 1000) * Number(row.lengthMeters)).toFixed(2)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -353,34 +332,24 @@ export default function StockImportPage() {
               </div>
               
               <div className="p-8 space-y-8 bg-white">
-                {validationErrors.length > 0 ? (
+                {validationErrors.length > 0 && (
                   <div className="bg-destructive/5 border border-destructive/20 p-6 rounded-2xl space-y-4">
                     <div className="flex items-center gap-2 text-destructive font-black text-xs uppercase tracking-widest">
                       <AlertCircle className="h-5 w-5" />
                       Critical Validation Failures ({validationErrors.length})
                     </div>
                     <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                      {validationErrors.slice(0, 20).map((err, i) => (
+                      {validationErrors.slice(0, 10).map((err, i) => (
                         <li key={i} className="text-[10px] font-bold text-destructive/80">• {err}</li>
                       ))}
-                      {validationErrors.length > 20 && <li className="text-[10px] font-black text-destructive italic">...and {validationErrors.length - 20} more errors</li>}
                     </ul>
-                    <p className="text-[10px] text-muted-foreground italic pt-2">Please fix your Excel file or adjust the column mapping to proceed.</p>
-                  </div>
-                ) : (
-                  <div className="bg-emerald-50 border border-emerald-200 p-6 rounded-2xl flex items-start gap-4">
-                    <Sparkles className="h-6 w-6 text-emerald-600 mt-0.5" />
-                    <div className="space-y-1">
-                      <p className="text-xs font-black uppercase text-emerald-800 tracking-widest">Technical Validation Passed</p>
-                      <p className="text-[11px] text-emerald-700 opacity-80">All mandatory technical columns are correctly mapped and numeric values are verified.</p>
-                    </div>
                   </div>
                 )}
 
                 {isProcessing && (
                   <div className="space-y-3">
                     <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-primary">
-                      <span>Batch Transaction: Processing {excelData.length} technical records...</span>
+                      <span>Importing Technical Units...</span>
                       <span>{progress}%</span>
                     </div>
                     <Progress value={progress} className="h-3 rounded-full" />
@@ -393,7 +362,7 @@ export default function StockImportPage() {
                   className="w-full h-16 text-lg font-black uppercase tracking-widest shadow-2xl rounded-xl"
                 >
                   {isProcessing ? <Loader2 className="animate-spin mr-2 h-6 w-6" /> : <CheckCircle2 className="mr-2 h-6 w-6" />}
-                  Finalize Bulk Technical Import
+                  Finalize Technical Import
                 </Button>
               </div>
             </CardContent>
@@ -406,14 +375,11 @@ export default function StockImportPage() {
           <div className="h-24 w-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-xl border-4 border-white">
             <CheckCircle2 className="text-white h-12 w-12" />
           </div>
-          <h3 className="text-4xl font-black text-emerald-900 uppercase tracking-tighter mb-2">Technical Ingestion Complete</h3>
-          <p className="text-emerald-700 font-bold mb-10 text-lg">Successfully migrated {summary?.imported} technical units to the Master Paper Stock Registry.</p>
-          <div className="flex gap-4 max-w-md mx-auto">
-            <Button variant="outline" onClick={() => setStep('upload')} className="flex-1 font-black uppercase tracking-widest h-12 border-2">Import More</Button>
-            <Button asChild className="flex-1 bg-emerald-600 hover:bg-emerald-700 font-black uppercase tracking-widest h-12 shadow-lg">
-              <a href="/paper-stock">View Stock Registry <ArrowRight className="ml-2 h-4 w-4" /></a>
-            </Button>
-          </div>
+          <h3 className="text-4xl font-black text-emerald-900 uppercase tracking-tighter mb-2">Registry Updated</h3>
+          <p className="text-emerald-700 font-bold mb-10 text-lg">Successfully ingested {summary?.imported} technical units.</p>
+          <Button asChild className="max-w-md w-full bg-emerald-600 hover:bg-emerald-700 font-black uppercase tracking-widest h-12 shadow-lg">
+            <a href="/paper-stock">View Technical Registry <ArrowRight className="ml-2 h-4 w-4" /></a>
+          </Button>
         </Card>
       )}
     </div>
