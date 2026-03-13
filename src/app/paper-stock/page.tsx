@@ -2,6 +2,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -27,14 +28,20 @@ import {
   MoreHorizontal,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Eye,
+  Scissors,
+  Printer,
+  Info,
+  CheckCircle2
 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter
+  DialogFooter,
+  DialogDescription
 } from "@/components/ui/dialog"
 import {
   Select,
@@ -56,6 +63,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
@@ -90,12 +103,17 @@ interface SortConfig {
 
 export default function PaperStockPage() {
   const { user } = useUser()
+  const router = useRouter()
   const firestore = useFirestore()
   const { hasPermission } = usePermissions()
   
   const [isMounted, setIsMounted] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isViewOpen, setIsViewOpen] = useState(false)
+  const [isPrintOpen, setIsPrintOpen] = useState(false)
   const [editingRoll, setEditingRoll] = useState<any>(null)
+  const [viewingRoll, setViewingRoll] = useState<any>(null)
+  const [printingRoll, setPrintingRoll] = useState<any>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   
   const [currentPage, setCurrentPage] = useState(1)
@@ -123,7 +141,6 @@ export default function PaperStockPage() {
     jobName: [],
     lotNo: [],
     companyRollNo: [],
-    // Ranges
     widthMin: "", widthMax: "",
     lengthMin: "", lengthMax: "",
     sqmMin: "", sqmMax: "",
@@ -199,20 +216,17 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     let result = rolls.filter(row => {
-      // 1. Global Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const isMatch = Object.values(row).some(v => String(v || "").toLowerCase().includes(s));
         if (!isMatch) return false;
       }
 
-      // 2. Multi-select Categorical Filters
       const categories = ['paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo'];
       for (const cat of categories) {
         if (filters[cat]?.length > 0 && !filters[cat].includes(String(row[cat] || ""))) return false;
       }
 
-      // 3. Range Filters (Numeric)
       const numericRanges = [
         { key: 'widthMm', min: 'widthMin', max: 'widthMax' },
         { key: 'lengthMeters', min: 'lengthMin', max: 'lengthMax' },
@@ -227,7 +241,6 @@ export default function PaperStockPage() {
         if (filters[r.max] && val > Number(filters[r.max])) return false;
       }
 
-      // 4. Date Ranges
       if (filters.receivedFrom && (row.receivedDate || "") < filters.receivedFrom) return false;
       if (filters.receivedTo && (row.receivedDate || "") > filters.receivedTo) return false;
       if (filters.usedFrom && (row.dateOfUsed || "") < filters.usedFrom) return false;
@@ -236,21 +249,18 @@ export default function PaperStockPage() {
       return true;
     });
 
-    // Apply Sorting
     if (sortConfig.key && sortConfig.direction) {
       result.sort((a, b) => {
         const key = sortConfig.key;
         let valA = a[key];
         let valB = b[key];
 
-        // Handle numeric values
         if (['widthMm', 'lengthMeters', 'sqm', 'gsm', 'weightKg', 'purchaseRate'].includes(key)) {
           valA = Number(valA || 0);
           valB = Number(valB || 0);
           return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
         }
 
-        // Default string comparison
         valA = String(valA || "").toLowerCase();
         valB = String(valB || "").toLowerCase();
         
@@ -287,6 +297,20 @@ export default function PaperStockPage() {
       });
     }
     setIsDialogOpen(true);
+  }
+
+  const handleViewDetails = (roll: any) => {
+    setViewingRoll(roll);
+    setIsViewOpen(true);
+  }
+
+  const handleOpenPrint = (roll: any) => {
+    setPrintingRoll(roll);
+    setIsPrintOpen(true);
+  }
+
+  const handleSlitRoll = (roll: any) => {
+    router.push(`/inventory/slitting?rollId=${roll.id}`);
   }
 
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -583,7 +607,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r text-center" />
                 <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r text-center" />
                 <TableHead className="font-black text-[10px] uppercase border-r text-center min-w-[200px]">Remarks</TableHead>
-                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[100px]">Action</TableHead>
+                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px]">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -617,15 +641,55 @@ export default function PaperStockPage() {
                   <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>
                   <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>
                   <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>
-                  <TableCell className="text-center sticky right-0 bg-white z-20 group-hover:bg-slate-50 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[100px]">
-                    <div className="flex items-center justify-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" onClick={() => handleOpenDialog(j)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDeleteRoll(j)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
+                  <TableCell className="text-center sticky right-0 bg-white z-20 group-hover:bg-slate-50 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px]">
+                    <TooltipProvider>
+                      <div className="flex items-center justify-center gap-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-slate-100" onClick={() => handleViewDetails(j)}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-[10px] font-bold uppercase">View Roll</p></TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-[10px] font-bold uppercase">Edit Roll</p></TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:bg-orange-50" onClick={() => handleSlitRoll(j)}>
+                              <Scissors className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-[10px] font-bold uppercase">Send to Slitting</p></TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-700 hover:bg-zinc-100" onClick={() => handleOpenPrint(j)}>
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-[10px] font-bold uppercase">Print Label</p></TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteRoll(j)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent><p className="text-[10px] font-bold uppercase">Delete Roll</p></TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TooltipProvider>
                   </TableCell>
                 </TableRow>
               ))}
@@ -653,6 +717,128 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
+      {/* VIEW MODAL */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
+          <DialogHeader className="p-6 bg-slate-50 border-b">
+            <div className="flex items-center justify-between">
+              <DialogTitle className="uppercase font-black text-xl tracking-tighter flex items-center gap-2 text-primary">
+                <Package className="h-6 w-6" /> Roll Specifications: {viewingRoll?.rollNo}
+              </DialogTitle>
+              <Badge className={cn("text-[10px] font-black uppercase h-6 px-3", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>
+                {viewingRoll?.status}
+              </Badge>
+            </div>
+          </DialogHeader>
+          <div className="p-8 grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-6 bg-white">
+            {[
+              { label: "Paper Company", value: viewingRoll?.paperCompany },
+              { label: "Paper Type", value: viewingRoll?.paperType },
+              { label: "Width (MM)", value: viewingRoll?.widthMm, mono: true },
+              { label: "Length (MTR)", value: viewingRoll?.lengthMeters, mono: true },
+              { label: "SQM", value: viewingRoll?.sqm, mono: true, highlight: true },
+              { label: "GSM", value: viewingRoll?.gsm, mono: true },
+              { label: "Weight (KG)", value: viewingRoll?.weightKg, mono: true },
+              { label: "Purchase Rate", value: `₹${viewingRoll?.purchaseRate}`, mono: true },
+              { label: "Received Date", value: viewingRoll?.receivedDate },
+              { label: "Used Date", value: viewingRoll?.dateOfUsed || "N/A" },
+              { label: "Job No", value: viewingRoll?.jobNo || "—", mono: true },
+              { label: "Job Size", value: viewingRoll?.jobSize || "—" },
+              { label: "Job Name", value: viewingRoll?.jobName || "—" },
+              { label: "Lot No", value: viewingRoll?.lotNo || "—", mono: true },
+              { label: "Company Roll", value: viewingRoll?.companyRollNo || "—", mono: true },
+            ].map((item, idx) => (
+              <div key={idx} className="space-y-1">
+                <Label className="text-[10px] uppercase font-black text-slate-400">{item.label}</Label>
+                <p className={cn(
+                  "text-sm font-bold",
+                  item.mono && "font-mono",
+                  item.highlight && "text-primary font-black"
+                )}>
+                  {item.value}
+                </p>
+              </div>
+            ))}
+            <div className="col-span-full pt-4">
+              <Label className="text-[10px] uppercase font-black text-slate-400">Remarks</Label>
+              <p className="text-xs italic text-slate-600 bg-slate-50 p-3 rounded-lg mt-1 border">
+                {viewingRoll?.remarks || "No additional technical flags recorded."}
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="p-6 border-t bg-slate-50 flex gap-3 justify-end">
+            <Button variant="outline" onClick={() => setIsViewOpen(false)} className="font-black uppercase text-xs">Close Dossier</Button>
+            <Button onClick={() => { setIsViewOpen(false); handleOpenPrint(viewingRoll); }} className="font-black uppercase text-xs bg-zinc-800 text-white">
+              <Printer className="mr-2 h-4 w-4" /> Print Label
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* PRINT LABEL MODAL */}
+      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
+        <DialogContent className="sm:max-w-[400px] p-0 border-none overflow-hidden rounded-2xl shadow-3xl">
+          <div className="bg-white p-10 font-sans text-black" id="printable-label">
+            <div className="border-4 border-black p-6 space-y-6">
+              <div className="text-center space-y-1 pb-4 border-b-2 border-black">
+                <h2 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h2>
+                <p className="text-[10px] font-bold">Technical Substrate Identity</p>
+              </div>
+              
+              <div className="flex justify-between items-start">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-[9px] font-bold uppercase">Roll ID</p>
+                    <p className="text-3xl font-black leading-none">{printingRoll?.rollNo}</p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-bold uppercase">Material</p>
+                    <p className="text-lg font-black uppercase leading-none">{printingRoll?.paperType}</p>
+                    <p className="text-[10px] font-bold text-slate-600">{printingRoll?.paperCompany}</p>
+                  </div>
+                </div>
+                <div className="h-20 w-20 bg-slate-100 flex items-center justify-center border-2 border-black">
+                  <span className="text-[8px] font-bold text-slate-400 rotate-45">BARCODE</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t-2 border-black">
+                <div>
+                  <p className="text-[9px] font-bold uppercase">Width</p>
+                  <p className="text-xl font-black">{printingRoll?.widthMm} mm</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold uppercase">Length</p>
+                  <p className="text-xl font-black">{printingRoll?.lengthMeters} m</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold uppercase">GSM</p>
+                  <p className="text-xl font-black">{printingRoll?.gsm}</p>
+                </div>
+                <div>
+                  <p className="text-[9px] font-bold uppercase">Weight</p>
+                  <p className="text-xl font-black">{printingRoll?.weightKg} kg</p>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-black/20 text-[8px] font-bold uppercase flex justify-between">
+                <span>REC: {printingRoll?.receivedDate}</span>
+                <span>LOT: {printingRoll?.lotNo}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="p-6 bg-slate-50 border-t flex flex-col gap-2">
+            <Button onClick={() => window.print()} className="w-full h-12 font-black uppercase bg-primary text-white shadow-lg">
+              Confirm & Print Label
+            </Button>
+            <Button variant="ghost" onClick={() => setIsPrintOpen(false)} className="w-full text-[10px] font-bold uppercase text-slate-400">
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ADD/EDIT MODAL */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
           <form onSubmit={handleSave}>
