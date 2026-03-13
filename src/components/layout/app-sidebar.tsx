@@ -127,7 +127,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { hasPermission } = usePermissions()
-  const { setOpenMobile, isMobile } = useSidebar()
+  const { setOpenMobile, isMobile, state } = useSidebar()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -143,16 +143,18 @@ export function AppSidebar() {
   if (!mounted) return null;
 
   return (
-    <Sidebar variant="sidebar" className="bg-sidebar border-none shadow-xl font-sans">
+    <Sidebar variant="sidebar" collapsible="icon" className="bg-sidebar border-none shadow-xl font-sans transition-all duration-300">
       <SidebarHeader className="p-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shrink-0">
             <Lock className="text-white w-6 h-6" />
           </div>
-          <div>
-            <span className="block font-black text-white text-lg tracking-tighter uppercase">Shree Label</span>
-            <span className="block text-[9px] text-muted-foreground uppercase tracking-[0.2em] font-bold">ERP Solutions</span>
-          </div>
+          {state === "expanded" && (
+            <div className="animate-in fade-in duration-500">
+              <span className="block font-black text-white text-lg tracking-tighter uppercase whitespace-nowrap">Shree Label</span>
+              <span className="block text-[9px] text-muted-foreground uppercase tracking-[0.2em] font-bold whitespace-nowrap">ERP Solutions</span>
+            </div>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -160,7 +162,7 @@ export function AppSidebar() {
           <SidebarMenu>
             <SidebarMenuItem>
               {hasPermission('dashboard') && (
-                <SidebarMenuButton asChild isActive={pathname === '/'} onClick={handleNavClick}>
+                <SidebarMenuButton asChild isActive={pathname === '/'} onClick={handleNavClick} tooltip="Dashboard">
                   <Link href="/">
                     <LayoutDashboard className="mr-3" />
                     <span className="font-bold">Dashboard</span>
@@ -178,7 +180,7 @@ export function AppSidebar() {
 
           return (
             <SidebarGroup key={group.label} className="mt-2">
-              <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">
+              <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1 group-data-[collapsible=icon]:hidden">
                 {group.label}
               </SidebarGroupLabel>
               <SidebarMenu>
@@ -189,6 +191,7 @@ export function AppSidebar() {
                       isActive={pathname === item.href}
                       className="px-4 py-1.5 transition-all duration-200 h-9"
                       onClick={handleNavClick}
+                      tooltip={item.name}
                     >
                       <Link href={item.href}>
                         <item.icon className="mr-3 h-4 w-4" />
@@ -205,13 +208,19 @@ export function AppSidebar() {
         {/* MASTER GROUP LAST */}
         {hasPermission('admin') && (
           <SidebarGroup className="mt-2">
-            <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1">
+            <SidebarGroupLabel className="px-4 text-[9px] font-black text-sidebar-foreground/40 uppercase tracking-widest mb-1 group-data-[collapsible=icon]:hidden">
               {masterGroup.label}
             </SidebarGroupLabel>
             <SidebarMenu>
               {masterGroup.items.map((item) => (
                 <SidebarMenuItem key={item.name}>
-                  <SidebarMenuButton asChild isActive={pathname === item.href} className="px-4 py-1.5 h-9" onClick={handleNavClick}>
+                  <SidebarMenuButton 
+                    asChild 
+                    isActive={pathname === item.href} 
+                    className="px-4 py-1.5 h-9" 
+                    onClick={handleNavClick}
+                    tooltip={item.name}
+                  >
                     <Link href={item.href}>
                       <item.icon className="mr-3 h-4 w-4" />
                       <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
