@@ -56,7 +56,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -65,8 +65,7 @@ import {
   serverTimestamp,
   runTransaction,
   writeBatch,
-  orderBy,
-  setDoc,
+  deleteDoc,
   updateDoc,
   getDoc
 } from "firebase/firestore"
@@ -327,6 +326,52 @@ export default function PaperStockPage() {
     }
   };
 
+  const handleDeleteRoll = async (roll: any) => {
+    setModal({
+      isOpen: true,
+      type: 'CONFIRMATION',
+      title: 'Delete this roll?',
+      description: `Permanently remove ${roll.rollNo} from registry?`,
+      onConfirm: async () => {
+        setIsProcessing(true);
+        try {
+          await deleteDoc(doc(firestore!, 'paper_stock', roll.id));
+          setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Deleted', autoClose: true });
+        } catch (error: any) {
+          setModal({ isOpen: true, type: 'ERROR', title: 'Delete Failed', description: error.message });
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    setModal({
+      isOpen: true,
+      type: 'WARNING',
+      title: `Delete ${selectedIds.size} rolls?`,
+      description: 'This bulk action cannot be undone.',
+      onConfirm: async () => {
+        setIsProcessing(true);
+        try {
+          const batch = writeBatch(firestore!);
+          selectedIds.forEach(id => {
+            batch.delete(doc(firestore!, 'paper_stock', id));
+          });
+          await batch.commit();
+          setSelectedIds(new Set());
+          setModal({ isOpen: true, type: 'SUCCESS', title: 'Bulk Delete Complete', autoClose: true });
+        } catch (error: any) {
+          setModal({ isOpen: true, type: 'ERROR', title: 'Bulk Delete Failed', description: error.message });
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+    });
+  };
+
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -407,7 +452,7 @@ export default function PaperStockPage() {
     const isActive = sortConfig.key === field;
     return (
       <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)}>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center justify-center gap-1">
           <span className="font-black text-[10px] uppercase">{label}</span>
           {isActive ? (
             sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
@@ -436,11 +481,26 @@ export default function PaperStockPage() {
               onChange={e => setFilters({ ...filters, search: e.target.value })} 
             />
           </div>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
+              <Badge className="bg-primary text-white font-black h-8 px-4 rounded-lg">
+                {selectedIds.size} SELECTED
+              </Badge>
+              <Button 
+                variant="destructive" 
+                size="sm" 
+                onClick={handleBulkDelete}
+                className="h-8 font-black text-[10px] uppercase tracking-widest rounded-lg shadow-lg"
+              >
+                <Trash2 className="h-3 w-3 mr-1.5" /> Delete Selected
+              </Button>
+            </div>
+          )}
           <Button variant="ghost" size="sm" onClick={() => setFilters({
             search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
             widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
             receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-          })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
+          })} className="ml-auto text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
         </div>
         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-50">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
@@ -496,30 +556,34 @@ export default function PaperStockPage() {
               <TableRow>
                 <TableHead className="w-[50px] text-center border-r sticky left-0 bg-slate-50 z-50">
                   <Checkbox 
-                    checked={selectedIds.size === paginatedRows.length && paginatedRows.length > 0} 
-                    onCheckedChange={(val) => val ? setSelectedIds(new Set(paginatedRows.map(r => r.id))) : setSelectedIds(new Set())} 
+                    checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} 
+                    onCheckedChange={(val) => {
+                      const next = new Set(selectedIds);
+                      paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id));
+                      setSelectedIds(next);
+                    }} 
                   />
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r sticky left-[50px] bg-slate-50 z-50">Sl No</TableHead>
                 <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r text-center sticky left-[110px] bg-slate-50 z-50" />
                 <SortableHeader label="Status" field="status" className="w-[140px] border-r text-center" />
-                <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
-                <SortableHeader label="Paper Type" field="paperType" className="border-r" />
-                <SortableHeader label="Width (MM)" field="widthMm" className="border-r text-right" />
-                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r text-right" />
-                <SortableHeader label="SQM" field="sqm" className="border-r text-right" />
-                <SortableHeader label="GSM" field="gsm" className="border-r text-right" />
-                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r text-right" />
-                <SortableHeader label="Purchase Rate" field="purchaseRate" className="border-r text-right" />
+                <SortableHeader label="Paper Company" field="paperCompany" className="border-r text-center" />
+                <SortableHeader label="Paper Type" field="paperType" className="border-r text-center" />
+                <SortableHeader label="Width (MM)" field="widthMm" className="border-r text-center" />
+                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r text-center" />
+                <SortableHeader label="SQM" field="sqm" className="border-r text-center" />
+                <SortableHeader label="GSM" field="gsm" className="border-r text-center" />
+                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r text-center" />
+                <SortableHeader label="Purchase Rate" field="purchaseRate" className="border-r text-center" />
                 <SortableHeader label="Date Received" field="receivedDate" className="border-r text-center" />
                 <SortableHeader label="Date of Used" field="dateOfUsed" className="border-r text-center" />
-                <SortableHeader label="Job No" field="jobNo" className="border-r" />
-                <SortableHeader label="Job Size" field="jobSize" className="border-r" />
-                <SortableHeader label="Job Name" field="jobName" className="border-r" />
-                <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r" />
-                <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r" />
-                <TableHead className="font-black text-[10px] uppercase border-r">Remarks</TableHead>
-                <TableHead className="text-right font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)]">Action</TableHead>
+                <SortableHeader label="Job No" field="jobNo" className="border-r text-center" />
+                <SortableHeader label="Job Size" field="jobSize" className="border-r text-center" />
+                <SortableHeader label="Job Name" field="jobName" className="border-r text-center" />
+                <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r text-center" />
+                <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r text-center" />
+                <TableHead className="font-black text-[10px] uppercase border-r text-center min-w-[200px]">Remarks</TableHead>
+                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[100px]">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -527,7 +591,9 @@ export default function PaperStockPage() {
                 <TableRow><TableCell colSpan={21} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => (
                 <TableRow key={j.id} className={cn("hover:bg-slate-50 transition-colors border-b h-11 group", selectedIds.has(j.id) && "bg-primary/5")}>
-                  <TableCell className="text-center border-r sticky left-0 bg-white z-20 group-hover:bg-slate-50"><Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} /></TableCell>
+                  <TableCell className="text-center border-r sticky left-0 bg-white z-20 group-hover:bg-slate-50">
+                    <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
+                  </TableCell>
                   <TableCell className="text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] bg-white z-20 group-hover:bg-slate-50">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
                   <TableCell className="font-black text-[11px] text-primary border-r text-center font-mono sticky left-[110px] bg-white z-20 group-hover:bg-slate-50">{j.rollNo}</TableCell>
                   <TableCell className="text-center border-r">
@@ -535,24 +601,31 @@ export default function PaperStockPage() {
                       {j.status || "Available"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-[11px] border-r uppercase font-bold text-left">{j.paperCompany}</TableCell>
-                  <TableCell className="text-[11px] border-r font-medium text-left">{j.paperType}</TableCell>
-                  <TableCell className="text-right text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>
-                  <TableCell className="text-right text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>
-                  <TableCell className="text-right text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>
-                  <TableCell className="text-right text-[11px] border-r font-mono">{j.gsm}</TableCell>
-                  <TableCell className="text-right text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>
-                  <TableCell className="text-right text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>
+                  <TableCell className="text-[11px] border-r uppercase font-bold text-center px-4">{j.paperCompany}</TableCell>
+                  <TableCell className="text-[11px] border-r font-medium text-center px-4">{j.paperType}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono">{j.gsm}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>
                   <TableCell className="text-center text-[11px] border-r">{j.receivedDate}</TableCell>
                   <TableCell className="text-center text-[11px] border-r italic text-slate-400">{j.dateOfUsed || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r font-mono text-left font-bold">{j.jobNo || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r text-left font-medium">{j.jobSize || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r text-left truncate max-w-[150px] font-medium">{j.jobName || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r text-left font-mono">{j.lotNo || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r text-left font-mono">{j.companyRollNo || '-'}</TableCell>
-                  <TableCell className="text-[11px] border-r text-left truncate max-w-[200px] italic text-slate-400">{j.remarks || '-'}</TableCell>
-                  <TableCell className="text-right sticky right-0 bg-white z-20 group-hover:bg-slate-50 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)]">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
+                  <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.jobNo || '-'}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-medium">{j.jobSize || '-'}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r truncate max-w-[150px] font-medium px-4">{j.jobName || '-'}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>
+                  <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>
+                  <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>
+                  <TableCell className="text-center sticky right-0 bg-white z-20 group-hover:bg-slate-50 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[100px]">
+                    <div className="flex items-center justify-center gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-primary/10 hover:text-primary" onClick={() => handleOpenDialog(j)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => handleDeleteRoll(j)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
