@@ -28,10 +28,11 @@ import {
   ChevronRight,
   Database,
   ArrowLeft,
-  Settings2
+  Settings2,
+  FileSpreadsheet
 } from "lucide-react"
-import { useFirestore, useUser } from "@/firebase"
-import { doc, writeBatch, serverTimestamp, getDoc, collection } from "firebase/firestore"
+import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { doc, writeBatch, serverTimestamp, getDoc, collection, query, limit, getDocs } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
 import { ActionModal, ModalType } from "@/components/action-modal"
@@ -111,10 +112,10 @@ const findBestMatch = (targetLabel: string, systemKey: string, fileHeaders: stri
   if (match) return match;
 
   const aliases: Record<string, string[]> = {
-    receivedDate: ['date', 'entry', 'received'],
+    receivedDate: ['date', 'entry', 'received', 'datereceived'],
     widthMm: ['width', 'wmm', 'widthmm'],
     lengthMeters: ['length', 'lmtr', 'mtr', 'lengthmtr'],
-    paperCompany: ['company', 'mfr', 'supplier', 'papercompany'],
+    paperCompany: ['company', 'mfr', 'supplier', 'papercompany', 'vendor'],
     paperType: ['type', 'substrate', 'material', 'papertype'],
     lotNo: ['lot', 'batch', 'invoice', 'lotno'],
     companyRollNo: ['parent', 'reel', 'mfrroll', 'companyrollno'],
@@ -334,20 +335,68 @@ export default function StockImportPage() {
     }
   };
 
+  const handleGlobalExport = async () => {
+    if (!firestore) return
+    setIsProcessing(true)
+    try {
+      const q = query(collection(firestore, 'paper_stock'), limit(5000));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(d => {
+        const r = d.data();
+        return {
+          "Roll No": r.rollNo,
+          "Status": r.status,
+          "Paper Company": r.paperCompany,
+          "Paper Type": r.paperType,
+          "Width (MM)": r.widthMm,
+          "Length (MTR)": r.lengthMeters,
+          "SQM": r.sqm,
+          "GSM": r.gsm,
+          "Weight (KG)": r.weightKg,
+          "Purchase Rate": r.purchaseRate,
+          "Date Received": r.receivedDate,
+          "Date Used": r.dateOfUsed || '-',
+          "Job No": r.jobNo || '-',
+          "Job Size": r.jobSize || '-',
+          "Job Name": r.jobName || '-',
+          "Lot No": r.lotNo || '-',
+          "Company Roll No": r.companyRollNo || '-',
+          "Remarks": r.remarks || '-'
+        };
+      });
+
+      const ws = XLSX.utils.json_to_sheet(data)
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, "Master Inventory")
+      XLSX.writeFile(wb, "Shree_Label_Master_Inventory.xlsx")
+      toast({ title: "Export Ready", description: `Compiled ${data.length} records.` })
+    } catch (e: any) {
+      showModal('ERROR', 'Export Failed', e.message)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto space-y-8 pb-20 font-sans animate-in fade-in duration-500">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">High-Performance Intake</h2>
-          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Bulk migration with automated technical validation.</p>
+          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Stock Import & Export Hub</h2>
+          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Unified technical ingestion and master reporting console.</p>
         </div>
-        {currentStep > 0 && currentStep < 4 && !isAnalyzing && (
-          <Button variant="ghost" onClick={() => setCurrentStep(currentStep - 1)} className="font-black text-[10px] uppercase">
-            <ArrowLeft className="mr-2 h-3 w-3" /> Back
+        <div className="flex gap-2">
+          {currentStep > 0 && currentStep < 4 && !isAnalyzing && (
+            <Button variant="ghost" onClick={() => setCurrentStep(currentStep - 1)} className="font-black text-[10px] uppercase">
+              <ArrowLeft className="mr-2 h-3 w-3" /> Back
+            </Button>
+          )}
+          <Button onClick={handleGlobalExport} disabled={isProcessing} className="bg-zinc-800 hover:bg-zinc-900 text-white h-10 px-6 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">
+            {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileSpreadsheet className="h-4 w-4 mr-2 text-emerald-400" />}
+            Export Master Stock
           </Button>
-        )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between w-full max-w-4xl mx-auto px-4">

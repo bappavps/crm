@@ -33,7 +33,9 @@ import {
   Scissors,
   Printer,
   Info,
-  CheckCircle2
+  CheckCircle2,
+  FileDown,
+  Columns as ColumnsIcon
 } from "lucide-react"
 import { 
   Dialog, 
@@ -65,9 +67,9 @@ import {
 } from "@/components/ui/popover"
 import {
   Tooltip,
-  TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  TooltipContent,
 } from "@/components/ui/tooltip"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
@@ -85,6 +87,7 @@ import {
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/components/auth/permission-context"
 import { ActionModal, ModalType } from "@/components/action-modal"
+import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
   { value: "Available", label: "Available", color: "bg-emerald-500", rowBg: "bg-[#E8F8F1]" },
@@ -92,6 +95,25 @@ const STATUS_OPTIONS = [
   { value: "In Production", label: "In Production", color: "bg-blue-500", rowBg: "bg-[#EAF2FF]" },
   { value: "Slitted", label: "Slitted", color: "bg-purple-500", rowBg: "bg-[#F4E8FF]" },
   { value: "Consumed", label: "Consumed", color: "bg-destructive", rowBg: "bg-[#FFECEC]" },
+];
+
+const COLUMN_KEYS = [
+  { id: 'paperCompany', label: 'Paper Company' },
+  { id: 'paperType', label: 'Paper Type' },
+  { id: 'widthMm', label: 'Width (MM)' },
+  { id: 'lengthMeters', label: 'Length (MTR)' },
+  { id: 'sqm', label: 'SQM' },
+  { id: 'gsm', label: 'GSM' },
+  { id: 'weightKg', label: 'Weight (KG)' },
+  { id: 'purchaseRate', label: 'Purchase Rate' },
+  { id: 'receivedDate', label: 'Date Received' },
+  { id: 'dateOfUsed', label: 'Date Used' },
+  { id: 'jobNo', label: 'Job No' },
+  { id: 'jobSize', label: 'Job Size' },
+  { id: 'jobName', label: 'Job Name' },
+  { id: 'lotNo', label: 'Lot No' },
+  { id: 'companyRollNo', label: 'Company Roll No' },
+  { id: 'remarks', label: 'Remarks' },
 ];
 
 type SortDirection = 'asc' | 'desc' | null;
@@ -120,6 +142,20 @@ export default function PaperStockPage() {
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
+
+  // Column Visibility State
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('paperStockVisibleColumns')
+      if (saved) return JSON.parse(saved)
+    }
+    const initial: Record<string, boolean> = {
+      rollNo: true,
+      status: true,
+    }
+    COLUMN_KEYS.forEach(col => initial[col.id] = true)
+    return initial
+  })
 
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -176,6 +212,13 @@ export default function PaperStockPage() {
     setIsMounted(true);
     setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
   }, [])
+
+  // Persist Visibility
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
+    }
+  }, [visibleColumns, isMounted])
 
   const companiesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_companies'), limit(100)) : null, [firestore]);
   const typesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_types'), limit(100)) : null, [firestore]);
@@ -396,6 +439,42 @@ export default function PaperStockPage() {
     });
   };
 
+  const exportStock = () => {
+    if (filteredRows.length === 0) {
+      toast({ title: "No Data", description: "No records found to export with current filters." })
+      return
+    }
+
+    const exportData = filteredRows.map((r, i) => ({
+      "Sl No": i + 1,
+      "Roll No": r.rollNo,
+      "Status": r.status,
+      "Paper Company": r.paperCompany,
+      "Paper Type": r.paperType,
+      "Width (MM)": r.widthMm,
+      "Length (MTR)": r.lengthMeters,
+      "SQM": r.sqm,
+      "GSM": r.gsm,
+      "Weight (KG)": r.weightKg,
+      "Purchase Rate": r.purchaseRate,
+      "Date of Received": r.receivedDate,
+      "Date of Used": r.dateOfUsed || '-',
+      "Job No": r.jobNo || '-',
+      "Job Size": r.jobSize || '-',
+      "Job Name": r.jobName || '-',
+      "Lot No / Batch No": r.lotNo || '-',
+      "Company Roll No": r.companyRollNo || '-',
+      "Remarks": r.remarks || '-'
+    }))
+
+    const ws = XLSX.utils.json_to_sheet(exportData)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Paper Stock Registry")
+    const date = new Date().toISOString().split('T')[0]
+    XLSX.writeFile(wb, `Shree_Label_Stock_${date}.xlsx`)
+    toast({ title: "Export Successful", description: `Downloaded ${filteredRows.length} technical records.` })
+  }
+
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -473,6 +552,7 @@ export default function PaperStockPage() {
   );
 
   const SortableHeader = ({ label, field, className = "" }: { label: string, field: string, className?: string }) => {
+    if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
     return (
       <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)}>
@@ -492,6 +572,8 @@ export default function PaperStockPage() {
     const option = STATUS_OPTIONS.find(o => o.value === status);
     return option?.rowBg || "bg-white";
   }
+
+  const hiddenCount = Object.values(visibleColumns).filter(v => v === false).length;
 
   if (!isMounted) return null;
 
@@ -525,11 +607,46 @@ export default function PaperStockPage() {
               </Button>
             </div>
           )}
-          <Button variant="ghost" size="sm" onClick={() => setFilters({
-            search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
-            widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
-            receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-          })} className="ml-auto text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
+          <div className="ml-auto flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 px-3 gap-2 font-black uppercase text-[10px] border-primary/20">
+                  <ColumnsIcon className="h-4 w-4" /> 
+                  Columns 
+                  {hiddenCount > 0 && <Badge variant="secondary" className="h-4 px-1 text-[8px] bg-accent text-white">{hiddenCount} HIDDEN</Badge>}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl shadow-2xl">
+                <DropdownMenuLabel className="text-[10px] uppercase font-black">Display Controls</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <div className="max-h-[400px] overflow-y-auto">
+                  <DropdownMenuCheckboxItem checked={visibleColumns['rollNo']} onCheckedChange={v => setVisibleColumns({...visibleColumns, rollNo: v})} className="text-xs font-bold">Roll No</DropdownMenuCheckboxItem>
+                  <DropdownMenuCheckboxItem checked={visibleColumns['status']} onCheckedChange={v => setVisibleColumns({...visibleColumns, status: v})} className="text-xs font-bold">Status</DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
+                  {COLUMN_KEYS.map(col => (
+                    <DropdownMenuCheckboxItem 
+                      key={col.id} 
+                      checked={visibleColumns[col.id]} 
+                      onCheckedChange={v => setVisibleColumns({...visibleColumns, [col.id]: v})}
+                      className="text-xs font-bold"
+                    >
+                      {col.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button variant="outline" size="sm" onClick={exportStock} className="h-9 px-3 gap-2 font-black uppercase text-[10px] border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+              <FileDown className="h-4 w-4" /> Export Filtered
+            </Button>
+
+            <Button variant="ghost" size="sm" onClick={() => setFilters({
+              search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
+              widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
+              receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
+            })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-50">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
@@ -611,7 +728,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Job Name" field="jobName" className="border-r text-center" />
                 <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r text-center" />
                 <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r text-center" />
-                <TableHead className="font-black text-[10px] uppercase border-r text-center min-w-[200px]">Remarks</TableHead>
+                {visibleColumns['remarks'] && <TableHead className="font-black text-[10px] uppercase border-r text-center min-w-[200px]">Remarks</TableHead>}
                 <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px]">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -626,28 +743,36 @@ export default function PaperStockPage() {
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
                     <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-black text-[11px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{j.rollNo}</TableCell>
-                    <TableCell className="text-center border-r">
-                      <Badge className={cn("text-[9px] font-black uppercase h-5", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>
-                        {j.status || "Available"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-[11px] border-r uppercase font-bold text-center px-4">{j.paperCompany}</TableCell>
-                    <TableCell className="text-[11px] border-r font-medium text-center px-4">{j.paperType}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono">{j.gsm}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r">{j.receivedDate}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r italic text-slate-400">{j.dateOfUsed || '-'}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.jobNo || '-'}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-medium">{j.jobSize || '-'}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r truncate max-w-[150px] font-medium px-4">{j.jobName || '-'}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>
-                    <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>
-                    <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>
+                    
+                    {visibleColumns['rollNo'] && (
+                      <TableCell className={cn("font-black text-[11px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{j.rollNo}</TableCell>
+                    )}
+                    
+                    {visibleColumns['status'] && (
+                      <TableCell className="text-center border-r">
+                        <Badge className={cn("text-[9px] font-black uppercase h-5", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>
+                          {j.status || "Available"}
+                        </Badge>
+                      </TableCell>
+                    )}
+
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[11px] border-r uppercase font-bold text-center px-4">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[11px] border-r font-medium text-center px-4">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-center text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.gsm}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[11px] border-r">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[11px] border-r italic text-slate-400">{j.dateOfUsed || '-'}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[11px] border-r font-medium">{j.jobSize || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-center text-[11px] border-r truncate max-w-[150px] font-medium px-4">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>}
+                    
                     <TableCell className={cn("text-center sticky right-0 z-20 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-95", rowColorClass)}>
                       <TooltipProvider>
                         <div className="flex items-center justify-center gap-2">
