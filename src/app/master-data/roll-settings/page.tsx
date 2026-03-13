@@ -27,11 +27,13 @@ export default function RollSettingsPage() {
     subChildType: "number",
     separator: "-",
     barcodePrefix: "BC-",
-    trackingYear: new Date().getFullYear()
+    trackingYear: 2026 // Static default to avoid hydration mismatch
   })
 
   useEffect(() => {
     setIsMounted(true)
+    // Update tracking year to current once on client mount if not already loaded from settings
+    setFormValues(prev => ({ ...prev, trackingYear: new Date().getFullYear() }))
   }, [])
 
   // Authorization check
@@ -41,7 +43,7 @@ export default function RollSettingsPage() {
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 
-  // Settings Query - Updated to new path
+  // Settings Query
   const settingsDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'roll_settings', 'global_config');

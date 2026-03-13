@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -138,16 +139,12 @@ export default function PaperStockPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(50) // Default to 50 for high density view
+  const [rowsPerPage, setRowsPerPage] = useState(50) 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
 
-  // Column Visibility State
+  // Column Visibility State - Initialize with default values, load from localStorage in useEffect
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('paperStockVisibleColumns')
-      if (saved) return JSON.parse(saved)
-    }
     const initial: Record<string, boolean> = {
       rollNo: true,
       status: true,
@@ -155,6 +152,28 @@ export default function PaperStockPage() {
     COLUMN_KEYS.forEach(col => initial[col.id] = true)
     return initial
   })
+
+  useEffect(() => { 
+    setIsMounted(true);
+    setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
+    
+    // Load column visibility after hydration
+    const saved = localStorage.getItem('paperStockVisibleColumns')
+    if (saved) {
+      try {
+        setVisibleColumns(prev => ({ ...prev, ...JSON.parse(saved) }))
+      } catch (e) {
+        console.error("Failed to load column settings", e)
+      }
+    }
+  }, [])
+
+  // Persist Visibility
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
+    }
+  }, [visibleColumns, isMounted])
 
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -206,18 +225,6 @@ export default function PaperStockPage() {
     companyRollNo: "",
     remarks: ""
   })
-
-  useEffect(() => { 
-    setIsMounted(true);
-    setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
-  }, [])
-
-  // Persist Visibility
-  useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
-    }
-  }, [visibleColumns, isMounted])
 
   const companiesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_companies'), limit(100)) : null, [firestore]);
   const typesQuery = useMemoFirebase(() => firestore ? query(collection(firestore, 'paper_types'), limit(100)) : null, [firestore]);
