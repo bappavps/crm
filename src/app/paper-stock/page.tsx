@@ -139,7 +139,7 @@ export default function PaperStockPage() {
   const [isProcessing, setIsProcessing] = useState(false)
   
   const [currentPage, setCurrentPage] = useState(1)
-  const [rowsPerPage, setRowsPerPage] = useState(20)
+  const [rowsPerPage, setRowsPerPage] = useState(50) // Default to 50 for high density view
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
 
@@ -555,9 +555,9 @@ export default function PaperStockPage() {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
     return (
-      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)}>
-        <div className="flex items-center justify-center gap-1">
-          <span className="font-black text-[10px] uppercase">{label}</span>
+      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100 p-0", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)}>
+        <div className="flex items-center justify-center gap-1 h-9">
+          <span className="font-black text-[10px] uppercase leading-none">{label}</span>
           {isActive ? (
             sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
           ) : (
@@ -642,7 +642,7 @@ export default function PaperStockPage() {
             </Button>
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
-              search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
+              search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lot No: [], companyRollNo: [],
               widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
             })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
@@ -685,22 +685,22 @@ export default function PaperStockPage() {
         </div>
       </div>
 
-      <div className="bg-primary text-white p-3 flex items-center justify-between shrink-0 px-6 rounded-t-2xl shadow-lg">
+      <div className="bg-primary text-white p-2.5 flex items-center justify-between shrink-0 px-6 rounded-t-2xl shadow-lg">
         <div className="flex items-center gap-4">
           <h2 className="font-black text-sm uppercase tracking-widest flex items-center gap-2"><LayoutGrid className="h-5 w-5" /> Technical Stock Registry</h2>
           <Badge className="bg-white/20 text-[10px] font-black border-none h-6 px-3">
             {filteredRows.length} Rolls Filtered
           </Badge>
         </div>
-        <Button variant="ghost" size="icon" className="h-10 w-10 text-white hover:bg-white/20 rounded-full" onClick={() => handleOpenDialog()}><Plus className="h-6 w-6" /></Button>
+        <Button variant="ghost" size="icon" className="h-9 w-9 text-white hover:bg-white/20 rounded-full" onClick={() => handleOpenDialog()}><Plus className="h-5 w-5" /></Button>
       </div>
 
-      <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
+      <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl h-[calc(100vh-14rem)]">
         <div className="flex-1 overflow-auto scrollbar-thin">
           <Table className="border-separate border-spacing-0 min-w-[3200px]">
             <TableHeader className="sticky top-0 z-40 bg-slate-50 border-b shadow-sm">
-              <TableRow>
-                <TableHead className="w-[50px] text-center border-r sticky left-0 bg-slate-50 z-50">
+              <TableRow className="h-9">
+                <TableHead className="w-[50px] text-center border-r sticky left-0 bg-slate-50 z-50 p-0">
                   <Checkbox 
                     checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} 
                     onCheckedChange={(val) => {
@@ -710,26 +710,26 @@ export default function PaperStockPage() {
                     }} 
                   />
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r sticky left-[50px] bg-slate-50 z-50">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r text-center sticky left-[110px] bg-slate-50 z-50" />
-                <SortableHeader label="Status" field="status" className="w-[140px] border-r text-center" />
-                <SortableHeader label="Paper Company" field="paperCompany" className="border-r text-center" />
-                <SortableHeader label="Paper Type" field="paperType" className="border-r text-center" />
-                <SortableHeader label="Width (MM)" field="widthMm" className="border-r text-center" />
-                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r text-center" />
-                <SortableHeader label="SQM" field="sqm" className="border-r text-center" />
-                <SortableHeader label="GSM" field="gsm" className="border-r text-center" />
-                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r text-center" />
-                <SortableHeader label="Purchase Rate" field="purchaseRate" className="border-r text-center" />
-                <SortableHeader label="Date Received" field="receivedDate" className="border-r text-center" />
-                <SortableHeader label="Date of Used" field="dateOfUsed" className="border-r text-center" />
-                <SortableHeader label="Job No" field="jobNo" className="border-r text-center" />
-                <SortableHeader label="Job Size" field="jobSize" className="border-r text-center" />
-                <SortableHeader label="Job Name" field="jobName" className="border-r text-center" />
-                <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r text-center" />
-                <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r text-center" />
-                {visibleColumns['remarks'] && <TableHead className="font-black text-[10px] uppercase border-r text-center min-w-[200px]">Remarks</TableHead>}
-                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px]">Action</TableHead>
+                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r sticky left-[50px] bg-slate-50 z-50 p-0">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r text-center sticky left-[110px] bg-slate-50 z-50 p-0" />
+                <SortableHeader label="Status" field="status" className="w-[140px] border-r text-center p-0" />
+                <SortableHeader label="Paper Company" field="paperCompany" className="border-r text-center p-0" />
+                <SortableHeader label="Paper Type" field="paperType" className="border-r text-center p-0" />
+                <SortableHeader label="Width (MM)" field="widthMm" className="border-r text-center p-0" />
+                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r text-center p-0" />
+                <SortableHeader label="SQM" field="sqm" className="border-r text-center p-0" />
+                <SortableHeader label="GSM" field="gsm" className="border-r text-center p-0" />
+                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r text-center p-0" />
+                <SortableHeader label="Purchase Rate" field="purchaseRate" className="border-r text-center p-0" />
+                <SortableHeader label="Date Received" field="receivedDate" className="border-r text-center p-0" />
+                <SortableHeader label="Date of Used" field="dateOfUsed" className="border-r text-center p-0" />
+                <SortableHeader label="Job No" field="jobNo" className="border-r text-center p-0" />
+                <SortableHeader label="Job Size" field="jobSize" className="border-r text-center p-0" />
+                <SortableHeader label="Job Name" field="jobName" className="border-r text-center p-0" />
+                <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r text-center p-0" />
+                <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r text-center p-0" />
+                {visibleColumns['remarks'] && <TableHead className="font-black text-[10px] uppercase border-r text-center min-w-[200px] p-0">Remarks</TableHead>}
+                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -738,48 +738,48 @@ export default function PaperStockPage() {
               ) : paginatedRows.map((j, i) => {
                 const rowColorClass = getStatusRowColor(j.status);
                 return (
-                  <TableRow key={j.id} className={cn("transition-all border-b h-11 group", rowColorClass, selectedIds.has(j.id) && "brightness-90")}>
-                    <TableCell className={cn("text-center border-r sticky left-0 z-20 transition-all group-hover:brightness-95", rowColorClass)}>
+                  <TableRow key={j.id} className={cn("transition-all border-b h-8 group", rowColorClass, selectedIds.has(j.id) && "brightness-90")}>
+                    <TableCell className={cn("text-center border-r sticky left-0 z-20 transition-all group-hover:brightness-95 p-0", rowColorClass)}>
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
-                    <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-95 p-0", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
                     
                     {visibleColumns['rollNo'] && (
-                      <TableCell className={cn("font-black text-[11px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-95", rowColorClass)}>{j.rollNo}</TableCell>
+                      <TableCell className={cn("font-black text-[12px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-95 p-0", rowColorClass)}>{j.rollNo}</TableCell>
                     )}
                     
                     {visibleColumns['status'] && (
-                      <TableCell className="text-center border-r">
-                        <Badge className={cn("text-[9px] font-black uppercase h-5", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>
+                      <TableCell className="text-center border-r p-0">
+                        <Badge className={cn("text-[8px] font-black uppercase h-4 px-1.5 leading-none", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>
                           {j.status || "Available"}
                         </Badge>
                       </TableCell>
                     )}
 
-                    {visibleColumns['paperCompany'] && <TableCell className="text-[11px] border-r uppercase font-bold text-center px-4">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-[11px] border-r font-medium text-center px-4">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-center text-[11px] border-r font-black text-primary font-mono">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.gsm}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[11px] border-r font-mono">₹{j.purchaseRate || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[11px] border-r">{j.receivedDate}</TableCell>}
-                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[11px] border-r italic text-slate-400">{j.dateOfUsed || '-'}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[11px] border-r font-mono font-bold">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[11px] border-r font-medium">{j.jobSize || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-center text-[11px] border-r truncate max-w-[150px] font-medium px-4">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.lotNo || '-'}</TableCell>}
-                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[11px] border-r font-mono">{j.companyRollNo || '-'}</TableCell>}
-                    {visibleColumns['remarks'] && <TableCell className="text-[11px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-4">{j.remarks || '-'}</TableCell>}
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[12px] border-r uppercase font-bold text-center px-2 truncate max-w-[150px]">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[12px] border-r font-medium text-center px-2 truncate max-w-[150px]">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[12px] border-r font-mono font-bold px-2">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[12px] border-r font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-center text-[12px] border-r font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.gsm}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[12px] border-r font-mono px-2 text-right">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[12px] border-r font-mono px-2 text-right">₹{j.purchaseRate || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[12px] border-r px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[12px] border-r italic text-slate-400 px-2">{j.dateOfUsed || '-'}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[12px] border-r font-mono font-bold px-2">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[12px] border-r font-medium px-2">{j.jobSize || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-center text-[12px] border-r truncate max-w-[150px] font-medium px-2">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.companyRollNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-[12px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-2">{j.remarks || '-'}</TableCell>}
                     
-                    <TableCell className={cn("text-center sticky right-0 z-20 border-l px-2 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-95", rowColorClass)}>
+                    <TableCell className={cn("text-center sticky right-0 z-20 border-l px-1 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-95 p-0", rowColorClass)}>
                       <TooltipProvider>
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex items-center justify-center gap-1.5 h-8">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:bg-black/5" onClick={() => handleViewDetails(j)}>
-                                <Eye className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:bg-black/5" onClick={() => handleViewDetails(j)}>
+                                <Eye className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent><p className="text-[10px] font-bold uppercase">View Roll</p></TooltipContent>
@@ -787,8 +787,8 @@ export default function PaperStockPage() {
 
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-500/10" onClick={() => handleOpenDialog(j)}>
-                                <Pencil className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500 hover:bg-blue-500/10" onClick={() => handleOpenDialog(j)}>
+                                <Pencil className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent><p className="text-[10px] font-bold uppercase">Edit Roll</p></TooltipContent>
@@ -796,8 +796,8 @@ export default function PaperStockPage() {
 
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:bg-orange-500/10" onClick={() => handleSlitRoll(j)}>
-                                <Scissors className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-500 hover:bg-orange-500/10" onClick={() => handleSlitRoll(j)}>
+                                <Scissors className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent><p className="text-[10px] font-bold uppercase">Send to Slitting</p></TooltipContent>
@@ -805,8 +805,8 @@ export default function PaperStockPage() {
 
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-700 hover:bg-zinc-700/10" onClick={() => handleOpenPrint(j)}>
-                                <Printer className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-zinc-700 hover:bg-zinc-700/10" onClick={() => handleOpenPrint(j)}>
+                                <Printer className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent><p className="text-[10px] font-bold uppercase">Print Label</p></TooltipContent>
@@ -814,8 +814,8 @@ export default function PaperStockPage() {
 
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-500/10" onClick={() => handleDeleteRoll(j)}>
-                                <Trash2 className="h-4 w-4" />
+                              <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500 hover:bg-red-500/10" onClick={() => handleDeleteRoll(j)}>
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent><p className="text-[10px] font-bold uppercase">Delete Roll</p></TooltipContent>
@@ -830,7 +830,7 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        <div className="bg-slate-50 p-3 border-t flex items-center justify-between shrink-0 px-6">
+        <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
               <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase"><SelectValue /></SelectTrigger>
