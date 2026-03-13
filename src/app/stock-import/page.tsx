@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -69,6 +68,42 @@ const FIELD_LABELS: Record<string, string> = {
 
 const TEMPLATE_HEADERS = Object.values(FIELD_LABELS);
 
+/**
+ * HELPER: Normalize strings for fuzzy matching
+ */
+const normalize = (str: string) => 
+  String(str || "").toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+/**
+ * HELPER: Robust numeric parsing (strips units)
+ */
+const cleanNumeric = (val: any): number => {
+  if (typeof val === 'number') return val;
+  const cleaned = String(val || "0").replace(/[^0-9.]/g, '');
+  return parseFloat(cleaned) || 0;
+};
+
+/**
+ * HELPER: Robust date parsing
+ */
+const parseExcelDate = (val: any): string => {
+  if (!val) return new Date().toISOString().split('T')[0];
+  
+  // Handle Excel Serial Dates
+  if (typeof val === 'number') {
+    const date = new Date((val - 25569) * 86400 * 1000);
+    return date.toISOString().split('T')[0];
+  }
+
+  // Handle Strings
+  try {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  } catch (e) {}
+
+  return String(val); // Fallback to raw string if parsing fails
+};
+
 export default function StockImportPage() {
   const { toast } = useToast()
   const router = useRouter()
@@ -127,7 +162,7 @@ export default function StockImportPage() {
           return;
         }
 
-        const fileHeaders = (data[0] as string[]).map(h => String(h).trim());
+        const fileHeaders = (data[0] as string[]).map(h => String(h || "").trim());
         const rows = XLSX.utils.sheet_to_json(ws);
         
         setHeaders(fileHeaders);
@@ -138,16 +173,20 @@ export default function StockImportPage() {
           rows: rows.length
         });
 
-        // Auto-detection logic
+        // Smart Fuzzy Auto-detection logic
         const initialMapping: Record<string, string> = {};
         Object.entries(FIELD_LABELS).forEach(([key, label]) => {
-          const match = fileHeaders.find(h => 
-            h.toLowerCase() === label.toLowerCase() || 
-            h.toLowerCase() === key.toLowerCase() ||
-            h.toLowerCase().includes(label.toLowerCase())
-          );
+          const normLabel = normalize(label);
+          const normKey = normalize(key);
+          
+          const match = fileHeaders.find(h => {
+            const normH = normalize(h);
+            return normH === normLabel || normH === normKey || normH.includes(normLabel) || normLabel.includes(normH);
+          });
+          
           if (match) initialMapping[key] = match;
         });
+        
         setMapping(initialMapping);
 
         setProgress(100);
@@ -167,7 +206,13 @@ export default function StockImportPage() {
     return excelData.slice(0, 10).map((row: any) => {
       const mappedRow: any = {};
       Object.entries(mapping).forEach(([key, header]) => {
-        mappedRow[key] = row[header];
+        let val = row[header];
+        if (["widthMm", "lengthMeters", "gsm", "weightKg", "purchaseRate"].includes(key)) {
+          val = cleanNumeric(val);
+        } else if (key === "receivedDate" || key === "dateOfUsed") {
+          val = parseExcelDate(val);
+        }
+        mappedRow[key] = val;
       });
       return mappedRow;
     });
@@ -184,18 +229,18 @@ export default function StockImportPage() {
         const header = mapping[field];
         const val = row[header];
         if (!header || val === undefined || val === "") {
-          invalidRows.push(`Row ${index + 2}: Missing mandatory field "${FIELD_LABELS[field]}"`);
+          invalidRows.push(`Row ${index + 2}: Mandatory technical field "${FIELD_LABELS[field]}" was not detected.`);
           hasError = true;
         }
       });
 
-      // Numeric validation
+      // Technical range validation
       ["widthMm", "lengthMeters", "gsm"].forEach(field => {
         const header = mapping[field];
         if (header) {
-          const num = Number(row[header]);
+          const num = cleanNumeric(row[header]);
           if (isNaN(num) || num <= 0) {
-            invalidRows.push(`Row ${index + 2}: "${FIELD_LABELS[field]}" must be a positive number`);
+            invalidRows.push(`Row ${index + 2}: Technical attribute "${FIELD_LABELS[field]}" must be a positive number (Detected: ${row[header] || 'None'}).`);
             hasError = true;
           }
         }
@@ -244,7 +289,9 @@ export default function StockImportPage() {
           Object.entries(mapping).forEach(([key, header]) => {
             let val = row[header];
             if (["widthMm", "lengthMeters", "gsm", "weightKg", "purchaseRate"].includes(key)) {
-              val = Number(val) || 0;
+              val = cleanNumeric(val);
+            } else if (key === "receivedDate" || key === "dateOfUsed") {
+              val = parseExcelDate(val);
             }
             data[key] = val;
           });
@@ -268,9 +315,9 @@ export default function StockImportPage() {
 
       setSummary({ total: totalRows, imported });
       setCurrentStep(4); // Success state
-      showModal('SUCCESS', 'Migration Complete', `Successfully added ${imported} technical units to your registry.`, true);
+      showModal('SUCCESS', 'Technical Stock Synchronized', `Successfully added ${imported} technical units to the central registry.`, true);
     } catch (error: any) {
-      showModal('ERROR', 'Import Blocked', error.message);
+      showModal('ERROR', 'Transaction Blocked', error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -284,11 +331,11 @@ export default function StockImportPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Bulk Technical Import</h2>
-          <p className="text-muted-foreground font-medium text-xs">Migrate your legacy inventory into the unified 18-column technical grid.</p>
+          <p className="text-muted-foreground font-medium text-xs">Guided technical ingestion for legacy paper inventory.</p>
         </div>
         {currentStep < 4 && currentStep > 0 && (
           <Button variant="ghost" onClick={() => setCurrentStep(currentStep - 1)} className="font-bold text-[10px] uppercase">
-            <ArrowLeft className="mr-2 h-3 w-3" /> Previous Step
+            <ArrowLeft className="mr-2 h-3 w-3" /> Go Back
           </Button>
         )}
       </div>
@@ -326,18 +373,17 @@ export default function StockImportPage() {
               <FileSpreadsheet className="h-16 w-16 text-primary" />
             </div>
             <div className="space-y-4 max-w-lg mx-auto">
-              <h3 className="text-2xl font-black uppercase tracking-tight">Begin with the Template</h3>
+              <h3 className="text-2xl font-black uppercase tracking-tight">Step 1: Download Standard Matrix</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                To ensure a perfect technical match, download our official 18-column Excel template. 
-                Fill in your stock data and return here to upload.
+                Ensure your technical data aligns perfectly with the ERP. Use our standard 18-column matrix for seamless auto-mapping.
               </p>
             </div>
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button onClick={downloadTemplate} size="lg" className="h-16 px-10 rounded-2xl font-black uppercase tracking-widest shadow-xl bg-primary hover:bg-primary/90">
-                <Download className="mr-3 h-6 w-6" /> Download Template
+                <Download className="mr-3 h-6 w-6" /> Get Excel Template
               </Button>
               <Button variant="outline" onClick={() => setCurrentStep(1)} size="lg" className="h-16 px-10 rounded-2xl font-black uppercase tracking-widest border-2">
-                I already have a file <ChevronRight className="ml-2 h-6 w-6" />
+                Skip to Upload <ChevronRight className="ml-2 h-6 w-6" />
               </Button>
             </div>
           </CardContent>
@@ -359,17 +405,17 @@ export default function StockImportPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="file-upload" className="cursor-pointer">
-                      <span className="text-3xl font-black text-primary underline underline-offset-8 decoration-primary/20">Drop Inventory File</span>
+                      <span className="text-3xl font-black text-primary underline underline-offset-8 decoration-primary/20">Drop Data File Here</span>
                       <Input id="file-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
                     </Label>
-                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">Accepted: .xlsx, .xls, .csv</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV files supported</p>
                   </div>
                 </>
               ) : (
                 <div className="space-y-8 py-10">
                   <div className="flex flex-col items-center gap-4">
                     <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                    <h4 className="font-black uppercase tracking-widest text-primary">Analyzing Technical Matrix...</h4>
+                    <h4 className="font-black uppercase tracking-widest text-primary">Normalizing Headers...</h4>
                   </div>
                   <div className="max-w-md mx-auto space-y-2">
                     <Progress value={progress} className="h-3 rounded-full" />
@@ -379,16 +425,6 @@ export default function StockImportPage() {
               )}
             </CardContent>
           </Card>
-          
-          <div className="p-6 bg-amber-50 border border-amber-100 rounded-2xl flex items-start gap-4">
-            <Info className="h-6 w-6 text-amber-600 mt-0.5" />
-            <div className="space-y-1">
-              <p className="text-sm font-black text-amber-900 uppercase tracking-tight">Security Note</p>
-              <p className="text-xs text-amber-700 leading-relaxed font-medium">
-                Our system handles parsing locally in your browser. No data is sent to the server until you confirm the final import step.
-              </p>
-            </div>
-          </div>
         </div>
       )}
 
@@ -398,19 +434,23 @@ export default function StockImportPage() {
           <div className="lg:col-span-2 space-y-6">
             <Card className="shadow-2xl border-none rounded-3xl overflow-hidden animate-in slide-in-from-bottom-4">
               <CardHeader className="bg-slate-50 border-b p-8">
-                <CardTitle className="text-sm font-black uppercase flex items-center justify-between tracking-widest">
-                  <div className="flex items-center gap-3">
-                    <RefreshCw className="h-5 w-5 text-primary" />
-                    <span>Synchronize Columns</span>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
+                      <RefreshCw className="h-5 w-5 text-primary" /> Column Synchronization
+                    </CardTitle>
+                    <p className="text-[10px] text-muted-foreground font-bold uppercase">Technical mapping between spreadsheet and central registry.</p>
                   </div>
-                  <Badge variant="outline" className="font-black text-[10px]">{fileInfo?.rows} ROWS DETECTED</Badge>
-                </CardTitle>
+                  <Badge className="bg-primary/10 text-primary border-none h-8 px-4 font-black">
+                    {fileInfo?.rows} RECORDS DETECTED
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <Table>
                   <TableHeader className="bg-muted/30">
                     <TableRow>
-                      <TableHead className="font-black text-[10px] uppercase pl-8 py-4">System Technical Field</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase pl-8 py-4">System Registry Field</TableHead>
                       <TableHead className="font-black text-[10px] uppercase py-4">Excel Source Column</TableHead>
                       <TableHead className="w-20"></TableHead>
                     </TableRow>
@@ -420,10 +460,13 @@ export default function StockImportPage() {
                       <TableRow key={key} className="group hover:bg-slate-50/50">
                         <TableCell className="pl-8 py-4">
                           <div className="flex flex-col">
-                            <span className={cn("text-xs font-black uppercase tracking-tight", REQUIRED_FIELDS.includes(key) ? "text-primary" : "text-slate-600")}>
-                              {label} {REQUIRED_FIELDS.includes(key) && <span className="text-destructive">*</span>}
+                            <span className={cn(
+                              "text-xs font-black uppercase tracking-tight",
+                              REQUIRED_FIELDS.includes(key) && !mapping[key] ? "text-destructive" : mapping[key] ? "text-primary" : "text-slate-600"
+                            )}>
+                              {label} {REQUIRED_FIELDS.includes(key) && <span className="text-destructive font-black">*</span>}
                             </span>
-                            {REQUIRED_FIELDS.includes(key) && <span className="text-[9px] text-muted-foreground font-bold uppercase">Mandatory Field</span>}
+                            {REQUIRED_FIELDS.includes(key) && <span className="text-[9px] text-muted-foreground font-bold uppercase">Mandatory Attribute</span>}
                           </div>
                         </TableCell>
                         <TableCell className="py-4">
@@ -432,15 +475,19 @@ export default function StockImportPage() {
                               "h-10 text-xs font-bold border-2 transition-all",
                               mapping[key] ? "border-emerald-200 bg-emerald-50/30 text-emerald-900" : "border-slate-200"
                             )}>
-                              <SelectValue placeholder="Link Spreadsheet Column..." />
+                              <SelectValue placeholder="Detecting Column..." />
                             </SelectTrigger>
                             <SelectContent>
                               {headers.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell className="py-4 pr-8">
-                          {mapping[key] && <CheckCircle2 className="h-5 w-5 text-emerald-500 animate-in zoom-in" />}
+                        <TableCell className="py-4 pr-8 text-center">
+                          {mapping[key] ? (
+                            <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto animate-in zoom-in" />
+                          ) : REQUIRED_FIELDS.includes(key) ? (
+                            <AlertCircle className="h-5 w-5 text-destructive mx-auto animate-pulse" />
+                          ) : null}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -453,19 +500,19 @@ export default function StockImportPage() {
           <div className="space-y-6">
             <Card className="rounded-3xl border-none shadow-xl bg-primary text-white sticky top-24">
               <CardHeader className="pb-4">
-                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] opacity-70">Mapping Summary</CardTitle>
+                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] opacity-70">Mapping Health</CardTitle>
               </CardHeader>
               <CardContent className="space-y-8">
                 <div className="space-y-2">
                   <div className="flex justify-between items-end">
-                    <span className="text-[10px] font-black uppercase">Mapped Fields</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Synchronization Progress</span>
                     <span className="text-2xl font-black">{Object.keys(mapping).length} / {Object.keys(FIELD_LABELS).length}</span>
                   </div>
                   <Progress value={(Object.keys(mapping).length / Object.keys(FIELD_LABELS).length) * 100} className="h-2 bg-white/20" />
                 </div>
 
                 <div className="p-4 bg-white/10 rounded-2xl space-y-3">
-                  <p className="text-[10px] font-black uppercase opacity-70">Requirements Check</p>
+                  <p className="text-[10px] font-black uppercase opacity-70 tracking-widest">Mandatory Attributes</p>
                   <div className="space-y-2">
                     {REQUIRED_FIELDS.map(f => (
                       <div key={f} className="flex items-center gap-2">
@@ -485,8 +532,14 @@ export default function StockImportPage() {
                   disabled={!REQUIRED_FIELDS.every(f => !!mapping[f])}
                   className="w-full h-16 rounded-2xl bg-white text-primary hover:bg-slate-50 font-black uppercase tracking-widest shadow-2xl disabled:opacity-50"
                 >
-                  Confirm Mapping <ArrowRight className="ml-2 h-5 w-5" />
+                  Generate Preview <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
+                
+                {!REQUIRED_FIELDS.every(f => !!mapping[f]) && (
+                  <p className="text-[9px] text-center font-bold uppercase tracking-tighter opacity-80">
+                    Fix missing mandatory attributes to proceed.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -499,13 +552,13 @@ export default function StockImportPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="bg-emerald-50 border-emerald-100 shadow-sm rounded-3xl">
               <CardContent className="p-6 flex flex-col items-center text-center">
-                <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-1">Healthy Records</span>
+                <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-1">Validated Units</span>
                 <span className="text-4xl font-black text-emerald-600">{validationResults.validCount}</span>
               </CardContent>
             </Card>
             <Card className={cn("shadow-sm rounded-3xl", validationResults.invalidCount > 0 ? "bg-destructive/5 border-destructive/10" : "bg-slate-50 border-slate-100")}>
               <CardContent className="p-6 flex flex-col items-center text-center">
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Issue Detected</span>
+                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Rejected Rows</span>
                 <span className={cn("text-4xl font-black", validationResults.invalidCount > 0 ? "text-destructive" : "text-slate-400")}>{validationResults.invalidCount}</span>
               </CardContent>
             </Card>
@@ -521,13 +574,13 @@ export default function StockImportPage() {
             <CardHeader className="bg-slate-50 border-b p-8 flex flex-row items-center justify-between">
               <div className="space-y-1">
                 <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                  <TableIcon className="h-5 w-5 text-primary" /> Technical Registry Preview (Top 10)
+                  <TableIcon className="h-5 w-5 text-primary" /> Technical Data Preview (Top 10)
                 </CardTitle>
-                <p className="text-[10px] text-muted-foreground font-bold uppercase">Columns shown match the unified registry grid.</p>
+                <p className="text-[10px] text-muted-foreground font-bold uppercase">Verify technical synchronization before final ingestion.</p>
               </div>
               {validationResults.invalidCount > 0 && (
                 <Button variant="outline" size="sm" onClick={() => setIsErrorListOpen(!isErrorListOpen)} className="font-black text-[10px] uppercase border-destructive text-destructive hover:bg-destructive/5">
-                  {isErrorListOpen ? "Hide Errors" : `View ${validationResults.invalidCount} Validation Issues`}
+                  {isErrorListOpen ? "Hide Errors" : `View ${validationResults.invalidCount} Conflict Alerts`}
                 </Button>
               )}
             </CardHeader>
@@ -535,7 +588,7 @@ export default function StockImportPage() {
               {isErrorListOpen && (
                 <div className="p-8 bg-destructive/5 border-b border-destructive/10 space-y-4">
                   <div className="flex items-center gap-2 text-destructive font-black text-xs uppercase tracking-widest">
-                    <AlertTriangle className="h-5 w-5" /> Incompatible Rows Detected
+                    <AlertTriangle className="h-5 w-5" /> technical conflict summary
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
                     {validationResults.errors.slice(0, 20).map((err, i) => (
@@ -543,7 +596,7 @@ export default function StockImportPage() {
                         <span className="h-1 w-1 bg-destructive rounded-full" /> {err}
                       </p>
                     ))}
-                    {validationResults.errors.length > 20 && <p className="text-[10px] italic text-destructive/60">...and {validationResults.errors.length - 20} more issues.</p>}
+                    {validationResults.errors.length > 20 && <p className="text-[10px] italic text-destructive/60">...and {validationResults.errors.length - 20} more conflicts.</p>}
                   </div>
                 </div>
               )}
@@ -566,7 +619,7 @@ export default function StockImportPage() {
                             key === 'sqm' ? "font-black text-primary" : "",
                             (!row[key] && REQUIRED_FIELDS.includes(key)) ? "bg-destructive/10 text-destructive font-black" : ""
                           )}>
-                            {key === 'sqm' ? ((Number(row.widthMm) / 1000) * Number(row.lengthMeters)).toFixed(2) : (row[key] || "-")}
+                            {row[key] || "-"}
                           </TableCell>
                         ))}
                       </TableRow>
@@ -580,18 +633,18 @@ export default function StockImportPage() {
                   <div className="space-y-6 max-w-xl mx-auto">
                     <div className="flex flex-col items-center gap-4">
                       <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                      <h4 className="text-xl font-black uppercase tracking-widest text-primary">Committing Bulk Transaction...</h4>
+                      <h4 className="text-xl font-black uppercase tracking-widest text-primary">Synchronizing Central Registry...</h4>
                     </div>
                     <div className="space-y-2">
                       <Progress value={progress} className="h-4 rounded-full shadow-inner" />
-                      <p className="text-[10px] font-black text-muted-foreground uppercase">Progress: {progress}% • Stay on this page</p>
+                      <p className="text-[10px] font-black text-muted-foreground uppercase">Progress: {progress}% • Committing Batch Transactions</p>
                     </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-6">
                     <div className="p-6 bg-primary/5 rounded-3xl border-2 border-dashed border-primary/20 max-w-lg">
                       <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                        Ready to ingest <span className="font-black text-primary">{excelData.length} records</span>. This will automatically generate sequential Roll IDs starting from the next available number in the registry.
+                        Authorized to ingest <span className="font-black text-primary">{excelData.length} technical units</span>. Unique Roll IDs will be sequentially assigned.
                       </p>
                     </div>
                     <div className="flex gap-4">
@@ -603,12 +656,12 @@ export default function StockImportPage() {
                         disabled={validationResults.invalidCount > 0} 
                         className="h-16 px-16 rounded-2xl text-lg font-black uppercase tracking-widest shadow-2xl bg-primary hover:bg-primary/90"
                       >
-                        <Sparkles className="mr-3 h-6 w-6" /> Finalize Technical Ingestion
+                        <Sparkles className="mr-3 h-6 w-6" /> Commit Technical Intake
                       </Button>
                     </div>
                     {validationResults.invalidCount > 0 && (
                       <p className="text-[10px] text-destructive font-black uppercase flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4" /> Please resolve validation errors before finalizing import.
+                        <AlertCircle className="h-4 w-4" /> Resolve technical conflicts to authorize ingestion.
                       </p>
                     )}
                   </div>
@@ -627,12 +680,12 @@ export default function StockImportPage() {
               <CheckCircle2 className="text-white h-16 w-16" />
             </div>
             <div className="space-y-3">
-              <h3 className="text-5xl font-black text-emerald-900 uppercase tracking-tighter">Registry Updated</h3>
-              <p className="text-emerald-700 font-bold text-xl">Successfully ingested {summary?.imported} technical units.</p>
+              <h3 className="text-5xl font-black text-emerald-900 uppercase tracking-tighter">Inventory Synchronized</h3>
+              <p className="text-emerald-700 font-bold text-xl">Successfully authorized {summary?.imported} technical units into the registry.</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
               <Button asChild size="lg" className="h-16 px-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 font-black uppercase tracking-widest shadow-xl">
-                <a href="/paper-stock">Open Paper Stock <ArrowRight className="ml-2 h-6 w-6" /></a>
+                <a href="/paper-stock">View Central Registry <ArrowRight className="ml-2 h-6 w-6" /></a>
               </Button>
               <Button variant="outline" onClick={() => {
                 setExcelData([]);
