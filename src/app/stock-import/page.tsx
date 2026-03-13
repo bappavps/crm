@@ -27,11 +27,6 @@ import {
   ChevronRight,
   Database,
   ArrowLeft,
-  FileSpreadsheet,
-  AlertTriangle,
-  Info,
-  History,
-  Trash2,
   Settings2
 } from "lucide-react"
 import { useFirestore, useUser } from "@/firebase"
@@ -76,22 +71,20 @@ const TEMPLATE_HEADERS = Object.values(FIELD_LABELS);
 // PERFORMANCE LIMITS
 const MAX_ROWS = 5000;
 const MAX_FILE_SIZE_MB = 5;
-const CHUNK_SIZE = 200; // rows to process per "tick"
+const CHUNK_SIZE = 200;
 
 /**
  * INTELLIGENT UTILS
  */
-const normalize = (str: string) => 
+const normalizeHeader = (str: string) => 
   String(str || "").toLowerCase()
     .replace(/\s+/g, '') 
     .replace(/[^a-z0-9]/g, '') 
-    .replace(/of/g, '') 
     .trim();
 
 const cleanNumeric = (val: any): number => {
   if (typeof val === 'number') return val;
   if (!val) return 0;
-  // Strip units like "Kgs", "mm", etc. and separators
   const cleaned = String(val).replace(/,/g, '').replace(/[^0-9.]/g, '');
   return parseFloat(cleaned) || 0;
 };
@@ -115,23 +108,32 @@ const parseExcelDate = (val: any): string => {
   return str;
 };
 
+// Firestore sanitization helper
+const cleanForFirestore = (v: any) => (v === undefined || v === null) ? "" : v;
+
 const findBestMatch = (targetLabel: string, systemKey: string, fileHeaders: string[]) => {
-  const normTarget = normalize(targetLabel);
-  const normKey = normalize(systemKey);
-  let match = fileHeaders.find(h => normalize(h) === normTarget || normalize(h) === normKey);
+  const normTarget = normalizeHeader(targetLabel);
+  const normKey = normalizeHeader(systemKey);
+  
+  // Exact normalized match
+  let match = fileHeaders.find(h => normalizeHeader(h) === normTarget || normalizeHeader(h) === normKey);
   if (match) return match;
+
+  // Fuzzy aliases
   const aliases: Record<string, string[]> = {
     receivedDate: ['date', 'entry', 'received'],
-    widthMm: ['width', 'wmm'],
-    lengthMeters: ['length', 'lmtr', 'mtr'],
-    paperCompany: ['company', 'mfr', 'supplier'],
-    paperType: ['type', 'substrate', 'material'],
-    lotNo: ['lot', 'batch', 'invoice'],
-    companyRollNo: ['parent', 'reel', 'mfrroll']
+    widthMm: ['width', 'wmm', 'widthmm'],
+    lengthMeters: ['length', 'lmtr', 'mtr', 'lengthmtr'],
+    paperCompany: ['company', 'mfr', 'supplier', 'papercompany'],
+    paperType: ['type', 'substrate', 'material', 'papertype'],
+    lotNo: ['lot', 'batch', 'invoice', 'lotno'],
+    companyRollNo: ['parent', 'reel', 'mfrroll', 'companyrollno'],
+    jobSize: ['jobsize', 'size']
   };
+  
   const currentAliases = aliases[systemKey] || [];
   return fileHeaders.find(h => {
-    const nh = normalize(h);
+    const nh = normalizeHeader(h);
     return currentAliases.some(alias => nh.includes(alias)) || nh.includes(normTarget) || normTarget.includes(nh);
   });
 };
@@ -152,7 +154,6 @@ export default function StockImportPage() {
   const [allowPartial, setAllowPartial] = useState(false)
   const [fileInfo, setFileInfo] = useState<{ name: string; rows: number } | null>(null)
 
-  // Background Processing State
   const [processedData, setProcessedData] = useState<any[]>([])
   const [invalidRows, setInvalidRows] = useState<any[]>([])
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -182,9 +183,8 @@ export default function StockImportPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 1. File Size Limit (5MB)
     if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-      showModal('ERROR', 'File Too Large', `Spreadsheet exceeds ${MAX_FILE_SIZE_MB}MB limit. Please split the file.`);
+      showModal('ERROR', 'File Too Large', `Spreadsheet exceeds ${MAX_FILE_SIZE_MB}MB limit.`);
       return;
     }
 
@@ -199,9 +199,8 @@ export default function StockImportPage() {
         
         if (rawRows.length < 2) throw new Error("Spreadsheet has no data.");
         
-        // 2. Row Count Limit
         if (rawRows.length > MAX_ROWS + 1) {
-          throw new Error(`File contains ${rawRows.length - 1} rows. Maximum allowed is ${MAX_ROWS}.`);
+          throw new Error(`File exceeds ${MAX_ROWS} row limit.`);
         }
 
         const fileHeaders = (rawRows[0] as any[]).map(h => String(h || "").trim()).filter(h => h !== "");
@@ -211,11 +210,14 @@ export default function StockImportPage() {
         setExcelData(rows);
         setFileInfo({ name: file.name, rows: rows.length });
         
-        // Smart Initial Mapping
         const initialMapping: Record<string, string> = {};
         Object.entries(FIELD_LABELS).forEach(([key, label]) => {
           const match = findBestMatch(label, key, fileHeaders);
-          if (match) initialMapping[key] = match;
+          if (match) {
+            initialMapping[key] = match;
+          } else if (REQUIRED_FIELDS.includes(key)) {
+            console.warn(`Column mapping failed for mandatory field: ${label}`);
+          }
         });
         setMapping(initialMapping);
         
@@ -229,10 +231,6 @@ export default function StockImportPage() {
     reader.readAsArrayBuffer(file);
   }
 
-  /**
-   * BACKGROUND CHUNKED ANALYSIS
-   * Processes data in chunks to keep the UI thread responsive.
-   */
   const startDataAnalysis = async () => {
     setIsAnalyzing(true);
     setAnalysisProgress(0);
@@ -243,8 +241,6 @@ export default function StockImportPage() {
 
     for (let i = 0; i < total; i += CHUNK_SIZE) {
       const chunk = excelData.slice(i, i + CHUNK_SIZE);
-      
-      // Allow UI thread to breathe
       await new Promise(resolve => setTimeout(resolve, 0));
 
       chunk.forEach((row, chunkIdx) => {
@@ -257,13 +253,12 @@ export default function StockImportPage() {
           if (["widthMm", "lengthMeters", "gsm", "weightKg", "purchaseRate"].includes(key)) {
             val = cleanNumeric(val);
             if (["widthMm", "lengthMeters", "gsm"].includes(key) && val <= 0) {
-              reasons.push(`${FIELD_LABELS[key]} must be > 0 (Found: ${row[header]})`);
+              reasons.push(`${FIELD_LABELS[key]} must be > 0`);
             }
           } else if (key === "receivedDate") {
             val = parseExcelDate(val);
-            if (!val) reasons.push("Invalid date format");
           }
-          mapped[key] = val;
+          mapped[key] = cleanForFirestore(val);
         });
 
         REQUIRED_FIELDS.forEach(f => {
@@ -286,18 +281,6 @@ export default function StockImportPage() {
     setInvalidRows(errors);
     setIsAnalyzing(false);
     setCurrentStep(3);
-  };
-
-  const downloadErrorReport = () => {
-    const reportData = invalidRows.map(err => ({
-      "Row No": err.index,
-      "Failure Reason": err.reasons.join(" | "),
-      ...err.row
-    }));
-    const ws = XLSX.utils.json_to_sheet(reportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Import Failures");
-    XLSX.writeFile(wb, `Import_Error_Report_${new Date().getTime()}.xlsx`);
   };
 
   const executeImport = async () => {
@@ -326,21 +309,33 @@ export default function StockImportPage() {
         chunk.forEach((d) => {
           currentSerial++;
           const rollId = `RL-${currentSerial.toString().padStart(4, '0')}`;
+          
+          // SANITIZE ALL FIELDS BEFORE COMMIT
           const final: any = {
-            ...d,
-            rollNo: rollId,
             id: rollId,
+            rollNo: rollId,
             createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
             createdById: user.uid,
-            sqm: Number(((d.widthMm / 1000) * d.lengthMeters).toFixed(2))
+            status: "Available"
           };
-          delete final._original;
-          delete final._errors;
+
+          // Map and clean every documented field
+          Object.keys(FIELD_LABELS).forEach(key => {
+            if (key === 'rollNo') return; // Handled above
+            if (key === 'sqm') {
+              const w = cleanNumeric(d.widthMm);
+              const l = cleanNumeric(d.lengthMeters);
+              final.sqm = Number(((w / 1000) * l).toFixed(2)) || 0;
+            } else {
+              final[key] = cleanForFirestore(d[key]);
+            }
+          });
+
           batch.set(doc(firestore, 'paper_stock', rollId), final);
           imported++;
         });
 
-        // Update counter only on last batch
         if (i + 500 >= total) {
           batch.set(counterRef, { current_number: currentSerial }, { merge: true });
         }
@@ -365,7 +360,7 @@ export default function StockImportPage() {
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">High-Performance Intake</h2>
-          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Resilient ingestion with asynchronous chunked processing.</p>
+          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Resilient ingestion with asynchronous sanitized processing.</p>
         </div>
         {currentStep > 0 && currentStep < 4 && !isAnalyzing && (
           <Button variant="ghost" onClick={() => setCurrentStep(currentStep - 1)} className="font-black text-[10px] uppercase">
@@ -374,6 +369,7 @@ export default function StockImportPage() {
         )}
       </div>
 
+      {/* STEPPER */}
       <div className="flex items-center justify-between w-full max-w-4xl mx-auto px-4">
         {STEPS.map((step, idx) => (
           <div key={step.id} className="flex flex-col items-center gap-2 relative flex-1">
@@ -390,14 +386,14 @@ export default function StockImportPage() {
         ))}
       </div>
 
-      {/* STEP 1: TEMPLATE */}
+      {/* STEPS CONTENT */}
       {currentStep === 0 && (
         <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-primary/5">
           <CardContent className="p-16 text-center space-y-8">
             <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl"><Download className="h-10 w-10 text-primary" /></div>
             <div className="space-y-2 max-w-md mx-auto">
               <h3 className="text-xl font-black uppercase tracking-tight">Technical Data Preparation</h3>
-              <p className="text-xs text-muted-foreground font-medium">Use the official 18-column grid for bulk inventory migration. Supports up to 5,000 rows per session.</p>
+              <p className="text-xs text-muted-foreground font-medium">Use the 18-column grid for bulk inventory migration. Sanitized import prevents Firestore failures.</p>
             </div>
             <div className="flex gap-4 justify-center">
               <Button onClick={downloadTemplate} size="lg" className="h-14 px-8 rounded-xl font-black uppercase shadow-xl">Download V2 Template</Button>
@@ -407,7 +403,6 @@ export default function StockImportPage() {
         </Card>
       )}
 
-      {/* STEP 2: UPLOAD */}
       {currentStep === 1 && (
         <div className="max-w-3xl mx-auto space-y-6">
           <Card className="border-4 border-dashed rounded-3xl border-slate-200 hover:border-primary/40 hover:bg-primary/5 transition-all">
@@ -432,7 +427,6 @@ export default function StockImportPage() {
         </div>
       )}
 
-      {/* STEP 3: MAPPING & ANALYSIS */}
       {currentStep === 2 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <Card className="lg:col-span-2 shadow-xl border-none rounded-2xl overflow-hidden">
@@ -485,7 +479,6 @@ export default function StockImportPage() {
                       <span>{analysisProgress}%</span>
                     </div>
                     <Progress value={analysisProgress} className="h-1.5 bg-white/20" />
-                    <p className="text-[10px] italic opacity-60">Running background checks to keep UI responsive.</p>
                   </div>
                 ) : (
                   <>
@@ -501,7 +494,7 @@ export default function StockImportPage() {
                         ))}
                       </div>
                     </div>
-                    <Button onClick={startDataAnalysis} disabled={!REQUIRED_FIELDS.every(f => !!mapping[f])} className="w-full h-14 rounded-xl bg-white text-primary hover:bg-slate-50 font-black uppercase tracking-widest shadow-2xl transition-all active:scale-95">
+                    <Button onClick={startDataAnalysis} disabled={!REQUIRED_FIELDS.every(f => !!mapping[f])} className="w-full h-14 rounded-xl bg-white text-primary hover:bg-slate-50 font-black uppercase tracking-widest shadow-2xl transition-all">
                       Verify & Analyze <ChevronRight className="ml-2 h-4 w-4" />
                     </Button>
                   </>
@@ -512,7 +505,6 @@ export default function StockImportPage() {
         </div>
       )}
 
-      {/* STEP 4: PREVIEW & CORRECTION */}
       {currentStep === 3 && (
         <div className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -536,10 +528,7 @@ export default function StockImportPage() {
           <Card className="shadow-2xl border-none rounded-2xl overflow-hidden">
             <CardHeader className="bg-slate-50 border-b p-8 flex flex-row items-center justify-between">
               <div><CardTitle className="text-xs font-black uppercase tracking-widest">Integrity Review (Top 10 Rows)</CardTitle>
-              <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">Lazy rendering enabled for maximum performance.</p></div>
-              <div className="flex gap-3">
-                {invalidRows.length > 0 && <Button variant="outline" size="sm" onClick={downloadErrorReport} className="font-black text-[9px] uppercase border-destructive text-destructive"><FileDown className="mr-2 h-3 w-3" /> Download Conflict Log</Button>}
-              </div>
+              <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">Sanitized preview matching Paper Stock Registry structure.</p></div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto scrollbar-thin">
@@ -550,19 +539,11 @@ export default function StockImportPage() {
                   <TableBody>
                     {processedData.slice(0, 10).map((d, i) => (
                       <TableRow key={i} className={cn("h-10", d._errors.length > 0 && "bg-destructive/5")}>
-                        {Object.keys(FIELD_LABELS).map(key => {
-                          const original = d._original[mapping[key]];
-                          const corrected = d[key];
-                          const hasChanged = original && String(original) !== String(corrected);
-                          return (
-                            <TableCell key={key} className="text-[10px] font-medium border-r">
-                              <div className="flex flex-col">
-                                <span className={cn(hasChanged && "text-emerald-600 font-bold")}>{corrected}</span>
-                                {hasChanged && <span className="text-[8px] opacity-40 line-through">was: {original}</span>}
-                              </div>
-                            </TableCell>
-                          );
-                        })}
+                        {Object.keys(FIELD_LABELS).map(key => (
+                          <TableCell key={key} className="text-[10px] font-medium border-r">
+                            {d[key]}
+                          </TableCell>
+                        ))}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -571,15 +552,15 @@ export default function StockImportPage() {
               <div className="p-12 text-center space-y-6">
                 {isProcessing ? (
                   <div className="max-w-md mx-auto space-y-4">
-                    <div className="flex flex-col items-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><h4 className="text-sm font-black uppercase tracking-widest text-primary">Ingesting {allowPartial ? (processedData.length - invalidRows.length) : processedData.length} records...</h4></div>
+                    <div className="flex flex-col items-center gap-2"><Loader2 className="h-8 w-8 animate-spin text-primary" /><h4 className="text-sm font-black uppercase tracking-widest text-primary">Ingesting Sanitized Records...</h4></div>
                     <Progress value={progress} className="h-2" />
                   </div>
                 ) : (
                   <div className="space-y-6">
                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                      Ready to sync <span className="text-primary font-black">{allowPartial ? (processedData.length - invalidRows.length) : processedData.length} technical units</span> to cloud.
+                      Ready to sync <span className="text-primary font-black">{allowPartial ? (processedData.length - invalidRows.length) : processedData.length} records</span> to cloud.
                     </p>
-                    <Button onClick={executeImport} disabled={!allowPartial && invalidRows.length > 0} className="h-14 px-12 rounded-xl text-md font-black uppercase bg-primary shadow-xl transition-all active:scale-95">
+                    <Button onClick={executeImport} disabled={!allowPartial && invalidRows.length > 0} className="h-14 px-12 rounded-xl text-md font-black uppercase bg-primary shadow-xl transition-all">
                       <Sparkles className="mr-3 h-5 w-5" /> Commit Technical Intake
                     </Button>
                   </div>
@@ -590,14 +571,13 @@ export default function StockImportPage() {
         </div>
       )}
 
-      {/* STEP 5: SUCCESS */}
       {currentStep === 4 && (
         <Card className="border-none shadow-3xl text-center p-20 rounded-3xl bg-emerald-50 animate-in zoom-in-95">
           <CardContent className="space-y-8">
             <div className="h-24 w-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-2xl animate-bounce"><CheckCircle2 className="text-white h-12 w-12" /></div>
             <div className="space-y-2">
               <h3 className="text-4xl font-black text-emerald-900 uppercase tracking-tighter">Inventory Synchronized</h3>
-              <p className="text-emerald-700 font-bold uppercase text-xs tracking-widest">Successfully ingested {summary?.imported} technical units into core registry.</p>
+              <p className="text-emerald-700 font-bold uppercase text-xs tracking-widest">Successfully ingested {summary?.imported} sanitized units into core registry.</p>
             </div>
             <div className="flex gap-4 justify-center pt-6">
               <Button onClick={() => router.push('/paper-stock')} size="lg" className="h-14 px-10 rounded-xl bg-emerald-600 font-black uppercase shadow-xl">View Stock Registry <ArrowRight className="ml-2 h-5 w-5" /></Button>
