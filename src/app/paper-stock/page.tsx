@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -642,7 +641,7 @@ export default function PaperStockPage() {
             </Button>
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
-              search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lot No: [], companyRollNo: [],
+              search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
               widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
             })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
