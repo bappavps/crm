@@ -24,7 +24,10 @@ import {
   ChevronDown,
   LayoutGrid,
   Calendar,
-  MoreHorizontal
+  MoreHorizontal,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -79,6 +82,13 @@ const STATUS_OPTIONS = [
   { value: "Consumed", label: "Consumed", color: "bg-destructive" },
 ];
 
+type SortDirection = 'asc' | 'desc' | null;
+
+interface SortConfig {
+  key: string;
+  direction: SortDirection;
+}
+
 export default function PaperStockPage() {
   const { user } = useUser()
   const firestore = useFirestore()
@@ -92,6 +102,7 @@ export default function PaperStockPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
 
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -157,7 +168,7 @@ export default function PaperStockPage() {
 
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'desc'), limit(100));
+    return query(collection(firestore, 'paper_stock'), limit(500));
   }, [firestore]);
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
@@ -176,9 +187,19 @@ export default function PaperStockPage() {
     return Number(((w / 1000) * l).toFixed(2));
   }, [formData.widthMm, formData.lengthMeters]);
 
+  const requestSort = (key: string) => {
+    let direction: SortDirection = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = null;
+    }
+    setSortConfig({ key, direction });
+  }
+
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
-    return rolls.filter(row => {
+    let result = rolls.filter(row => {
       // 1. Global Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
@@ -215,7 +236,33 @@ export default function PaperStockPage() {
 
       return true;
     });
-  }, [rolls, filters]);
+
+    // Apply Sorting
+    if (sortConfig.key && sortConfig.direction) {
+      result.sort((a, b) => {
+        const key = sortConfig.key;
+        let valA = a[key];
+        let valB = b[key];
+
+        // Handle numeric values
+        if (['widthMm', 'lengthMeters', 'sqm', 'gsm', 'weightKg', 'purchaseRate'].includes(key)) {
+          valA = Number(valA || 0);
+          valB = Number(valB || 0);
+          return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+        }
+
+        // Default string comparison
+        valA = String(valA || "").toLowerCase();
+        valB = String(valB || "").toLowerCase();
+        
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [rolls, filters, sortConfig]);
 
   const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
   const startRange = filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
@@ -356,6 +403,22 @@ export default function PaperStockPage() {
     </Popover>
   );
 
+  const SortableHeader = ({ label, field, className = "" }: { label: string, field: string, className?: string }) => {
+    const isActive = sortConfig.key === field;
+    return (
+      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)}>
+        <div className="flex items-center gap-1">
+          <span className="font-black text-[10px] uppercase">{label}</span>
+          {isActive ? (
+            sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+          ) : (
+            <ArrowUpDown className="h-2.5 w-2.5 opacity-20" />
+          )}
+        </div>
+      </TableHead>
+    );
+  };
+
   if (!isMounted) return null;
 
   return (
@@ -438,23 +501,23 @@ export default function PaperStockPage() {
                   />
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r sticky left-[50px] bg-slate-50 z-50">Sl No</TableHead>
-                <TableHead className="w-[120px] font-black text-[10px] uppercase border-r text-center sticky left-[110px] bg-slate-50 z-50">Roll No</TableHead>
-                <TableHead className="w-[140px] font-black text-[10px] uppercase border-r text-center">Status</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Paper Company</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Paper Type</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-right">Width (MM)</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-right">Length (MTR)</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-right text-primary">SQM</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-right">GSM</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-right">Weight (KG)</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-right">Purchase Rate</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-center">Date Received</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r text-center">Date of Used</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Job No</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Job Size</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Job Name</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Lot No / Batch No</TableHead>
-                <TableHead className="font-black text-[10px] uppercase border-r">Company Roll No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r text-center sticky left-[110px] bg-slate-50 z-50" />
+                <SortableHeader label="Status" field="status" className="w-[140px] border-r text-center" />
+                <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
+                <SortableHeader label="Paper Type" field="paperType" className="border-r" />
+                <SortableHeader label="Width (MM)" field="widthMm" className="border-r text-right" />
+                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r text-right" />
+                <SortableHeader label="SQM" field="sqm" className="border-r text-right" />
+                <SortableHeader label="GSM" field="gsm" className="border-r text-right" />
+                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r text-right" />
+                <SortableHeader label="Purchase Rate" field="purchaseRate" className="border-r text-right" />
+                <SortableHeader label="Date Received" field="receivedDate" className="border-r text-center" />
+                <SortableHeader label="Date of Used" field="dateOfUsed" className="border-r text-center" />
+                <SortableHeader label="Job No" field="jobNo" className="border-r" />
+                <SortableHeader label="Job Size" field="jobSize" className="border-r" />
+                <SortableHeader label="Job Name" field="jobName" className="border-r" />
+                <SortableHeader label="Lot No / Batch No" field="lotNo" className="border-r" />
+                <SortableHeader label="Company Roll No" field="companyRollNo" className="border-r" />
                 <TableHead className="font-black text-[10px] uppercase border-r">Remarks</TableHead>
                 <TableHead className="text-right font-black text-[10px] uppercase sticky right-0 bg-slate-50 z-50 border-l shadow-[-4px_0_10px_rgba(0,0,0,0.05)]">Action</TableHead>
               </TableRow>
