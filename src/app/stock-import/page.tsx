@@ -69,39 +69,97 @@ const FIELD_LABELS: Record<string, string> = {
 const TEMPLATE_HEADERS = Object.values(FIELD_LABELS);
 
 /**
- * HELPER: Normalize strings for fuzzy matching
+ * HELPER: Advanced Normalization for fuzzy matching
  */
 const normalize = (str: string) => 
-  String(str || "").toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+  String(str || "").toLowerCase()
+    .replace(/\s+/g, '') // remove all spaces
+    .replace(/[^a-z0-9]/g, '') // remove special chars/underscores
+    .replace(/of/g, '') // common stop word in "Date of Received"
+    .trim();
 
 /**
- * HELPER: Robust numeric parsing (strips units)
+ * HELPER: Robust numeric parsing (strips units like "Kgs", "mm")
  */
 const cleanNumeric = (val: any): number => {
   if (typeof val === 'number') return val;
-  const cleaned = String(val || "0").replace(/[^0-9.]/g, '');
+  if (!val) return 0;
+  // Handle commas and strip non-numeric except decimal point
+  const cleaned = String(val).replace(/,/g, '').replace(/[^0-9.]/g, '');
   return parseFloat(cleaned) || 0;
 };
 
 /**
- * HELPER: Robust date parsing
+ * HELPER: Robust date parsing for various formats
  */
 const parseExcelDate = (val: any): string => {
   if (!val) return new Date().toISOString().split('T')[0];
   
-  // Handle Excel Serial Dates
+  // 1. Handle Excel Serial Dates (Numeric)
   if (typeof val === 'number') {
     const date = new Date((val - 25569) * 86400 * 1000);
     return date.toISOString().split('T')[0];
   }
 
-  // Handle Strings
+  const str = String(val).trim();
+  
+  // 2. Try standard ISO format or common strings
   try {
-    const d = new Date(val);
+    const d = new Date(str);
     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
   } catch (e) {}
 
-  return String(val); // Fallback to raw string if parsing fails
+  // 3. Handle DD-MM-YYYY or DD/MM/YYYY manually
+  const parts = str.split(/[-/]/);
+  if (parts.length === 3) {
+    // If year is the first part (YYYY-MM-DD)
+    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    // If year is the last part (DD-MM-YYYY)
+    if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+
+  return str; // Return raw as fallback
+};
+
+/**
+ * HEURISTIC: Find the best column match for a system field
+ */
+const findBestMatch = (targetLabel: string, systemKey: string, fileHeaders: string[]) => {
+  const normTarget = normalize(targetLabel);
+  const normKey = normalize(systemKey);
+
+  // 1. Exact or close normalized match
+  let match = fileHeaders.find(h => {
+    const nh = normalize(h);
+    return nh === normTarget || nh === normKey;
+  });
+  if (match) return match;
+
+  // 2. Keyword containment
+  match = fileHeaders.find(h => {
+    const nh = normalize(h);
+    return nh.includes(normTarget) || normTarget.includes(nh);
+  });
+  if (match) return match;
+
+  // 3. Custom Aliases for technical fields
+  const aliases: Record<string, string[]> = {
+    receivedDate: ['date', 'entry', 'received'],
+    widthMm: ['width', 'wmm'],
+    lengthMeters: ['length', 'lmtr', 'mtr'],
+    paperCompany: ['company', 'mfr', 'supplier'],
+    paperType: ['type', 'substrate', 'material'],
+    lotNo: ['lot', 'batch', 'invoice'],
+    companyRollNo: ['parent', 'reel', 'mfrroll']
+  };
+
+  const currentAliases = aliases[systemKey] || [];
+  match = fileHeaders.find(h => {
+    const nh = normalize(h);
+    return currentAliases.some(alias => nh.includes(alias));
+  });
+
+  return match;
 };
 
 export default function StockImportPage() {
@@ -136,8 +194,8 @@ export default function StockImportPage() {
     const ws = XLSX.utils.json_to_sheet([], { header: TEMPLATE_HEADERS });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Technical Stock Template");
-    XLSX.writeFile(wb, "Shree_Label_Technical_Template.xlsx");
-    toast({ title: "Template Downloaded", description: "Use this 18-column grid for the best results." });
+    XLSX.writeFile(wb, "Shree_Label_V2_Template.xlsx");
+    toast({ title: "Template Ready", description: "V2 Grid downloaded. Fill and upload." });
     if (currentStep === 0) setCurrentStep(1);
   }
 
@@ -157,12 +215,12 @@ export default function StockImportPage() {
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         
         if (data.length < 2) {
-          showModal('ERROR', 'File Empty', 'Your spreadsheet does not contain any data rows.');
+          showModal('ERROR', 'File Empty', 'The spreadsheet does not contain valid technical rows.');
           setIsProcessing(false);
           return;
         }
 
-        const fileHeaders = (data[0] as string[]).map(h => String(h || "").trim());
+        const fileHeaders = (data[0] as any[]).map(h => String(h || "").trim()).filter(h => h !== "");
         const rows = XLSX.utils.sheet_to_json(ws);
         
         setHeaders(fileHeaders);
@@ -173,17 +231,10 @@ export default function StockImportPage() {
           rows: rows.length
         });
 
-        // Smart Fuzzy Auto-detection logic
+        // Smart Heuristic Auto-detection
         const initialMapping: Record<string, string> = {};
         Object.entries(FIELD_LABELS).forEach(([key, label]) => {
-          const normLabel = normalize(label);
-          const normKey = normalize(key);
-          
-          const match = fileHeaders.find(h => {
-            const normH = normalize(h);
-            return normH === normLabel || normH === normKey || normH.includes(normLabel) || normLabel.includes(normH);
-          });
-          
+          const match = findBestMatch(label, key, fileHeaders);
           if (match) initialMapping[key] = match;
         });
         
@@ -195,7 +246,7 @@ export default function StockImportPage() {
           setCurrentStep(2);
         }, 500);
       } catch (err) {
-        showModal('ERROR', 'Parsing Error', 'We could not read this file. Please ensure it is a valid Excel or CSV.');
+        showModal('ERROR', 'Read Failure', 'Could not parse Excel structure. Please use the official V2 template.');
         setIsProcessing(false);
       }
     };
@@ -229,18 +280,18 @@ export default function StockImportPage() {
         const header = mapping[field];
         const val = row[header];
         if (!header || val === undefined || val === "") {
-          invalidRows.push(`Row ${index + 2}: Mandatory technical field "${FIELD_LABELS[field]}" was not detected.`);
+          invalidRows.push(`Row ${index + 2}: Missing mandatory column "${FIELD_LABELS[field]}"`);
           hasError = true;
         }
       });
 
-      // Technical range validation
+      // Range checks
       ["widthMm", "lengthMeters", "gsm"].forEach(field => {
         const header = mapping[field];
         if (header) {
           const num = cleanNumeric(row[header]);
-          if (isNaN(num) || num <= 0) {
-            invalidRows.push(`Row ${index + 2}: Technical attribute "${FIELD_LABELS[field]}" must be a positive number (Detected: ${row[header] || 'None'}).`);
+          if (num <= 0) {
+            invalidRows.push(`Row ${index + 2}: Invalid ${FIELD_LABELS[field]} value (Found: ${row[header]})`);
             hasError = true;
           }
         }
@@ -282,8 +333,7 @@ export default function StockImportPage() {
             id: rollId,
             dateOfUsed: "Not Used",
             createdAt: serverTimestamp(),
-            createdById: user.uid,
-            createdByName: user.displayName || user.email
+            createdById: user.uid
           };
 
           Object.entries(mapping).forEach(([key, header]) => {
@@ -296,6 +346,7 @@ export default function StockImportPage() {
             data[key] = val;
           });
 
+          // Logic formulas
           const w = Number(data.widthMm) || 0;
           const l = Number(data.lengthMeters) || 0;
           data.sqm = Number(((w / 1000) * l).toFixed(2));
@@ -309,39 +360,36 @@ export default function StockImportPage() {
         }
 
         await batch.commit();
-        const p = Math.round(((i + chunk.length) / totalRows) * 100);
-        setProgress(p);
+        setProgress(Math.round(((i + chunk.length) / totalRows) * 100));
       }
 
       setSummary({ total: totalRows, imported });
-      setCurrentStep(4); // Success state
-      showModal('SUCCESS', 'Technical Stock Synchronized', `Successfully added ${imported} technical units to the central registry.`, true);
+      setCurrentStep(4);
+      toast({ title: "Import Successful", description: `Added ${imported} units to inventory.` });
     } catch (error: any) {
-      showModal('ERROR', 'Transaction Blocked', error.message);
+      showModal('ERROR', 'Batch Failed', error.message);
     } finally {
       setIsProcessing(false);
     }
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 font-sans pb-32">
+    <div className="max-w-6xl mx-auto space-y-8 pb-20 font-sans">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      {/* HEADER */}
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Bulk Technical Import</h2>
-          <p className="text-muted-foreground font-medium text-xs">Guided technical ingestion for legacy paper inventory.</p>
+        <div className="space-y-1">
+          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Bulk Stock Ingestion</h2>
+          <p className="text-muted-foreground text-xs font-bold uppercase">Technical migration hub for paper inventory.</p>
         </div>
-        {currentStep < 4 && currentStep > 0 && (
-          <Button variant="ghost" onClick={() => setCurrentStep(currentStep - 1)} className="font-bold text-[10px] uppercase">
-            <ArrowLeft className="mr-2 h-3 w-3" /> Go Back
+        {currentStep > 0 && currentStep < 4 && (
+          <Button variant="ghost" size="sm" onClick={() => setCurrentStep(currentStep - 1)} className="font-black text-[10px] uppercase">
+            <ArrowLeft className="mr-2 h-3 w-3" /> Back
           </Button>
         )}
       </div>
 
-      {/* STEP TRACKER */}
-      <div className="flex items-center justify-between w-full max-w-4xl mx-auto px-4">
+      <div className="flex items-center justify-between w-full max-w-4xl mx-auto">
         {STEPS.map((step, idx) => (
           <div key={step.id} className="flex flex-col items-center gap-2 relative flex-1">
             <div className={cn(
@@ -352,7 +400,7 @@ export default function StockImportPage() {
               {currentStep > idx ? <CheckCircle2 className="h-5 w-5" /> : <step.icon className="h-5 w-5" />}
             </div>
             <span className={cn(
-              "text-[10px] font-black uppercase tracking-widest",
+              "text-[9px] font-black uppercase tracking-widest",
               currentStep === idx ? "text-primary" : "text-muted-foreground"
             )}>{step.label}</span>
             {idx < STEPS.length - 1 && (
@@ -368,22 +416,20 @@ export default function StockImportPage() {
       {/* --- STEP 1: DOWNLOAD --- */}
       {currentStep === 0 && (
         <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-gradient-to-br from-primary/5 to-background">
-          <CardContent className="p-16 text-center space-y-10">
-            <div className="h-32 w-32 bg-primary/10 rounded-full flex items-center justify-center mx-auto border-4 border-white shadow-inner">
-              <FileSpreadsheet className="h-16 w-16 text-primary" />
+          <CardContent className="p-16 text-center space-y-8">
+            <div className="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <Download className="h-10 w-10 text-primary" />
             </div>
-            <div className="space-y-4 max-w-lg mx-auto">
-              <h3 className="text-2xl font-black uppercase tracking-tight">Step 1: Download Standard Matrix</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Ensure your technical data aligns perfectly with the ERP. Use our standard 18-column matrix for seamless auto-mapping.
-              </p>
+            <div className="space-y-2 max-w-md mx-auto">
+              <h3 className="text-xl font-black uppercase tracking-tight">Technical Data Prep</h3>
+              <p className="text-xs text-muted-foreground font-medium">Use the official 18-column grid to ensure perfect technical synchronization.</p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-              <Button onClick={downloadTemplate} size="lg" className="h-16 px-10 rounded-2xl font-black uppercase tracking-widest shadow-xl bg-primary hover:bg-primary/90">
-                <Download className="mr-3 h-6 w-6" /> Get Excel Template
+            <div className="flex gap-4 justify-center">
+              <Button onClick={downloadTemplate} size="lg" className="h-14 px-8 rounded-xl font-black uppercase bg-primary shadow-xl">
+                Download V2 Matrix
               </Button>
-              <Button variant="outline" onClick={() => setCurrentStep(1)} size="lg" className="h-16 px-10 rounded-2xl font-black uppercase tracking-widest border-2">
-                Skip to Upload <ChevronRight className="ml-2 h-6 w-6" />
+              <Button variant="outline" onClick={() => setCurrentStep(1)} size="lg" className="h-14 px-8 rounded-xl font-black uppercase border-2">
+                Already Prepared
               </Button>
             </div>
           </CardContent>
@@ -394,33 +440,28 @@ export default function StockImportPage() {
       {currentStep === 1 && (
         <div className="max-w-3xl mx-auto space-y-6">
           <Card className={cn(
-            "border-4 border-dashed rounded-3xl transition-all duration-300 relative group",
-            isProcessing ? "border-primary/50 bg-primary/5" : "border-muted-foreground/20 hover:border-primary/40 hover:bg-primary/5"
+            "border-4 border-dashed rounded-3xl transition-all relative group",
+            isProcessing ? "border-primary/50 bg-primary/5" : "border-slate-200 hover:border-primary/40 hover:bg-primary/5"
           )}>
             <CardContent className="p-20 text-center space-y-6">
               {!isProcessing ? (
                 <>
-                  <div className="h-24 w-24 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                    <FileUp className="h-12 w-12 text-primary opacity-60" />
+                  <div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <FileUp className="h-10 w-10 text-primary" />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="file-upload" className="cursor-pointer">
-                      <span className="text-3xl font-black text-primary underline underline-offset-8 decoration-primary/20">Drop Data File Here</span>
-                      <Input id="file-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
-                    </Label>
-                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV files supported</p>
-                  </div>
+                  <Label htmlFor="file-upload" className="cursor-pointer space-y-4 block">
+                    <span className="text-2xl font-black text-primary underline underline-offset-8">Select technical data file</span>
+                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV supported</p>
+                    <Input id="file-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
+                  </Label>
                 </>
               ) : (
-                <div className="space-y-8 py-10">
+                <div className="space-y-6 py-10">
                   <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                    <h4 className="font-black uppercase tracking-widest text-primary">Normalizing Headers...</h4>
+                    <Loader2 className="h-10 w-10 animate-spin text-primary" />
+                    <h4 className="font-black uppercase tracking-widest text-primary">Normalizing Header Matrix...</h4>
                   </div>
-                  <div className="max-w-md mx-auto space-y-2">
-                    <Progress value={progress} className="h-3 rounded-full" />
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase">{progress}% Complete</p>
-                  </div>
+                  <Progress value={progress} className="h-2 max-w-sm mx-auto" />
                 </div>
               )}
             </CardContent>
@@ -432,17 +473,17 @@ export default function StockImportPage() {
       {currentStep === 2 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            <Card className="shadow-2xl border-none rounded-3xl overflow-hidden animate-in slide-in-from-bottom-4">
-              <CardHeader className="bg-slate-50 border-b p-8">
+            <Card className="shadow-xl border-none rounded-2xl overflow-hidden">
+              <CardHeader className="bg-slate-50 border-b py-6 px-8">
                 <div className="flex items-center justify-between">
-                  <div className="space-y-1">
-                    <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                      <RefreshCw className="h-5 w-5 text-primary" /> Column Synchronization
+                  <div>
+                    <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 text-primary" /> Attribute Synchronization
                     </CardTitle>
-                    <p className="text-[10px] text-muted-foreground font-bold uppercase">Technical mapping between spreadsheet and central registry.</p>
+                    <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">Cross-map your spreadsheet headers to ERP fields.</p>
                   </div>
-                  <Badge className="bg-primary/10 text-primary border-none h-8 px-4 font-black">
-                    {fileInfo?.rows} RECORDS DETECTED
+                  <Badge className="bg-primary text-white border-none h-7 px-4 font-black text-[10px]">
+                    {fileInfo?.rows} ROWS DETECTED
                   </Badge>
                 </div>
               </CardHeader>
@@ -450,7 +491,7 @@ export default function StockImportPage() {
                 <Table>
                   <TableHeader className="bg-muted/30">
                     <TableRow>
-                      <TableHead className="font-black text-[10px] uppercase pl-8 py-4">System Registry Field</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase pl-8 py-4">System Technical Field</TableHead>
                       <TableHead className="font-black text-[10px] uppercase py-4">Excel Source Column</TableHead>
                       <TableHead className="w-20"></TableHead>
                     </TableRow>
@@ -464,9 +505,9 @@ export default function StockImportPage() {
                               "text-xs font-black uppercase tracking-tight",
                               REQUIRED_FIELDS.includes(key) && !mapping[key] ? "text-destructive" : mapping[key] ? "text-primary" : "text-slate-600"
                             )}>
-                              {label} {REQUIRED_FIELDS.includes(key) && <span className="text-destructive font-black">*</span>}
+                              {label} {REQUIRED_FIELDS.includes(key) && <span className="text-destructive">*</span>}
                             </span>
-                            {REQUIRED_FIELDS.includes(key) && <span className="text-[9px] text-muted-foreground font-bold uppercase">Mandatory Attribute</span>}
+                            {REQUIRED_FIELDS.includes(key) && <span className="text-[8px] text-muted-foreground font-black uppercase">Mandatory</span>}
                           </div>
                         </TableCell>
                         <TableCell className="py-4">
@@ -475,7 +516,7 @@ export default function StockImportPage() {
                               "h-10 text-xs font-bold border-2 transition-all",
                               mapping[key] ? "border-emerald-200 bg-emerald-50/30 text-emerald-900" : "border-slate-200"
                             )}>
-                              <SelectValue placeholder="Detecting Column..." />
+                              <SelectValue placeholder="Auto-detection failed..." />
                             </SelectTrigger>
                             <SelectContent>
                               {headers.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}
@@ -484,9 +525,9 @@ export default function StockImportPage() {
                         </TableCell>
                         <TableCell className="py-4 pr-8 text-center">
                           {mapping[key] ? (
-                            <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto animate-in zoom-in" />
+                            <CheckCircle2 className="h-5 w-5 text-emerald-500 mx-auto" />
                           ) : REQUIRED_FIELDS.includes(key) ? (
-                            <AlertCircle className="h-5 w-5 text-destructive mx-auto animate-pulse" />
+                            <AlertTriangle className="h-5 w-5 text-destructive mx-auto animate-pulse" />
                           ) : null}
                         </TableCell>
                       </TableRow>
@@ -498,30 +539,26 @@ export default function StockImportPage() {
           </div>
 
           <div className="space-y-6">
-            <Card className="rounded-3xl border-none shadow-xl bg-primary text-white sticky top-24">
+            <Card className="rounded-2xl border-none shadow-xl bg-primary text-white sticky top-24">
               <CardHeader className="pb-4">
-                <CardTitle className="text-xs font-black uppercase tracking-[0.2em] opacity-70">Mapping Health</CardTitle>
+                <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] opacity-70">Mapping Progress</CardTitle>
               </CardHeader>
               <CardContent className="space-y-8">
                 <div className="space-y-2">
                   <div className="flex justify-between items-end">
-                    <span className="text-[10px] font-black uppercase tracking-widest">Synchronization Progress</span>
-                    <span className="text-2xl font-black">{Object.keys(mapping).length} / {Object.keys(FIELD_LABELS).length}</span>
+                    <span className="text-[10px] font-black uppercase">Technical Coverage</span>
+                    <span className="text-xl font-black">{Object.keys(mapping).length} / {Object.keys(FIELD_LABELS).length}</span>
                   </div>
-                  <Progress value={(Object.keys(mapping).length / Object.keys(FIELD_LABELS).length) * 100} className="h-2 bg-white/20" />
+                  <Progress value={(Object.keys(mapping).length / Object.keys(FIELD_LABELS).length) * 100} className="h-1.5 bg-white/20" />
                 </div>
 
-                <div className="p-4 bg-white/10 rounded-2xl space-y-3">
-                  <p className="text-[10px] font-black uppercase opacity-70 tracking-widest">Mandatory Attributes</p>
+                <div className="p-4 bg-white/10 rounded-xl space-y-3">
+                  <p className="text-[10px] font-black uppercase opacity-70">Status Check</p>
                   <div className="space-y-2">
                     {REQUIRED_FIELDS.map(f => (
                       <div key={f} className="flex items-center gap-2">
-                        {mapping[f] ? (
-                          <div className="h-4 w-4 bg-emerald-400 rounded-full flex items-center justify-center"><CheckCircle2 className="h-3 w-3 text-emerald-900" /></div>
-                        ) : (
-                          <div className="h-4 w-4 bg-white/20 rounded-full flex items-center justify-center"><X className="h-3 w-3 text-white" /></div>
-                        )}
-                        <span className="text-[11px] font-bold tracking-tight">{FIELD_LABELS[f]}</span>
+                        {mapping[f] ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <X className="h-3 w-3 text-white/40" />}
+                        <span className="text-[10px] font-bold">{FIELD_LABELS[f]}</span>
                       </div>
                     ))}
                   </div>
@@ -530,16 +567,10 @@ export default function StockImportPage() {
                 <Button 
                   onClick={() => setCurrentStep(3)} 
                   disabled={!REQUIRED_FIELDS.every(f => !!mapping[f])}
-                  className="w-full h-16 rounded-2xl bg-white text-primary hover:bg-slate-50 font-black uppercase tracking-widest shadow-2xl disabled:opacity-50"
+                  className="w-full h-14 rounded-xl bg-white text-primary hover:bg-slate-50 font-black uppercase tracking-widest shadow-2xl"
                 >
-                  Generate Preview <ArrowRight className="ml-2 h-5 w-5" />
+                  Generate Ingestion Preview <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-                
-                {!REQUIRED_FIELDS.every(f => !!mapping[f]) && (
-                  <p className="text-[9px] text-center font-bold uppercase tracking-tighter opacity-80">
-                    Fix missing mandatory attributes to proceed.
-                  </p>
-                )}
               </CardContent>
             </Card>
           </div>
@@ -548,55 +579,54 @@ export default function StockImportPage() {
 
       {/* --- STEP 4: PREVIEW & IMPORT --- */}
       {currentStep === 3 && (
-        <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
+        <div className="space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="bg-emerald-50 border-emerald-100 shadow-sm rounded-3xl">
-              <CardContent className="p-6 flex flex-col items-center text-center">
-                <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest mb-1">Validated Units</span>
-                <span className="text-4xl font-black text-emerald-600">{validationResults.validCount}</span>
+            <Card className="bg-emerald-50 border-emerald-100 shadow-sm rounded-2xl">
+              <CardContent className="p-6 text-center">
+                <p className="text-[9px] font-black text-emerald-700 uppercase mb-1">Valid Technical Units</p>
+                <span className="text-3xl font-black text-emerald-600">{validationResults.validCount}</span>
               </CardContent>
             </Card>
-            <Card className={cn("shadow-sm rounded-3xl", validationResults.invalidCount > 0 ? "bg-destructive/5 border-destructive/10" : "bg-slate-50 border-slate-100")}>
-              <CardContent className="p-6 flex flex-col items-center text-center">
-                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1">Rejected Rows</span>
-                <span className={cn("text-4xl font-black", validationResults.invalidCount > 0 ? "text-destructive" : "text-slate-400")}>{validationResults.invalidCount}</span>
+            <Card className={cn("shadow-sm rounded-2xl", validationResults.invalidCount > 0 ? "bg-destructive/5 border-destructive/10" : "bg-slate-50")}>
+              <CardContent className="p-6 text-center">
+                <p className="text-[9px] font-black text-muted-foreground uppercase mb-1">Rejected Entries</p>
+                <span className={cn("text-3xl font-black", validationResults.invalidCount > 0 ? "text-destructive" : "text-slate-400")}>{validationResults.invalidCount}</span>
               </CardContent>
             </Card>
-            <Card className="bg-primary/5 border-primary/10 shadow-sm rounded-3xl">
-              <CardContent className="p-6 flex flex-col items-center text-center">
-                <span className="text-[10px] font-black text-primary uppercase tracking-widest mb-1">Total Payload</span>
-                <span className="text-4xl font-black text-primary">{excelData.length}</span>
+            <Card className="bg-primary/5 border-primary/10 shadow-sm rounded-2xl">
+              <CardContent className="p-6 text-center">
+                <p className="text-[9px] font-black text-primary uppercase mb-1">Total Payload</p>
+                <span className="text-3xl font-black text-primary">{excelData.length}</span>
               </CardContent>
             </Card>
           </div>
 
-          <Card className="shadow-2xl border-none rounded-3xl overflow-hidden">
+          <Card className="shadow-2xl border-none rounded-2xl overflow-hidden">
             <CardHeader className="bg-slate-50 border-b p-8 flex flex-row items-center justify-between">
-              <div className="space-y-1">
-                <CardTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-                  <TableIcon className="h-5 w-5 text-primary" /> Technical Data Preview (Top 10)
+              <div>
+                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <TableIcon className="h-4 w-4 text-primary" /> Technical Preview (Top 10)
                 </CardTitle>
-                <p className="text-[10px] text-muted-foreground font-bold uppercase">Verify technical synchronization before final ingestion.</p>
+                <p className="text-[9px] text-muted-foreground font-black uppercase mt-1">Verify technical ingestion logic before committing.</p>
               </div>
               {validationResults.invalidCount > 0 && (
-                <Button variant="outline" size="sm" onClick={() => setIsErrorListOpen(!isErrorListOpen)} className="font-black text-[10px] uppercase border-destructive text-destructive hover:bg-destructive/5">
-                  {isErrorListOpen ? "Hide Errors" : `View ${validationResults.invalidCount} Conflict Alerts`}
+                <Button variant="outline" size="sm" onClick={() => setIsErrorListOpen(!isErrorListOpen)} className="font-black text-[9px] uppercase border-destructive text-destructive">
+                  {isErrorListOpen ? "Hide Conflicts" : `View ${validationResults.invalidCount} Conflicts`}
                 </Button>
               )}
             </CardHeader>
             <CardContent className="p-0">
               {isErrorListOpen && (
-                <div className="p-8 bg-destructive/5 border-b border-destructive/10 space-y-4">
-                  <div className="flex items-center gap-2 text-destructive font-black text-xs uppercase tracking-widest">
-                    <AlertTriangle className="h-5 w-5" /> technical conflict summary
+                <div className="p-6 bg-destructive/5 border-b border-destructive/10 space-y-2">
+                  <div className="flex items-center gap-2 text-destructive font-black text-[10px] uppercase">
+                    <AlertTriangle className="h-4 w-4" /> validation conflict summary
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-2">
-                    {validationResults.errors.slice(0, 20).map((err, i) => (
-                      <p key={i} className="text-[10px] font-bold text-destructive/80 flex items-center gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
+                    {validationResults.errors.slice(0, 10).map((err, i) => (
+                      <p key={i} className="text-[9px] font-bold text-destructive/80 flex items-center gap-2">
                         <span className="h-1 w-1 bg-destructive rounded-full" /> {err}
                       </p>
                     ))}
-                    {validationResults.errors.length > 20 && <p className="text-[10px] italic text-destructive/60">...and {validationResults.errors.length - 20} more conflicts.</p>}
                   </div>
                 </div>
               )}
@@ -606,16 +636,16 @@ export default function StockImportPage() {
                   <TableHeader className="bg-muted/20">
                     <TableRow>
                       {Object.keys(FIELD_LABELS).map(key => (
-                        <TableHead key={key} className="text-[10px] font-black uppercase whitespace-nowrap">{FIELD_LABELS[key]}</TableHead>
+                        <TableHead key={key} className="text-[9px] font-black uppercase whitespace-nowrap">{FIELD_LABELS[key]}</TableHead>
                       ))}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {mappedPreviewData.map((row, i) => (
-                      <TableRow key={i} className="h-12 border-b">
+                      <TableRow key={i} className="h-10 border-b">
                         {Object.keys(FIELD_LABELS).map(key => (
                           <TableCell key={key} className={cn(
-                            "text-[11px] font-medium whitespace-nowrap",
+                            "text-[10px] font-medium whitespace-nowrap",
                             key === 'sqm' ? "font-black text-primary" : "",
                             (!row[key] && REQUIRED_FIELDS.includes(key)) ? "bg-destructive/10 text-destructive font-black" : ""
                           )}>
@@ -628,42 +658,32 @@ export default function StockImportPage() {
                 </Table>
               </div>
               
-              <div className="p-12 space-y-8 bg-white text-center">
+              <div className="p-12 space-y-6 bg-white text-center">
                 {isProcessing ? (
-                  <div className="space-y-6 max-w-xl mx-auto">
-                    <div className="flex flex-col items-center gap-4">
-                      <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                      <h4 className="text-xl font-black uppercase tracking-widest text-primary">Synchronizing Central Registry...</h4>
+                  <div className="max-w-md mx-auto space-y-4">
+                    <div className="flex flex-col items-center gap-2">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <h4 className="text-sm font-black uppercase tracking-widest text-primary">Synchronizing Central Registry...</h4>
                     </div>
-                    <div className="space-y-2">
-                      <Progress value={progress} className="h-4 rounded-full shadow-inner" />
-                      <p className="text-[10px] font-black text-muted-foreground uppercase">Progress: {progress}% • Committing Batch Transactions</p>
-                    </div>
+                    <Progress value={progress} className="h-2 shadow-inner" />
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-6">
-                    <div className="p-6 bg-primary/5 rounded-3xl border-2 border-dashed border-primary/20 max-w-lg">
-                      <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                        Authorized to ingest <span className="font-black text-primary">{excelData.length} technical units</span>. Unique Roll IDs will be sequentially assigned.
-                      </p>
-                    </div>
-                    <div className="flex gap-4">
-                      <Button variant="outline" onClick={() => setCurrentStep(2)} className="h-16 px-10 rounded-2xl font-black uppercase tracking-widest border-2">
-                        Re-Map Columns
+                  <div className="space-y-6">
+                    <p className="text-xs text-slate-500 font-bold uppercase">
+                      Authorized to ingest <span className="font-black text-primary">{excelData.length} technical units</span> into the registry.
+                    </p>
+                    <div className="flex gap-4 justify-center">
+                      <Button variant="outline" onClick={() => setCurrentStep(2)} className="h-14 px-10 rounded-xl font-black uppercase border-2">
+                        Adjust Mapping
                       </Button>
                       <Button 
                         onClick={executeImport} 
                         disabled={validationResults.invalidCount > 0} 
-                        className="h-16 px-16 rounded-2xl text-lg font-black uppercase tracking-widest shadow-2xl bg-primary hover:bg-primary/90"
+                        className="h-14 px-12 rounded-xl text-md font-black uppercase bg-primary shadow-xl shadow-primary/20"
                       >
-                        <Sparkles className="mr-3 h-6 w-6" /> Commit Technical Intake
+                        <Sparkles className="mr-3 h-5 w-5" /> Commit Technical Intake
                       </Button>
                     </div>
-                    {validationResults.invalidCount > 0 && (
-                      <p className="text-[10px] text-destructive font-black uppercase flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4" /> Resolve technical conflicts to authorize ingestion.
-                      </p>
-                    )}
                   </div>
                 )}
               </div>
@@ -674,25 +694,25 @@ export default function StockImportPage() {
 
       {/* --- STEP 5: SUCCESS --- */}
       {currentStep === 4 && (
-        <Card className="border-none shadow-3xl text-center p-24 animate-in zoom-in-95 duration-700 rounded-3xl bg-emerald-50">
-          <CardContent className="space-y-10">
-            <div className="h-32 w-32 bg-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-2xl border-8 border-white animate-bounce">
-              <CheckCircle2 className="text-white h-16 w-16" />
+        <Card className="border-none shadow-3xl text-center p-20 rounded-3xl bg-emerald-50 animate-in zoom-in-95">
+          <CardContent className="space-y-8">
+            <div className="h-24 w-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-2xl border-4 border-white animate-bounce">
+              <CheckCircle2 className="text-white h-12 w-12" />
             </div>
-            <div className="space-y-3">
-              <h3 className="text-5xl font-black text-emerald-900 uppercase tracking-tighter">Inventory Synchronized</h3>
-              <p className="text-emerald-700 font-bold text-xl">Successfully authorized {summary?.imported} technical units into the registry.</p>
+            <div className="space-y-2">
+              <h3 className="text-4xl font-black text-emerald-900 uppercase tracking-tighter">Registry Synchronized</h3>
+              <p className="text-emerald-700 font-bold">Successfully ingested {summary?.imported} technical paper units.</p>
             </div>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
-              <Button asChild size="lg" className="h-16 px-12 rounded-2xl bg-emerald-600 hover:bg-emerald-700 font-black uppercase tracking-widest shadow-xl">
-                <a href="/paper-stock">View Central Registry <ArrowRight className="ml-2 h-6 w-6" /></a>
+            <div className="flex gap-4 justify-center pt-6">
+              <Button asChild size="lg" className="h-14 px-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 font-black uppercase shadow-xl">
+                <a href="/paper-stock">View Stock Registry <ArrowRight className="ml-2 h-5 w-5" /></a>
               </Button>
               <Button variant="outline" onClick={() => {
                 setExcelData([]);
                 setMapping({});
                 setFileInfo(null);
                 setCurrentStep(1);
-              }} size="lg" className="h-16 px-12 rounded-2xl font-black uppercase tracking-widest border-emerald-200 text-emerald-800">
+              }} size="lg" className="h-14 px-10 rounded-xl font-black uppercase border-emerald-200 text-emerald-800">
                 Import Another File
               </Button>
             </div>
