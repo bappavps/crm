@@ -243,7 +243,6 @@ export default function PaperStockPage() {
     return result;
   }, [rolls, filters, sortConfig]);
 
-  // HIERARCHY LOGIC: Flattened tree starting from parents
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
 
@@ -276,12 +275,10 @@ export default function PaperStockPage() {
       });
     };
 
-    // Sort roots by original sort preference
     roots.forEach(root => traverse(root, 0, true));
     return flattened;
   }, [filteredRows]);
 
-  // AUTO-SUGGESTION DATA EXTRACTION
   const suggestions = useMemo(() => {
     if (!rolls) return { companies: [], types: [], gsms: [], lots: [], mfrRolls: [] };
     return {
@@ -307,8 +304,25 @@ export default function PaperStockPage() {
     } else {
       setEditingRoll(null);
       setIsCustomStatus(false);
+
+      // AUTO-SUGGEST NEXT ROLL NUMBER (T-XXXX PATTERN ONLY)
+      let suggestedRollNo = "T-1001";
+      if (rolls && rolls.length > 0) {
+        const numericParts = rolls
+          .map(r => r.rollNo)
+          .filter(id => /^T-\d+$/.test(id)) // Match T- followed strictly by digits
+          .map(id => parseInt(id.split('-')[1]))
+          .filter(num => !isNaN(num));
+
+        if (numericParts.length > 0) {
+          const maxVal = Math.max(...numericParts);
+          suggestedRollNo = `T-${maxVal + 1}`;
+        }
+      }
+
       setFormData({
-        rollNo: "", paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
+        rollNo: suggestedRollNo, // Pre-filled suggestion
+        paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
         gsm: 0, weightKg: 0, purchaseRate: 0, receivedDate: new Date().toISOString().split('T')[0],
         dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", companyRollNo: "", remarks: ""
       });
@@ -319,8 +333,21 @@ export default function PaperStockPage() {
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
+
+    const rollId = formData.rollNo.trim();
+
+    // DUPLICATE ID VALIDATION (Only for New Rolls)
+    if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
+      setModal({ 
+        isOpen: true, 
+        type: 'ERROR', 
+        title: 'Duplicate Roll ID', 
+        description: `Roll Number "${rollId}" is already assigned to another record. Please use a unique ID.` 
+      });
+      return;
+    }
+
     setIsProcessing(true);
-    
     const finalData = { 
       ...formData, 
       sqm: calculatedSqm, 
@@ -334,7 +361,6 @@ export default function PaperStockPage() {
         setIsDialogOpen(false); 
         setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
-        const rollId = formData.rollNo.trim();
         await setDoc(doc(firestore, 'paper_stock', rollId), { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
         setIsDialogOpen(false); 
         setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
@@ -587,7 +613,6 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-8">
@@ -646,7 +671,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <form onSubmit={handleSave}>
@@ -722,7 +746,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* DATALISTS FOR AUTO-SUGGESTION */}
       <datalist id="companies-list">
         {suggestions.companies.map(c => <option key={c} value={c}>{`🏭 ${c}`}</option>)}
       </datalist>
@@ -739,7 +762,6 @@ export default function PaperStockPage() {
         {suggestions.mfrRolls.map(m => <option key={m} value={m}>{`🆔 ${m}`}</option>)}
       </datalist>
 
-      {/* PRINT LABEL DIALOG */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Print Engine (150x100mm)</DialogTitle></div>
@@ -784,7 +806,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* SCANNER DIALOG */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Technical Intake Scanner</DialogTitle></div>
