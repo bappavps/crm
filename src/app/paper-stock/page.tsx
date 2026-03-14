@@ -52,7 +52,8 @@ import {
   MessageSquare,
   X,
   Camera,
-  CalendarDays
+  CalendarDays,
+  Save
 } from "lucide-react"
 import { 
   Dialog, 
@@ -98,11 +99,11 @@ import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 const STATUS_OPTIONS = [
-  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-100" },
-  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-100" },
-  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-100" },
-  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-100" },
-  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-100" },
+  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50" },
+  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50" },
 ];
 
 const COLUMN_KEYS = [
