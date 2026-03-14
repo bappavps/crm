@@ -40,7 +40,8 @@ import {
   AlignRight,
   RotateCw,
   Circle as CircleIcon,
-  Upload
+  Upload,
+  Grid3X3
 } from "lucide-react"
 import { 
   Dialog, 
@@ -59,8 +60,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V3)
- * Professional Design Engine with Rulers, Rotation, and Advanced Typography.
+ * PRINT TEMPLATE STUDIO (V3.1)
+ * Professional Design Engine with Guidelines, TSC Print Optimization, and Fixed Uploads.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -151,6 +152,7 @@ export default function PrintTemplateStudio() {
   const [isSaving, setIsSaving] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
   const [gridSnap, setGridSnap] = useState(5)
+  const [showGuidelines, setShowGuidelines] = useState(true)
 
   useEffect(() => { setIsMounted(true) }, [])
 
@@ -356,7 +358,10 @@ export default function PrintTemplateStudio() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !selectedElement || selectedElement.type !== 'image') return
+    if (!file || !selectedElement || selectedElement.type !== 'image') {
+      toast({ variant: "destructive", title: "Select an image element on canvas first." });
+      return;
+    }
 
     const reader = new FileReader()
     reader.onload = (evt) => {
@@ -508,7 +513,7 @@ export default function PrintTemplateStudio() {
               </div>
 
               <div 
-                className="bg-white shadow-[0_30px_60px_rgba(0,0,0,0.2)] relative border border-slate-300"
+                className="bg-white shadow-[0_30px_60px_rgba(0,0,0,0.2)] relative border border-slate-300 transition-all duration-300"
                 style={{ 
                   width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, 
                   height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`,
@@ -517,14 +522,16 @@ export default function PrintTemplateStudio() {
                 }}
                 onMouseDown={() => setSelectedElementId(null)}
               >
-                {/* Visual Grid */}
-                <div 
-                  className="absolute inset-0 opacity-[0.03] pointer-events-none" 
-                  style={{ 
-                    backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', 
-                    backgroundSize: '20px 20px' 
-                  }} 
-                />
+                {/* Visual Guidelines / Grid */}
+                {showGuidelines && (
+                  <div 
+                    className="absolute inset-0 opacity-[0.08] pointer-events-none" 
+                    style={{ 
+                      backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', 
+                      backgroundSize: '20px 20px' 
+                    }} 
+                  />
+                )}
 
                 {currentTemplate?.elements.map(el => (
                   <CanvasElement 
@@ -548,6 +555,17 @@ export default function PrintTemplateStudio() {
                   <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10" onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}>-</Button>
                   <span className="text-[10px] font-black min-w-[45px] text-center">{Math.round(zoom * 100)}%</span>
                   <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10" onClick={() => setZoom(z => Math.min(3, z + 0.1))}>+</Button>
+                </div>
+                <Separator orientation="vertical" className="h-6 bg-white/20" />
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className={cn("h-8 w-8", showGuidelines ? "text-primary" : "text-white/40")}
+                    onClick={() => setShowGuidelines(!showGuidelines)}
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                  </Button>
                 </div>
                 <Separator orientation="vertical" className="h-6 bg-white/20" />
                 <div className="flex items-center gap-2 pr-2">
@@ -668,8 +686,8 @@ export default function PrintTemplateStudio() {
                     <div className="space-y-6 animate-in fade-in">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Image Source</Label>
                       <div className="space-y-4">
-                        <div className="p-10 border-2 border-dashed rounded-xl text-center bg-slate-50 hover:bg-slate-100 transition-colors relative">
-                          <Upload className="h-8 w-8 mx-auto text-slate-300" />
+                        <div className="p-10 border-2 border-dashed rounded-xl text-center bg-slate-50 hover:bg-slate-100 transition-colors relative group">
+                          <Upload className="h-8 w-8 mx-auto text-slate-300 group-hover:text-primary transition-colors" />
                           <p className="text-[10px] font-bold uppercase text-slate-400 mt-2">Upload Component</p>
                           <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageUpload} />
                         </div>
@@ -756,20 +774,6 @@ export default function PrintTemplateStudio() {
           </form>
         </DialogContent>
       </Dialog>
-
-      <style jsx global>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          #print-preview, #print-preview * { visibility: visible !important; }
-          #print-preview {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            margin: 0 !important;
-            z-index: 9999 !important;
-          }
-        }
-      `}</style>
     </div>
   )
 }
@@ -796,13 +800,13 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
 }) {
   const isDragging = useRef(false)
   const isResizing = useRef(false)
-  const startPos = useRef({ x: 0, y: 0 })
+  const startPos = useRef({ x: 0, y: 0, w: 0, h: 0 })
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
     onSelect(e)
     isDragging.current = true
-    startPos.current = { x: e.clientX - element.x, y: e.clientY - element.y }
+    startPos.current = { x: e.clientX - element.x, y: e.clientY - element.y, w: 0, h: 0 }
     
     const move = (moveEvent: MouseEvent) => {
       if (isDragging.current) {
@@ -850,17 +854,17 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
     switch (element.type) {
       case 'text': 
       case 'title':
-        return <span>{element.content}</span>;
+        return <span style={{ textAlign: element.style.textAlign }}>{element.content}</span>;
       case 'field': 
         return <span className="text-primary bg-primary/5 rounded px-1 border border-primary/20 italic">{element.placeholder}</span>;
       case 'barcode': 
         return (
-          <div className="pointer-events-none origin-left" style={{ transform: `scale(${Math.min(1, element.width / 150)})` }}>
+          <div className="pointer-events-none origin-left flex items-center justify-center w-full h-full" style={{ transform: `scale(${Math.min(1, element.width / 150)})` }}>
             <Barcode value="SAMPLE123" height={element.height - 20} width={1.5} fontSize={10} />
           </div>
         );
       case 'qr': 
-        return <div className="pointer-events-none"><QRCodeSVG value="SAMPLE" size={element.width} /></div>;
+        return <div className="pointer-events-none flex items-center justify-center w-full h-full"><QRCodeSVG value="SAMPLE" size={Math.min(element.width, element.height)} /></div>;
       case 'rectangle': 
         return <div className="w-full h-full border-2 border-black" />;
       case 'circle': 
@@ -869,7 +873,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
         return <div className="w-full h-[2px] bg-black" />;
       case 'image':
         return element.content ? (
-          <img src={element.content} alt="User element" className="w-full h-full object-contain" />
+          <img src={element.content} alt="User element" className="w-full h-full object-contain pointer-events-none" />
         ) : (
           <div className="w-full h-full border-2 border-dashed border-slate-300 flex items-center justify-center text-[10px] uppercase font-bold text-slate-400">No Image</div>
         );

@@ -88,9 +88,36 @@
   animation: row-pulse 2s infinite ease-in-out;
 }
 
-/* Thermal Label Print Context */
+/* 
+ * THERMAL PRINT OPTIMIZATION (TSC/ZEBRA)
+ */
 @media print {
   .no-print { display: none !important; }
+  
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  /* Reset all fixed positioning for print flow */
+  .fixed, .absolute {
+    position: relative !important;
+    left: 0 !important;
+    top: 0 !important;
+  }
+
+  /* Target the print-area ID specifically */
+  #print-area, #print-area * {
+    visibility: visible !important;
+    position: absolute !important;
+  }
+
+  /* Barcode Sharpness */
+  svg, img {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
 }
 
 /* Portal Layering Fixes */

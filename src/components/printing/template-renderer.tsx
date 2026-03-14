@@ -115,20 +115,46 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
   };
 
   return (
-    <div 
-      className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none"
-      style={{ 
-        width: `${paperWidth * MM_TO_PX}px`, 
-        height: `${paperHeight * MM_TO_PX}px`,
-        transform: `scale(${scale})`,
-        transformOrigin: 'top center'
-      }}
-    >
-      {elements.map(el => (
-        <React.Fragment key={el.id}>
-          {renderElement(el)}
-        </React.Fragment>
-      ))}
-    </div>
+    <>
+      {/* 
+        Inject physical print styling for thermal printers (TSC).
+        This ensures the driver respects the designed label size.
+      */}
+      <style dangerouslySetInnerHTML={{
+        __html: `
+          @media print {
+            @page {
+              size: ${paperWidth}mm ${paperHeight}mm;
+              margin: 0;
+            }
+            body { margin: 0; }
+            #print-area {
+              width: ${paperWidth}mm !important;
+              height: ${paperHeight}mm !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: hidden;
+            }
+          }
+        `
+      }} />
+      
+      <div 
+        id="print-area"
+        className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none"
+        style={{ 
+          width: `${paperWidth * MM_TO_PX}px`, 
+          height: `${paperHeight * MM_TO_PX}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top center'
+        }}
+      >
+        {elements.map(el => (
+          <React.Fragment key={el.id}>
+            {renderElement(el)}
+          </React.Fragment>
+        ))}
+      </div>
+    </>
   );
 }
