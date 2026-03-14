@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Separator } from "@/components/ui/separator"
 import { 
   Search, 
   Plus, 
@@ -374,7 +375,6 @@ export default function PaperStockPage() {
             alert("Roll not found in registry: " + rollId);
           }
         } catch (e) {
-          // Fallback if not JSON
           const match = rolls?.find(r => r.rollNo === decodedText);
           if (match) {
             setHighlightedId(match.id);
@@ -594,7 +594,7 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* TECHNICAL PROFILE MODAL (PART 1) */}
+      {/* TECHNICAL PROFILE MODAL */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100] animate-in zoom-in-95 duration-200">
           <DialogHeader className="p-8 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-white/5">
@@ -608,7 +608,6 @@ export default function PaperStockPage() {
           </DialogHeader>
           
           <div className="p-10 bg-slate-50 space-y-8 max-h-[75vh] overflow-y-auto industrial-scroll">
-            {/* Section 1: Basic Details */}
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
                 <Info className="h-3 w-3" /> Section 1 — Basic Details
@@ -630,7 +629,6 @@ export default function PaperStockPage() {
 
             <Separator className="bg-slate-200" />
 
-            {/* Section 2: Size Details */}
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
                 <Ruler className="h-3 w-3" /> Section 2 — Size Details
@@ -646,7 +644,6 @@ export default function PaperStockPage() {
 
             <Separator className="bg-slate-200" />
 
-            {/* Section 3: Purchase Info */}
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
                 <CircleDollarSign className="h-3 w-3" /> Section 3 — Purchase Info
@@ -660,7 +657,6 @@ export default function PaperStockPage() {
 
             <Separator className="bg-slate-200" />
 
-            {/* Section 4: Job Details */}
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
                 <Tag className="h-3 w-3" /> Section 4 — Job Details
@@ -674,7 +670,6 @@ export default function PaperStockPage() {
 
             <Separator className="bg-slate-200" />
 
-            {/* Section 5: Additional Info */}
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
                 <Package className="h-3 w-3" /> Section 5 — Additional Info
@@ -698,7 +693,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* THERMAL PRINT MODAL (PART 2 & 6) */}
+      {/* THERMAL PRINT MODAL */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 border-none shadow-3xl rounded-3xl z-[150] overflow-hidden">
           <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
@@ -707,7 +702,6 @@ export default function PaperStockPage() {
           </div>
           
           <div className="p-8 bg-slate-100 flex justify-center">
-            {/* The Actual Label Layout */}
             <div id="thermal-label" className="bg-white border-4 border-black p-6 w-[150mm] h-[100mm] shadow-2xl flex flex-col text-black font-sans box-border overflow-hidden">
               <div className="text-center border-b-2 border-black pb-2 mb-4 shrink-0">
                 <h1 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h1>
@@ -792,7 +786,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* QR SCANNER DIALOG (PART 4) */}
+      {/* QR SCANNER DIALOG */}
       <Dialog open={isScannerOpen} onOpenChange={(open) => { setIsScannerOpen(open); if(!open) Html5QrcodeScanner.prototype.clear; }}>
         <DialogContent className="sm:max-w-[450px] p-0 border-none shadow-3xl rounded-3xl z-[200] overflow-hidden">
           <DialogHeader className="p-6 bg-indigo-600 text-white flex flex-row items-center justify-between border-none">
@@ -862,7 +856,6 @@ export default function PaperStockPage() {
       <datalist id="lot-no-suggestions">{getUniqueOptions('lotNo').map(o => <option key={o} value={o} />)}</datalist>
       <datalist id="company-roll-suggestions">{getUniqueOptions('companyRollNo').map(o => <option key={o} value={o} />)}</datalist>
 
-      {/* PRINT STYLE FOR THERMAL LABEL */}
       <style jsx global>{`
         @media print {
           body * { visibility: hidden; }
