@@ -398,7 +398,7 @@ export default function PaperStockPage() {
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto">
+      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto z-[200]">
         <DropdownMenuLabel className="text-[10px] uppercase font-black">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
@@ -426,7 +426,7 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[100]", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[20]", 
           isActive && "bg-slate-200", 
           className
         )} 
@@ -468,7 +468,7 @@ export default function PaperStockPage() {
                   <ColumnsIcon className="h-4 w-4 text-primary" /> Display Settings
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl">
+              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[200]">
                 <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2 tracking-widest">Toggle Columns</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="max-h-[400px] overflow-y-auto industrial-scroll">
@@ -519,31 +519,31 @@ export default function PaperStockPage() {
           </Button>
         </div>
 
-        <div className="w-full h-[600px] overflow-scroll relative industrial-scroll table-container">
+        <div className="w-full h-[600px] overflow-scroll relative border-t industrial-scroll table-container">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
-            <TableHeader className="z-50">
+            <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-10">
-                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[110] p-0 shadow-[1px_0_0_#e2e8f0]">
+                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[30] p-0 shadow-[1px_0_0_#e2e8f0]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
-                <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[110] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[110] shadow-[1px_0_0_#e2e8f0]" />
-                <SortableHeader label="Status" field="status" className="w-[120px] border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Paper Company" field="paperCompany" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Paper Type" field="paperType" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Width (MM)" field="widthMm" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="SQM" field="sqm" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="GSM" field="gsm" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="BF" field="bf" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Shade" field="shade" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Location" field="location" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Received Date" field="receivedDate" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Job No" field="jobNo" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Job Name" field="jobName" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <SortableHeader label="Lot No" field="lotNo" className="border-r sticky top-0 bg-slate-100 z-[100]" />
-                <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[110] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
+                <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[30] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[30] shadow-[1px_0_0_#e2e8f0]" />
+                <SortableHeader label="Status" field="status" className="w-[120px] border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Paper Company" field="paperCompany" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Paper Type" field="paperType" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Width (MM)" field="widthMm" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="SQM" field="sqm" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="GSM" field="gsm" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="BF" field="bf" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Shade" field="shade" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Location" field="location" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Received Date" field="receivedDate" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Job No" field="jobNo" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Job Name" field="jobName" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <SortableHeader label="Lot No" field="lotNo" className="border-r sticky top-0 bg-slate-100 z-[20]" />
+                <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[30] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -554,11 +554,11 @@ export default function PaperStockPage() {
                 const rowBg = STATUS_OPTIONS.find(o => o.value === j.status)?.rowBg || "bg-white";
                 return (
                   <TableRow key={j.id} className={cn("h-9 group hover:brightness-95 transition-all", rowBg)}>
-                    <TableCell className="text-center border-r border-b sticky left-0 z-20 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
+                    <TableCell className="text-center border-r border-b sticky left-0 z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
-                    <TableCell className="text-center font-black text-[10px] text-slate-400 border-r border-b sticky left-[40px] z-20 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className="font-black text-[11px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-20 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
+                    <TableCell className="text-center font-black text-[10px] text-slate-400 border-r border-b sticky left-[40px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className="font-black text-[11px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
                     <TableCell className="text-center border-r border-b p-0">
                       <div className="flex items-center justify-center">
                         <span className={cn("px-2.5 py-0.5 rounded-full text-[8px] font-black text-white uppercase tracking-tighter shadow-sm", statusColor)}>{j.status || "Available"}</span>
@@ -578,7 +578,7 @@ export default function PaperStockPage() {
                     {visibleColumns['jobNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
                     {visibleColumns['jobName'] && <TableCell className="text-[10px] font-bold border-r border-b truncate max-w-[150px] px-2">{j.jobName || '-'}</TableCell>}
                     {visibleColumns['lotNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
-                    <TableCell className="text-center border-b sticky right-0 z-20 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
+                    <TableCell className="text-center border-b sticky right-0 z-10 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
                       <div className="flex items-center justify-center gap-1.5">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
@@ -600,7 +600,9 @@ export default function PaperStockPage() {
               <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
+              <SelectContent className="z-[200]">
+                {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
+              </SelectContent>
             </Select>
             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
           </div>
@@ -617,7 +619,7 @@ export default function PaperStockPage() {
       </Card>
 
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl">
+        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-[300]">
           <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
             <DialogTitle className="uppercase font-black text-sm flex items-center gap-3 tracking-widest"><Package className="h-5 w-5 text-primary" /> Technical Profile: {viewingRoll?.rollNo}</DialogTitle>
           </DialogHeader>
@@ -646,7 +648,7 @@ export default function PaperStockPage() {
       </Dialog>
 
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[450px] p-8">
+        <DialogContent className="sm:max-w-[450px] p-8 z-[300]">
           <div className="p-8 border-8 border-black text-center space-y-6 rounded-lg bg-white shadow-2xl">
             <h2 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h2>
             <div className="border-y-4 border-black py-4 bg-black/5">
@@ -663,7 +665,7 @@ export default function PaperStockPage() {
       </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
+        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-[300]">
           <form onSubmit={handleSave}>
             <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
               <DialogTitle className="uppercase font-black text-sm tracking-widest">{editingRoll ? `Update Registry: ${formData.rollNo}` : 'Direct Technical Stock Intake'}</DialogTitle>
@@ -672,7 +674,7 @@ export default function PaperStockPage() {
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Inventory Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
                   <SelectTrigger className="h-11 font-black border-2"><SelectValue /></SelectTrigger>
-                  <SelectContent className="shadow-2xl">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
+                  <SelectContent className="shadow-2xl z-[400]">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Paper Company (Mfr)</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2" /></div>
