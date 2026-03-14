@@ -46,7 +46,6 @@ const STEPS = [
   { id: 'final', label: 'Result', icon: Database }
 ];
 
-// Roll No is now mandatory because it serves as the Document ID
 const REQUIRED_FIELDS = ["rollNo", "paperCompany", "paperType", "widthMm", "lengthMeters", "gsm", "receivedDate"];
 
 const FIELD_LABELS: Record<string, string> = {
@@ -77,11 +76,11 @@ const MAX_FILE_SIZE_MB = 10;
 const CHUNK_SIZE = 200;
 
 const STATUS_OPTIONS = [
-  { value: "Available", label: "Available", color: "bg-emerald-500" },
-  { value: "Reserved", label: "Reserved", color: "bg-amber-500" },
+  { value: "Main", label: "Main", color: "bg-zinc-900" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-500" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-indigo-500" },
   { value: "In Production", label: "In Production", color: "bg-blue-500" },
-  { value: "Slitted", label: "Slitted", color: "bg-purple-500" },
-  { value: "Consumed", label: "Consumed", color: "bg-destructive" },
 ];
 
 const normalizeHeader = (str: string) => 
@@ -262,16 +261,14 @@ export default function StockImportPage() {
           mapped[key] = cleanForFirestore(val);
         });
 
-        // Mandatory check
         REQUIRED_FIELDS.forEach(f => {
           if (!mapped[f] || mapped[f] === "") {
             reasons.push(`Missing mandatory field: ${FIELD_LABELS[f]}`);
           }
         });
 
-        // DEFAULT STATUS LOGIC: If missing or empty, default to "Available"
         if (!mapped.status || mapped.status === "") {
-          mapped.status = "Available";
+          mapped.status = "Stock";
         }
 
         if (reasons.length > 0) {
@@ -308,9 +305,8 @@ export default function StockImportPage() {
         const chunk = dataToImport.slice(i, i + 500);
 
         chunk.forEach((d) => {
-          // KEY FIX: Use the rollNo from Excel as the document ID
           const rollId = String(d.rollNo).trim();
-          if (!rollId) return; // Should be blocked by REQUIRED_FIELDS but safety first
+          if (!rollId) return; 
           
           const final: any = {
             id: rollId,
@@ -318,7 +314,7 @@ export default function StockImportPage() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             createdById: user.uid,
-            status: d.status || "Available"
+            status: d.status || "Stock"
           };
 
           Object.keys(FIELD_LABELS).forEach(key => {
@@ -374,7 +370,7 @@ export default function StockImportPage() {
           "Job Size": r.jobSize || '-',
           "Job Name": r.jobName || '-',
           "Lot No": r.lotNo || '-',
-          "Company Roll No": r.companyRollNo || '-',
+          "Company Roll No": r.companyRoll No || '-',
           "Remarks": r.remarks || '-'
         };
       });
@@ -497,7 +493,7 @@ export default function StockImportPage() {
                         <TableCell className="py-4">
                           <Select value={mapping[key]} onValueChange={(val) => setMapping({ ...mapping, [key]: val })}>
                             <SelectTrigger className={cn("h-10 text-xs font-bold border-2", mapping[key] ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200")}>
-                              <SelectValue placeholder={key === 'status' ? "Optional (Default: Available)" : "Select column..."} />
+                              <SelectValue placeholder={key === 'status' ? "Optional (Default: Stock)" : "Select column..."} />
                             </SelectTrigger>
                             <SelectContent>{headers.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}</SelectContent>
                           </Select>
@@ -529,7 +525,7 @@ export default function StockImportPage() {
                       <Progress value={(Object.keys(mapping).length / 18) * 100} className="h-1.5 bg-white/20" />
                     </div>
                     <div className="text-[10px] font-medium leading-relaxed opacity-80">
-                      * Status defaults to <strong>Available</strong> if column is not mapped.
+                      * Status defaults to <strong>Stock</strong> if column is not mapped.
                       <br />
                       * Your <strong>Roll IDs</strong> from Excel will be preserved.
                     </div>
@@ -581,7 +577,7 @@ export default function StockImportPage() {
                           <TableCell key={key} className="text-[10px] font-medium border-r text-center">
                             {key === 'status' ? (
                               <Badge className={cn("text-[8px] font-black h-4 uppercase", STATUS_OPTIONS.find(o => o.value === d[key])?.color || "bg-slate-500")}>
-                                {d[key] || "Available"}
+                                {d[key] || "Stock"}
                               </Badge>
                             ) : d[key]}
                           </TableCell>

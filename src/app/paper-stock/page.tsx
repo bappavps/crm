@@ -79,12 +79,11 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
-  { value: "MAIN", label: "MAIN", color: "bg-zinc-900", rowBg: "bg-zinc-100/50" },
-  { value: "Available", label: "Available", color: "bg-emerald-600", rowBg: "bg-emerald-50/60" },
-  { value: "Reserved", label: "Reserved", color: "bg-amber-500", rowBg: "bg-amber-50/40" },
-  { value: "In Production", label: "In Production", color: "bg-blue-600", rowBg: "bg-blue-50/40" },
+  { value: "Main", label: "Main", color: "bg-zinc-900", rowBg: "bg-zinc-100/50" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50/60" },
   { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50/40" },
-  { value: "Consumed", label: "Consumed", color: "bg-red-600", rowBg: "bg-red-50/40" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-indigo-600", rowBg: "bg-indigo-50/40" },
+  { value: "In Production", label: "In Production", color: "bg-blue-600", rowBg: "bg-blue-50/40" },
 ];
 
 const COLUMN_KEYS = [
@@ -228,7 +227,7 @@ export default function PaperStockPage() {
     rollNo: "", 
     paperCompany: "",
     paperType: "",
-    status: "Available",
+    status: "Main",
     widthMm: 0,
     lengthMeters: 0,
     sqm: 0,
@@ -382,7 +381,7 @@ export default function PaperStockPage() {
       setEditingRoll(null);
       setFormData({
         rollNo: nextRollNo, 
-        paperCompany: "", paperType: "", status: "Available",
+        paperCompany: "", paperType: "", status: "Main",
         widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0, purchaseRate: 0,
         receivedDate: new Date().toISOString().split('T')[0],
         dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", 
@@ -484,7 +483,7 @@ export default function PaperStockPage() {
     if (filteredRows.length === 0) return;
     const exportData = filteredRows.map((r) => ({
       "ROLL NO": r.rollNo || "",
-      "STATUS": r.status || "Available",
+      "STATUS": r.status || "Stock",
       "PAPER COMPANY": r.paperCompany || "",
       "PAPER TYPE": r.paperType || "",
       "WIDTH (MM)": r.widthMm || 0,
@@ -818,7 +817,7 @@ export default function PaperStockPage() {
                     <TableCell className="font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
                     <TableCell className="text-center border-r border-b p-0">
                       <div className="flex items-center justify-center">
-                        <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusInfo.color)}>{j.status || "Available"}</span>
+                        <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusInfo.color)}>{j.status || "Stock"}</span>
                       </div>
                     </TableCell>
                     {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3 truncate max-w-[150px] text-center">{j.paperCompany}</TableCell>}
@@ -935,7 +934,14 @@ export default function PaperStockPage() {
                 <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
                   <SelectTrigger className="h-11 font-black border-2 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent className="shadow-2xl z-portal">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
+                  <SelectContent className="shadow-2xl z-portal">
+                    {STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}
+                    <DropdownMenuSeparator />
+                    <div className="p-2 space-y-2">
+                      <Label className="text-[9px] uppercase font-black opacity-50">Custom Status Overide</Label>
+                      <Input placeholder="Enter other stage..." className="h-8 text-xs" onBlur={(e) => { if(e.target.value) setFormData({...formData, status: e.target.value}) }} />
+                    </div>
+                  </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2 text-left">
