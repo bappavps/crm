@@ -1,6 +1,7 @@
+
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -10,7 +11,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Separator } from "@/components/ui/separator"
 import { 
   Search, 
   Plus, 
@@ -23,26 +23,21 @@ import {
   ChevronRight,
   ChevronDown,
   LayoutGrid,
-  Calendar,
-  MoreHorizontal,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Eye,
   Scissors,
   Printer,
-  Info,
-  CheckCircle2,
   FileDown,
-  Columns as ColumnsIcon
+  Columns as ColumnsIcon,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown
 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter,
-  DialogDescription
+  DialogFooter
 } from "@/components/ui/dialog"
 import {
   Select,
@@ -68,8 +63,7 @@ import {
   serverTimestamp,
   runTransaction,
   deleteDoc,
-  updateDoc,
-  getDoc
+  updateDoc
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/components/auth/permission-context"
@@ -133,7 +127,6 @@ export default function PaperStockPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
 
-  // Column Visibility State
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     rollNo: true,
     status: true,
@@ -183,8 +176,6 @@ export default function PaperStockPage() {
     type: ModalType;
     title: string;
     description?: string;
-    onConfirm?: () => void;
-    autoClose?: boolean;
   }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
   const [filters, setFilters] = useState<any>({
@@ -269,8 +260,7 @@ export default function PaperStockPage() {
     let result = rolls.filter(row => {
       if (filters.search) {
         const s = filters.search.toLowerCase();
-        const isMatch = Object.values(row).some(v => String(v || "").toLowerCase().includes(s));
-        if (!isMatch) return false;
+        return Object.values(row).some(v => String(v || "").toLowerCase().includes(s));
       }
 
       const categories = ['paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo', 'location', 'shade', 'gsm', 'bf'];
@@ -367,7 +357,7 @@ export default function PaperStockPage() {
       if (editingRoll) {
         await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
         setIsDialogOpen(false);
-        setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated', autoClose: true });
+        setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
         await runTransaction(firestore, async (transaction) => {
           const counterRef = doc(firestore, 'counters', 'paper_roll');
@@ -379,7 +369,7 @@ export default function PaperStockPage() {
           transaction.set(counterRef, { current_number: nextNum }, { merge: true });
         });
         setIsDialogOpen(false);
-        setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated', autoClose: true });
+        setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
       }
     } catch (error: any) {
       setModal({ isOpen: true, type: 'ERROR', title: 'Transaction Failed', description: error.message });
@@ -389,58 +379,27 @@ export default function PaperStockPage() {
   };
 
   const exportStock = () => {
-    if (filteredRows.length === 0) {
-      toast({ title: "No Data", description: "No records found to export with current filters." })
-      return
-    }
-
-    const exportData = filteredRows.map((r, i) => ({
-      "Sl No": i + 1,
-      "Roll No": r.rollNo,
-      "Status": r.status,
-      "Paper Company": r.paperCompany,
-      "Paper Type": r.paperType,
-      "Width (MM)": r.widthMm,
-      "Length (MTR)": r.lengthMeters,
-      "SQM": r.sqm,
-      "GSM": r.gsm,
-      "BF": r.bf || '-',
-      "Shade": r.shade || '-',
-      "Location": r.location || '-',
-      "Weight (KG)": r.weightKg,
-      "Purchase Rate": r.purchaseRate,
-      "Date of Received": r.receivedDate,
-      "Date of Used": r.dateOfUsed || '-',
-      "Job No": r.jobNo || '-',
-      "Job Size": r.jobSize || '-',
-      "Job Name": r.jobName || '-',
-      "Lot No / Batch No": r.lotNo || '-',
-      "Company Roll No": r.companyRollNo || '-',
-      "Remarks": r.remarks || '-'
-    }))
-
-    const ws = XLSX.utils.json_to_sheet(exportData)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Paper Stock Registry")
-    const date = new Date().toISOString().split('T')[0]
-    XLSX.writeFile(wb, `Shree_Label_Stock_${date}.xlsx`)
-    toast({ title: "Export Successful", description: `Downloaded ${filteredRows.length} technical records.` })
+    if (filteredRows.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(filteredRows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Stock Registry");
+    XLSX.writeFile(wb, "Reel_Inventory_Export.xlsx");
   }
 
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className={cn(
-          "h-9 px-3 text-[10px] gap-2 font-black uppercase tracking-tighter bg-white border-primary/10",
+          "h-8 px-2 text-[10px] gap-1 font-bold uppercase border-slate-200 bg-white",
           filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary"
         )}>
           {label}
-          {filters[field]?.length > 0 && <Badge variant="secondary" className="h-4 px-1 text-[8px] bg-primary text-white">{filters[field].length}</Badge>}
+          {filters[field]?.length > 0 && <Badge variant="secondary" className="h-3 px-1 text-[8px] bg-primary text-white">{filters[field].length}</Badge>}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto shadow-2xl rounded-xl border-primary/10">
-        <DropdownMenuLabel className="text-[10px] uppercase font-black text-muted-foreground">{label} List</DropdownMenuLabel>
+      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto">
+        <DropdownMenuLabel className="text-[10px] uppercase font-bold">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
           <DropdownMenuCheckboxItem 
@@ -452,7 +411,7 @@ export default function PaperStockPage() {
               setFilters({ ...filters, [field]: next });
               setCurrentPage(1);
             }} 
-            className="text-xs font-bold"
+            className="text-xs"
           >
             {String(opt)}
           </DropdownMenuCheckboxItem>
@@ -467,45 +426,37 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-100 border-b sticky top-0 bg-white shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]", 
-          isActive && "text-primary bg-primary/5", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10", 
+          isActive && "bg-slate-200", 
           className
         )} 
         onClick={() => requestSort(field)} 
-        style={{ zIndex: (field === 'rollNo' || field === 'id' || field === 'slNo') ? 110 : 100 }}
       >
-        <div className="flex items-center justify-center gap-1 h-9">
-          <span className="font-black text-[10px] uppercase leading-none">{label}</span>
+        <div className="flex items-center justify-center gap-1 px-2">
+          <span className="font-bold text-[10px] uppercase text-slate-700">{label}</span>
           {isActive ? (
             sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
           ) : (
-            <ArrowUpDown className="h-2.5 w-2.5 opacity-20" />
+            <ArrowUpDown className="h-2.5 w-2.5 opacity-30" />
           )}
         </div>
       </TableHead>
     );
   };
 
-  const getStatusRowColor = (status: string) => {
-    const option = STATUS_OPTIONS.find(o => o.value === status);
-    return option?.rowBg || "bg-white";
-  }
-
-  const hiddenCount = Object.values(visibleColumns).filter(v => v === false).length;
-
   if (!isMounted) return null;
 
   return (
-    <div className="flex flex-col h-full space-y-4 font-sans">
-      <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} isProcessing={isProcessing} />
+    <div className="flex flex-col h-full space-y-2 font-sans">
+      <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="bg-white p-4 rounded-2xl border shadow-sm space-y-4 px-6 shrink-0 border-primary/10">
+      <div className="bg-white p-2 rounded-lg border shadow-sm space-y-2 px-4 shrink-0 border-slate-200">
         <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-primary opacity-50" />
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
             <Input 
-              placeholder="Global Registry Search..." 
-              className="pl-9 h-10 text-xs font-bold bg-slate-50/50 border-none shadow-inner" 
+              placeholder="Search registry..." 
+              className="pl-8 h-8 text-xs bg-slate-50 border-slate-200" 
               value={filters.search} 
               onChange={e => setFilters({ ...filters, search: e.target.value })} 
             />
@@ -513,14 +464,12 @@ export default function PaperStockPage() {
           <div className="ml-auto flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 px-3 gap-2 font-black uppercase text-[10px] border-primary/20">
-                  <ColumnsIcon className="h-4 w-4" /> 
-                  Columns 
-                  {hiddenCount > 0 && <Badge variant="secondary" className="h-4 px-1 text-[8px] bg-accent text-white">{hiddenCount}</Badge>}
+                <Button variant="outline" size="sm" className="h-8 px-2 gap-1 font-bold uppercase text-[10px]">
+                  <ColumnsIcon className="h-3.5 w-3.5" /> Columns
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 p-2 rounded-xl shadow-2xl">
-                <DropdownMenuLabel className="text-[10px] uppercase font-black">Display Controls</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-56 p-2">
+                <DropdownMenuLabel className="text-[10px] uppercase">Display Controls</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="max-h-[400px] overflow-y-auto">
                   {COLUMN_KEYS.map(col => (
@@ -528,7 +477,7 @@ export default function PaperStockPage() {
                       key={col.id} 
                       checked={visibleColumns[col.id]} 
                       onCheckedChange={v => setVisibleColumns({...visibleColumns, [col.id]: v})}
-                      className="text-xs font-bold"
+                      className="text-xs"
                     >
                       {col.label}
                     </DropdownMenuCheckboxItem>
@@ -537,24 +486,22 @@ export default function PaperStockPage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" size="sm" onClick={exportStock} className="h-9 px-3 gap-2 font-black uppercase text-[10px] border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-              <FileDown className="h-4 w-4" /> Export Filtered
+            <Button variant="outline" size="sm" onClick={exportStock} className="h-8 px-2 gap-1 font-bold uppercase text-[10px]">
+              <FileDown className="h-3.5 w-3.5" /> Export
             </Button>
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
               search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
               location: [], shade: [], gsm: [], bf: [], widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-            })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset</Button>
+            })} className="text-[10px] font-bold uppercase text-destructive"><FilterX className="h-3.5 w-3.5 mr-1" /> Reset</Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-50">
+        <div className="flex flex-wrap gap-1.5 pb-1">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
           <MultiSelectFilter label="Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
-          <MultiSelectFilter label="Material Type" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="Material" field="paperType" options={getUniqueOptions('paperType')} />
           <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
-          <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
-          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
           <MultiSelectFilter label="GSM" field="gsm" options={getUniqueOptions('gsm')} />
           <MultiSelectFilter label="BF" field="bf" options={getUniqueOptions('bf')} />
           <MultiSelectFilter label="Shade" field="shade" options={getUniqueOptions('shade')} />
@@ -562,22 +509,22 @@ export default function PaperStockPage() {
         </div>
       </div>
 
-      <div className="bg-primary text-white p-2.5 flex items-center justify-between shrink-0 px-6 rounded-t-2xl shadow-lg">
-        <h2 className="font-black text-sm uppercase tracking-widest flex items-center gap-2"><LayoutGrid className="h-5 w-5" /> Technical Stock Registry</h2>
-        <Button variant="ghost" size="icon" className="h-9 w-9 text-white hover:bg-white/20 rounded-full" onClick={() => handleOpenDialog()}><Plus className="h-5 w-5" /></Button>
-      </div>
+      <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-lg bg-white">
+        <div className="bg-slate-800 text-white p-2 px-4 flex items-center justify-between shrink-0">
+          <h2 className="font-bold text-xs uppercase tracking-wider flex items-center gap-2"><LayoutGrid className="h-4 w-4" /> Technical Stock Registry (Grid View)</h2>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/20" onClick={() => handleOpenDialog()}><Plus className="h-4 w-4" /></Button>
+        </div>
 
-      <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
-        <div className="w-full h-[600px] overflow-auto relative border-t industrial-scroll table-container">
+        <div className="w-full h-[600px] overflow-scroll relative industrial-scroll table-container">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
             <TableHeader className="sticky top-0 z-[100] bg-white">
-              <TableRow className="h-9 bg-white">
-                <TableHead className="w-[50px] text-center border-r border-b sticky top-0 left-0 bg-white z-[115] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">
+              <TableRow className="h-10">
+                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[110] p-0 shadow-[1px_0_0_#e2e8f0]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky top-0 left-[50px] bg-white z-[115] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky top-0 left-[110px] bg-white z-[115] shadow-[2px_2px_5px_rgba(0,0,0,0.05)]" />
-                <SortableHeader label="Status" field="status" className="w-[140px] border-r" />
+                <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[110] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[110] shadow-[1px_0_0_#e2e8f0]" />
+                <SortableHeader label="Status" field="status" className="w-[120px] border-r" />
                 <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
                 <SortableHeader label="Paper Type" field="paperType" className="border-r" />
                 <SortableHeader label="Width (MM)" field="widthMm" className="border-r" />
@@ -592,43 +539,47 @@ export default function PaperStockPage() {
                 <SortableHeader label="Job No" field="jobNo" className="border-r" />
                 <SortableHeader label="Job Name" field="jobName" className="border-r" />
                 <SortableHeader label="Lot No" field="lotNo" className="border-r" />
-                <TableHead className="text-center font-black text-[10px] uppercase sticky top-0 right-0 bg-white z-[115] border-l border-b shadow-[-2px_2px_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
+                <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[110] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {itemsLoading ? (
-                <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-8 w-8" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
-                const rowColorClass = getStatusRowColor(j.status);
+                const statusColor = STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500";
                 return (
-                  <TableRow key={j.id} className={cn("transition-all border-b h-8 group", rowColorClass, selectedIds.has(j.id) && "brightness-95")}>
-                    <TableCell className={cn("text-center border-r sticky left-0 z-20 transition-all group-hover:brightness-90 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowColorClass)}>
+                  <TableRow key={j.id} className="h-8 group even:bg-slate-50/50">
+                    <TableCell className="text-center border-r border-b sticky left-0 z-20 bg-white group-hover:bg-slate-100 shadow-[1px_0_0_#e2e8f0] p-0">
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
-                    <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-90 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-black text-[12px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-90 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowColorClass)}>{j.rollNo}</TableCell>
-                    <TableCell className="text-center border-r p-0"><Badge className={cn("text-[8px] font-black uppercase h-4 px-1.5 leading-none", STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500")}>{j.status || "Available"}</Badge></TableCell>
-                    {visibleColumns['paperCompany'] && <TableCell className="text-[12px] border-r uppercase font-bold text-center px-2 truncate max-w-[150px]">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-[12px] border-r font-medium text-center px-2 truncate max-w-[150px]">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[12px] border-r font-mono font-bold px-2">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[12px] border-r font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-center text-[12px] border-r font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.gsm}</TableCell>}
-                    {visibleColumns['bf'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.bf || '-'}</TableCell>}
-                    {visibleColumns['shade'] && <TableCell className="text-center text-[12px] border-r font-medium px-2">{j.shade || '-'}</TableCell>}
-                    {visibleColumns['location'] && <TableCell className="text-center text-[12px] border-r font-bold px-2 text-blue-600">{j.location || '-'}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[12px] border-r font-mono px-2 text-right">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[12px] border-r px-2">{j.receivedDate}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[12px] border-r font-mono font-bold px-2">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-center text-[12px] border-r truncate max-w-[150px] font-medium px-2">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.lotNo || '-'}</TableCell>}
-                    <TableCell className={cn("text-center sticky right-0 z-20 border-l px-1 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-90 p-0", rowColorClass)}>
-                      <div className="flex items-center justify-center gap-1.5">
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-3.5 w-3.5" /></Button>
+                    <TableCell className="text-center font-medium text-[11px] text-slate-400 border-r border-b sticky left-[40px] z-20 bg-white group-hover:bg-slate-100 shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className="font-bold text-[11px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-20 bg-white group-hover:bg-slate-100 shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
+                    <TableCell className="text-center border-r border-b p-0">
+                      <div className="flex items-center justify-center">
+                        <span className={cn("px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase", statusColor)}>{j.status || "Available"}</span>
+                      </div>
+                    </TableCell>
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[11px] border-r border-b uppercase px-2 truncate max-w-[150px]">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[11px] border-r border-b px-2 truncate max-w-[150px]">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[11px] border-r border-b font-mono font-medium px-2">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[11px] border-r border-b font-mono font-medium px-2">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-center text-[11px] border-r border-b font-bold text-primary font-mono px-2">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.gsm}</TableCell>}
+                    {visibleColumns['bf'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.bf || '-'}</TableCell>}
+                    {visibleColumns['shade'] && <TableCell className="text-center text-[11px] border-r border-b px-2">{j.shade || '-'}</TableCell>}
+                    {visibleColumns['location'] && <TableCell className="text-center text-[11px] border-r border-b font-semibold px-2 text-blue-600">{j.location || '-'}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[11px] border-r border-b px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[11px] border-r border-b font-mono font-bold px-2">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-[11px] border-r border-b truncate max-w-[150px] px-2">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.lotNo || '-'}</TableCell>}
+                    <TableCell className="text-center border-b sticky right-0 z-20 bg-white group-hover:bg-slate-100 border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={() => handleOpenDialog(j)}><Pencil className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-500" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-700" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => { if(confirm('Delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => { if(confirm('Delete?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -638,44 +589,45 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
-          <div className="flex items-center gap-4">
+        <div className="bg-slate-50 p-2 border-t flex items-center justify-between shrink-0 px-4 rounded-b-lg">
+          <div className="flex items-center gap-3">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
+              <SelectTrigger className="h-7 w-[90px] bg-white text-[10px] font-bold">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
             </Select>
-            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Showing {startRange}–{endRange} of {filteredRows.length}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 px-3 text-[10px] font-black uppercase" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-1" /> Prev</Button>
-            <span className="text-xs font-black bg-primary text-white h-8 px-4 flex items-center justify-center rounded-md">{currentPage} / {totalPages || 1}</span>
-            <Button variant="outline" size="sm" className="h-8 px-3 text-[10px] font-black uppercase" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-1" /></Button>
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="sm" className="h-7 px-2 text-[10px] font-bold uppercase" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-3 w-3 mr-1" /> Prev</Button>
+            <span className="text-[10px] font-bold bg-white border border-slate-200 h-7 px-3 flex items-center justify-center rounded">{currentPage} / {totalPages || 1}</span>
+            <Button variant="outline" size="sm" className="h-7 px-2 text-[10px] font-bold uppercase" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-3 w-3 ml-1" /></Button>
           </div>
         </div>
       </Card>
 
+      {/* --- DIALOGS (SAME FUNCTIONALITY) --- */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[700px] p-0 border-none rounded-2xl shadow-3xl">
-          <DialogHeader className="p-6 bg-slate-50 border-b">
-            <DialogTitle className="uppercase font-black text-xl flex items-center gap-2 text-primary"><Package className="h-6 w-6" /> Roll Info: {viewingRoll?.rollNo}</DialogTitle>
+        <DialogContent className="sm:max-w-[600px] p-0 border-none shadow-3xl">
+          <DialogHeader className="p-4 bg-slate-800 text-white rounded-t-lg">
+            <DialogTitle className="uppercase font-bold text-sm flex items-center gap-2"><Package className="h-4 w-4" /> Roll Info: {viewingRoll?.rollNo}</DialogTitle>
           </DialogHeader>
-          <div className="p-8 grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-6 bg-white">
+          <div className="p-6 grid grid-cols-2 md:grid-cols-3 gap-4 bg-white">
             {[
               { label: "Company", value: viewingRoll?.paperCompany },
               { label: "Material", value: viewingRoll?.paperType },
-              { label: "Width (MM)", value: viewingRoll?.widthMm, mono: true },
-              { label: "Length (MTR)", value: viewingRoll?.lengthMeters, mono: true },
-              { label: "SQM", value: viewingRoll?.sqm, highlight: true },
+              { label: "Width (MM)", value: viewingRoll?.widthMm },
+              { label: "Length (MTR)", value: viewingRoll?.lengthMeters },
+              { label: "SQM", value: viewingRoll?.sqm },
               { label: "GSM", value: viewingRoll?.gsm },
               { label: "Location", value: viewingRoll?.location || '-' },
               { label: "BF", value: viewingRoll?.bf || '-' },
               { label: "Shade", value: viewingRoll?.shade || '-' }
             ].map((item, idx) => (
-              <div key={idx} className="space-y-1">
-                <Label className="text-[10px] uppercase font-black text-slate-400">{item.label}</Label>
-                <p className={cn("text-sm font-bold", item.highlight && "text-primary font-black")}>{item.value}</p>
+              <div key={idx} className="space-y-0.5">
+                <Label className="text-[9px] uppercase font-bold text-slate-400">{item.label}</Label>
+                <p className="text-xs font-bold text-slate-800">{item.value}</p>
               </div>
             ))}
           </div>
@@ -683,55 +635,45 @@ export default function PaperStockPage() {
       </Dialog>
 
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[400px] p-0 border-none rounded-2xl shadow-3xl">
-          <div className="bg-white p-10 font-sans text-black" id="printable-label">
-            <div className="border-4 border-black p-6 space-y-6">
-              <h2 className="text-2xl font-black uppercase text-center pb-4 border-b-2 border-black">SHREE LABEL</h2>
-              <div>
-                <p className="text-[9px] font-bold uppercase">Roll ID</p>
-                <p className="text-3xl font-black leading-none">{printingRoll?.rollNo}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4 border-t-2 border-black pt-4">
-                <div><p className="text-[9px] font-bold uppercase">Width</p><p className="text-xl font-black">{printingRoll?.widthMm} mm</p></div>
-                <div><p className="text-[9px] font-bold uppercase">Length</p><p className="text-xl font-black">{printingRoll?.lengthMeters} m</p></div>
-              </div>
+        <DialogContent className="sm:max-w-[400px]">
+          <div className="p-6 border-4 border-black text-center space-y-4">
+            <h2 className="text-xl font-black uppercase">SHREE LABEL</h2>
+            <div className="border-y-2 border-black py-2">
+              <p className="text-3xl font-black">{printingRoll?.rollNo}</p>
             </div>
+            <p className="text-sm font-bold">{printingRoll?.widthMm}mm x {printingRoll?.lengthMeters}m</p>
           </div>
-          <DialogFooter className="p-6 bg-slate-50 border-t"><Button onClick={() => window.print()} className="w-full h-12 font-black uppercase bg-primary text-white">Print Technical Tag</Button></DialogFooter>
+          <DialogFooter><Button onClick={() => window.print()} className="w-full">Print Tag</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto p-0">
           <form onSubmit={handleSave}>
-            <DialogHeader className="p-6 bg-primary text-white">
-              <DialogTitle className="uppercase font-black text-xl">{editingRoll ? `Update Roll: ${formData.rollNo}` : 'New Roll Intake'}</DialogTitle>
+            <DialogHeader className="p-4 bg-slate-800 text-white rounded-t-lg">
+              <DialogTitle className="uppercase font-bold text-sm">{editingRoll ? `Update: ${formData.rollNo}` : 'New Roll Intake'}</DialogTitle>
             </DialogHeader>
-            <div className="p-8 grid grid-cols-2 gap-x-8 gap-y-6 bg-white">
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Roll Status</Label>
+            <div className="p-6 grid grid-cols-2 gap-4 bg-white">
+              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="h-11 font-bold border-2"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-9 font-bold"><SelectValue /></SelectTrigger>
                   <SelectContent>{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 border-2" /></div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 border-2" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-black" /></div>
-                <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-black" /></div>
+              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-9" /></div>
+              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-9" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-9" /></div>
+                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-9" /></div>
               </div>
-              <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-primary">SQM (Auto)</Label><Input value={calculatedSqm} readOnly className="h-11 font-black bg-primary/5 text-primary border-primary/20 text-xl" /></div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11" /></div>
-                <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Location</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-11" /></div>
+              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-primary">SQM (Auto)</Label><Input value={calculatedSqm} readOnly className="h-9 bg-slate-50 font-bold" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-9" /></div>
+                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Location</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-9" /></div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">BF</Label><Input value={formData.bf} onChange={e => setFormData({...formData, bf: e.target.value})} className="h-11" /></div>
-                <div className="space-y-1.5"><Label className="text-[10px] uppercase font-black text-slate-500">Shade</Label><Input value={formData.shade} onChange={e => setFormData({...formData, shade: e.target.value})} className="h-11" /></div>
-              </div>
-              <div className="space-y-1.5 col-span-2"><Label className="text-[10px] uppercase font-black text-slate-500">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[60px]" /></div>
+              <div className="space-y-1 col-span-2"><Label className="text-[10px] uppercase font-bold text-slate-500">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[60px]" /></div>
             </div>
-            <DialogFooter className="p-6 bg-slate-50 border-t rounded-b-2xl"><Button type="submit" disabled={isProcessing} className="w-full h-16 uppercase font-black text-xl bg-primary shadow-2xl rounded-xl">{isProcessing ? <Loader2 className="animate-spin mr-2" /> : 'Commit Technical Entry'}</Button></DialogFooter>
+            <DialogFooter className="p-4 bg-slate-50 border-t"><Button type="submit" disabled={isProcessing} className="w-full h-10 uppercase font-bold bg-slate-800">{isProcessing ? <Loader2 className="animate-spin mr-2" /> : 'Commit Entry'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
