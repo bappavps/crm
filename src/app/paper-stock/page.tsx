@@ -45,7 +45,8 @@ import {
   Camera,
   CalendarDays,
   Save,
-  X
+  X,
+  Settings2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -63,6 +64,12 @@ import {
   SelectValue,
   SelectSeparator
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
@@ -71,7 +78,8 @@ import {
   limit, 
   serverTimestamp,
   deleteDoc,
-  setDoc
+  setDoc,
+  writeBatch
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
@@ -139,11 +147,7 @@ export default function PaperStockPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [isCustomStatus, setIsCustomStatus] = useState(false)
 
-  const defaultVisibleColumns = {
-    rollNo: true, status: true, paperCompany: true, paperType: true, widthMm: true, lengthMeters: true,
-    sqm: true, gsm: true, weightKg: true, purchaseRate: true, receivedDate: true, dateOfUsed: true,
-    jobNo: true, jobSize: true, jobName: true, lotNo: true, companyRollNo: true, remarks: true
-  }
+  const defaultVisibleColumns = COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {})
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(defaultVisibleColumns)
 
@@ -203,7 +207,6 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     let result = rolls.filter(row => {
-      // 1. Global Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const matchesGlobal = Object.entries(row).some(([key, val]) => {
@@ -212,21 +215,14 @@ export default function PaperStockPage() {
         });
         if (!matchesGlobal) return false;
       }
-
-      // 2. Technical Text Searches
       if (filters.lotNoSearch && !String(row.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
       if (filters.rollNoSearch && !String(row.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
-
-      // 3. Multi-Select Filters
       if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(row.paperCompany || ""))) return false;
       if (filters.paperType?.length > 0 && !filters.paperType.includes(String(row.paperType || ""))) return false;
       if (filters.gsm?.length > 0 && !filters.gsm.includes(String(row.gsm || ""))) return false;
       if (filters.status?.length > 0 && !filters.status.includes(String(row.status || ""))) return false;
-
-      // 4. Date Range Filters
       if (filters.receivedFrom && row.receivedDate < filters.receivedFrom) return false;
       if (filters.receivedTo && row.receivedDate > filters.receivedTo) return false;
-
       return true;
     });
 
@@ -300,6 +296,26 @@ export default function PaperStockPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!firestore || selectedIds.size === 0) return;
+    if (!confirm(`Permanently delete ${selectedIds.size} rolls?`)) return;
+    
+    setIsProcessing(true);
+    try {
+      const batch = writeBatch(firestore);
+      selectedIds.forEach(id => {
+        batch.delete(doc(firestore, 'paper_stock', id));
+      });
+      await batch.commit();
+      setSelectedIds(new Set());
+      setModal({ isOpen: true, type: 'SUCCESS', title: 'Batch Delete Complete' });
+    } catch (e: any) {
+      setModal({ isOpen: true, type: 'ERROR', title: 'Delete Failed', description: e.message });
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   const startScanner = () => {
     setIsScannerOpen(true);
     setTimeout(() => {
@@ -335,6 +351,7 @@ export default function PaperStockPage() {
     setFilters(initialFilters);
     setSortConfig({ key: 'rollNo', direction: 'desc' });
     setCurrentPage(1);
+    setSelectedIds(new Set());
   }
 
   if (!isMounted) return null;
@@ -343,7 +360,6 @@ export default function PaperStockPage() {
     <div className="flex flex-col h-full space-y-4 font-sans animate-in fade-in duration-500 pb-20">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      {/* MODULAR PERMANENT FILTER COMPONENT */}
       <PaperStockFilters 
         data={rolls || []} 
         filters={filters} 
@@ -353,10 +369,44 @@ export default function PaperStockPage() {
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
-          <h2 className="font-black text-xs uppercase tracking-[0.25em] flex items-center gap-3">
-            <LayoutGrid className="h-5 w-5 text-primary" /> Technical Paper Stock Details
-          </h2>
+          <div className="flex items-center gap-6">
+            <h2 className="font-black text-xs uppercase tracking-[0.25em] flex items-center gap-3">
+              <LayoutGrid className="h-5 w-5 text-primary" /> Master Grid
+            </h2>
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
+                <Badge className="bg-primary text-white font-black">{selectedIds.size} SELECTED</Badge>
+                <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="h-8 px-3 rounded-lg font-black text-[9px] uppercase tracking-widest">
+                  <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Bulk Delete
+                </Button>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-9 px-4 bg-transparent border-white/20 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+                  <Settings2 className="h-4 w-4 mr-2" /> Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
+                <div className="p-2 border-b mb-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Visibility Settings</span>
+                </div>
+                <div className="max-h-[300px] overflow-y-auto industrial-scroll">
+                  {COLUMN_KEYS.map((col) => (
+                    <DropdownMenuCheckboxItem
+                      key={col.id}
+                      checked={visibleColumns[col.id]}
+                      onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))}
+                      className="font-bold text-xs py-2 rounded-lg"
+                    >
+                      {col.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
               <QrCode className="h-4 w-4 mr-2" /> Live Scanner
             </Button>
@@ -478,7 +528,7 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* MODALS REMAIN THE SAME */}
+      {/* VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-8">
@@ -495,7 +545,7 @@ export default function PaperStockPage() {
             </div>
           </div>
           <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-50 industrial-scroll overflow-y-auto max-h-[70vh]">
-            <div className="space-y-6">
+            <div className="space-y-6 text-left">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2 flex items-center gap-2">
                 <Info className="h-3 w-3" /> Basic Details
               </h4>
@@ -504,7 +554,7 @@ export default function PaperStockPage() {
               <ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} />
               <ProfileField icon={Layers} label="Company Roll No" value={viewingRoll?.companyRollNo} />
             </div>
-            <div className="space-y-6">
+            <div className="space-y-6 text-left">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2 flex items-center gap-2">
                 <Maximize2 className="h-3 w-3" /> Size Details
               </h4>
@@ -514,7 +564,7 @@ export default function PaperStockPage() {
               <ProfileField icon={Weight} label="GSM" value={viewingRoll?.gsm} />
               <ProfileField icon={Scale} label="Weight (KG)" value={viewingRoll?.weightKg} />
             </div>
-            <div className="space-y-6">
+            <div className="space-y-6 text-left">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2 flex items-center gap-2">
                 <CircleDollarSign className="h-3 w-3" /> Info & Jobs
               </h4>
@@ -537,6 +587,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <form onSubmit={handleSave}>
@@ -595,7 +646,10 @@ export default function PaperStockPage() {
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" /></div>
+                <div className="space-y-2 text-left">
+                  <Label className="text-[10px] uppercase font-black opacity-50 block text-left">Technical Remarks</Label>
+                  <Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" />
+                </div>
               </div>
             </div>
             <DialogFooter className="p-6 bg-white border-t">
@@ -609,6 +663,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* PRINT LABEL DIALOG */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Print Engine (150x100mm)</DialogTitle></div>
@@ -653,6 +708,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* SCANNER DIALOG */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Technical Intake Scanner</DialogTitle></div>
