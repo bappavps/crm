@@ -520,6 +520,7 @@ export default function PaperStockPage() {
               <ProfileField icon={Hash} label="Roll No" value={viewingRoll?.rollNo} highlight />
               <ProfileField icon={Building2} label="Paper Company" value={viewingRoll?.paperCompany} />
               <ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} />
+              <ProfileField icon={Layers} label="Company Roll No" value={viewingRoll?.companyRollNo} />
             </div>
 
             <div className="space-y-6">
@@ -557,21 +558,26 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- MODAL: ADD / EDIT DIALOG --- */}
+      {/* --- MODAL: ADD / EDIT DIALOG (Full 18 Fields) --- */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <form onSubmit={handleSave}>
             <div className="bg-slate-900 text-white p-6">
               <DialogTitle className="text-xl font-black uppercase tracking-widest flex items-center gap-3">
                 {editingRoll ? <Pencil className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
-                {editingRoll ? 'Refine Technical Parameters' : 'Register New Master Roll'}
+                {editingRoll ? 'Edit Technical Master Record' : 'Add New Master Roll Entry'}
               </DialogTitle>
-              <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] mt-1 tracking-widest">Enterprise Technical Inventory Registry System</DialogDescription>
+              <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] mt-1 tracking-widest">Enterprise Technical Inventory Registry System (V2.1)</DialogDescription>
             </div>
 
-            <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6 max-h-[70vh] overflow-y-auto bg-slate-50 industrial-scroll">
+            <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 max-h-[75vh] overflow-y-auto bg-slate-50 industrial-scroll">
+              {/* COLUMN 1: IDENTITY & ORIGIN */}
               <div className="space-y-4">
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-black border-2 bg-white" disabled={!!editingRoll} /></div>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2">Identity & Source</h4>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-black opacity-50">Roll ID / Serial *</Label>
+                  <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-black border-2 bg-white" disabled={!!editingRoll} />
+                </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase font-black opacity-50">Current Status</Label>
                   <Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}>
@@ -586,14 +592,18 @@ export default function PaperStockPage() {
                 </div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
               </div>
 
+              {/* COLUMN 2: PHYSICAL SPECIFICATIONS */}
               <div className="space-y-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2">Technical Specs</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Calculated SQM (W/1000 * L)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-black text-primary">{calculatedSqm}</div></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Calculated SQM (System)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-black text-primary">{calculatedSqm}</div></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
@@ -601,14 +611,19 @@ export default function PaperStockPage() {
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Purchase Rate (₹)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
               </div>
 
+              {/* COLUMN 3: WORKFLOW & TIMELINE */}
               <div className="space-y-4">
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2">Workflow & Timeline</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                 </div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" /></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                </div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[100px]" /></div>
               </div>
             </div>
 
@@ -616,7 +631,7 @@ export default function PaperStockPage() {
               <Button type="button" variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">
                 {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                {editingRoll ? 'Update Master Record' : 'Initialize Roll Record'}
+                {editingRoll ? 'Update Technical Record' : 'Finalize Roll Entry'}
               </Button>
             </DialogFooter>
           </form>
