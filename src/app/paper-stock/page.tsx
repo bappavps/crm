@@ -426,7 +426,7 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[50]", 
           isActive && "bg-slate-200", 
           className
         )} 
@@ -607,7 +607,6 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* --- DIALOGS (SAME FUNCTIONALITY) --- */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[600px] p-0 border-none shadow-3xl">
           <DialogHeader className="p-4 bg-slate-800 text-white rounded-t-lg">
