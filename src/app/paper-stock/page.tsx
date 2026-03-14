@@ -79,11 +79,11 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
-  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50/80" },
-  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50/80" },
-  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50/80" },
-  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50/80" },
-  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50/80" },
+  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50" },
+  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50" },
 ];
 
 const COLUMN_KEYS = [
@@ -840,11 +840,11 @@ export default function PaperStockPage() {
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic text-center truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
                     <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[180px] p-0", rowBg)}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600 hover:bg-indigo-50 transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-sky-600 hover:bg-sky-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-600 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-700 hover:bg-slate-100" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:bg-rose-50" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="View Details" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Edit Roll" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Slitting" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Print Tag" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Delete Roll" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
