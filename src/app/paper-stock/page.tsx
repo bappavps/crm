@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
@@ -468,7 +469,15 @@ export default function PaperStockPage() {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
     return (
-      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100 border-b z-30 sticky top-0 bg-white", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)} style={{ zIndex: 50 }}>
+      <TableHead 
+        className={cn(
+          "cursor-pointer select-none transition-colors hover:bg-slate-100 border-b sticky top-0 bg-white shadow-[0_2px_2px_-1px_rgba(0,0,0,0.05)]", 
+          isActive && "text-primary bg-primary/5", 
+          className
+        )} 
+        onClick={() => requestSort(field)} 
+        style={{ zIndex: field === 'rollNo' ? 70 : 50 }}
+      >
         <div className="flex items-center justify-center gap-1 h-9">
           <span className="font-black text-[10px] uppercase leading-none">{label}</span>
           {isActive ? (
@@ -563,15 +572,15 @@ export default function PaperStockPage() {
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
-        <div className="flex-1 overflow-x-scroll overflow-y-scroll max-h-[600px] relative border-t industrial-scroll">
+        <div className="flex-1 overflow-x-scroll overflow-y-scroll max-h-[600px] relative border-t industrial-scroll table-container">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
             <TableHeader className="sticky top-0 z-50">
               <TableRow className="h-9 bg-white">
-                <TableHead className="w-[50px] text-center border-r border-b sticky left-0 bg-white z-[60] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                <TableHead className="w-[50px] text-center border-r border-b sticky top-0 left-0 bg-white z-[65] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky left-[50px] bg-white z-[60] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky left-[110px] bg-white z-[60] shadow-[2px_0_5px_rgba(0,0,0,0.05)]" />
+                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky top-0 left-[50px] bg-white z-[65] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky top-0 left-[110px] bg-white z-[65] shadow-[2px_2px_5px_rgba(0,0,0,0.05)]" />
                 <SortableHeader label="Status" field="status" className="w-[140px] border-r" />
                 <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
                 <SortableHeader label="Paper Type" field="paperType" className="border-r" />
@@ -587,7 +596,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Job No" field="jobNo" className="border-r" />
                 <SortableHeader label="Job Name" field="jobName" className="border-r" />
                 <SortableHeader label="Lot No" field="lotNo" className="border-r" />
-                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-white z-[60] border-l border-b shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
+                <TableHead className="text-center font-black text-[10px] uppercase sticky top-0 right-0 bg-white z-[65] border-l border-b shadow-[-2px_2px_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
