@@ -281,6 +281,18 @@ export default function PaperStockPage() {
     return flattened;
   }, [filteredRows]);
 
+  // AUTO-SUGGESTION DATA EXTRACTION
+  const suggestions = useMemo(() => {
+    if (!rolls) return { companies: [], types: [], gsms: [], lots: [], mfrRolls: [] };
+    return {
+      companies: Array.from(new Set(rolls.map(r => String(r.paperCompany || "").trim()).filter(Boolean))).sort(),
+      types: Array.from(new Set(rolls.map(r => String(r.paperType || "").trim()).filter(Boolean))).sort(),
+      gsms: Array.from(new Set(rolls.map(r => String(r.gsm || "").trim()).filter(Boolean))).sort((a, b) => Number(a) - Number(b)),
+      lots: Array.from(new Set(rolls.map(r => String(r.lotNo || "").trim()).filter(Boolean))).sort(),
+      mfrRolls: Array.from(new Set(rolls.map(r => String(r.companyRollNo || "").trim()).filter(Boolean))).sort(),
+    };
+  }, [rolls]);
+
   const totalPages = Math.ceil(hierarchicalRows.length / rowsPerPage);
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
@@ -664,10 +676,10 @@ export default function PaperStockPage() {
                   </Select>
                   {isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-black border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Paper Company</Label><Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Paper Type</Label><Input list="types-list" value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Company Roll No</Label><Input list="mfr-rolls-list" value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Lot / Batch No</Label><Input list="lots-list" value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
               </div>
               <div className="space-y-4">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2 text-left">Technical Specs</h4>
@@ -677,7 +689,7 @@ export default function PaperStockPage() {
                 </div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Calculated SQM (System)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-black text-primary">{calculatedSqm}</div></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">GSM</Label><Input list="gsms-list" type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                 </div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Purchase Rate (₹)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
@@ -709,6 +721,23 @@ export default function PaperStockPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* DATALISTS FOR AUTO-SUGGESTION */}
+      <datalist id="companies-list">
+        {suggestions.companies.map(c => <option key={c} value={c}>{`🏭 ${c}`}</option>)}
+      </datalist>
+      <datalist id="types-list">
+        {suggestions.types.map(t => <option key={t} value={t}>{`📄 ${t}`}</option>)}
+      </datalist>
+      <datalist id="gsms-list">
+        {suggestions.gsms.map(g => <option key={g} value={g}>{`⚖️ ${g} GSM`}</option>)}
+      </datalist>
+      <datalist id="lots-list">
+        {suggestions.lots.map(l => <option key={l} value={l}>{`📦 ${l}`}</option>)}
+      </datalist>
+      <datalist id="mfr-rolls-list">
+        {suggestions.mfrRolls.map(m => <option key={m} value={m}>{`🆔 ${m}`}</option>)}
+      </datalist>
 
       {/* PRINT LABEL DIALOG */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
