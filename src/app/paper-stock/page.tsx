@@ -243,11 +243,49 @@ export default function PaperStockPage() {
     return result;
   }, [rolls, filters, sortConfig]);
 
-  const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
+  // HIERARCHY LOGIC: Flattened tree starting from parents
+  const hierarchicalRows = useMemo(() => {
+    if (filteredRows.length === 0) return [];
+
+    const itemMap = new Map();
+    filteredRows.forEach(item => {
+      itemMap.set(item.rollNo, { ...item, children: [] });
+    });
+
+    const roots: any[] = [];
+    filteredRows.forEach(item => {
+      const parts = item.rollNo.split('-');
+      if (parts.length > 1) {
+        const parentId = parts.slice(0, -1).join('-');
+        if (itemMap.has(parentId)) {
+          itemMap.get(parentId).children.push(itemMap.get(item.rollNo));
+        } else {
+          roots.push(itemMap.get(item.rollNo));
+        }
+      } else {
+        roots.push(itemMap.get(item.rollNo));
+      }
+    });
+
+    const flattened: any[] = [];
+    const traverse = (node: any, level: number, isLast: boolean) => {
+      flattened.push({ ...node, level, isLast });
+      const sortedChildren = node.children.sort((a: any, b: any) => a.rollNo.localeCompare(b.rollNo));
+      sortedChildren.forEach((child: any, idx: number) => {
+        traverse(child, level + 1, idx === sortedChildren.length - 1);
+      });
+    };
+
+    // Sort roots by original sort preference
+    roots.forEach(root => traverse(root, 0, true));
+    return flattened;
+  }, [filteredRows]);
+
+  const totalPages = Math.ceil(hierarchicalRows.length / rowsPerPage);
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
-    return filteredRows.slice(start, start + rowsPerPage);
-  }, [filteredRows, currentPage, rowsPerPage]);
+    return hierarchicalRows.slice(start, start + rowsPerPage);
+  }, [hierarchicalRows, currentPage, rowsPerPage]);
 
   const handleOpenDialog = (roll?: any) => {
     if (roll) {
@@ -417,7 +455,7 @@ export default function PaperStockPage() {
         </div>
 
         <div className="w-full h-[600px] overflow-scroll relative border-t industrial-scroll">
-          <Table className="border-separate border-spacing-0 min-w-[2800px]">
+          <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
                 <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
@@ -426,7 +464,7 @@ export default function PaperStockPage() {
                   </div>
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-bold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky top-0 left-[100px] bg-slate-100 z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]" />
+                <SortableHeader label="Roll No" field="rollNo" className="w-[200px] border-r sticky top-0 left-[100px] bg-slate-100 z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]" />
                 <SortableHeader label="Status" field="status" className="w-[120px]" />
                 <SortableHeader label="Paper Company" field="paperCompany" />
                 <SortableHeader label="Paper Type" field="paperType" />
@@ -466,7 +504,16 @@ export default function PaperStockPage() {
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
                     <TableCell className={cn("text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{j.rollNo}</TableCell>
+                    <TableCell className={cn("font-black text-[13px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
+                      <div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>
+                        {j.level > 0 && (
+                          <span className="text-slate-400 font-mono font-bold mr-1">
+                            {j.isLast ? '└' : '├'}
+                          </span>
+                        )}
+                        {j.rollNo}
+                      </div>
+                    </TableCell>
                     <TableCell className="border-r border-b text-center">
                       <Badge className={cn("text-[10px] font-black text-white px-2", statusInfo.color)}>{j.status}</Badge>
                     </TableCell>
