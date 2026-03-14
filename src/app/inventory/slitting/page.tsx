@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -49,22 +48,18 @@ const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /**
  * Helper to determine the child suffix based on industrial naming rules.
- * Base (T-1038) -> Letters (-A, -B)
- * Slitted (T-1038-C) -> Numbers (-1, -2)
+ * Level 1 (Base Roll T-1038) -> Alphabetical (-A, -B)
+ * Level 2 (Slitted Roll T-1038-C) -> Numeric (-1, -2)
  */
 const getChildSuffix = (parentRollNo: string, index: number): string => {
   const parts = parentRollNo.split('-');
-  const isBaseRoll = parts.length <= 2;
-  const lastPart = parts[parts.length - 1];
-  const hasLetterSuffix = /^[A-Z]+$/.test(lastPart);
-
+  const isBaseRoll = parts.length <= 2; // Pattern T-XXXX
+  
   if (isBaseRoll) {
     const char = ALPHABET[index % 26];
     return index >= 26 ? `${char}${Math.floor(index / 26)}` : char;
-  } else if (hasLetterSuffix) {
-    return (index + 1).toString();
   } else {
-    // Deep nesting fallback to numeric
+    // Level 2 or deeper -> Numeric
     return (index + 1).toString();
   }
 };
@@ -180,7 +175,6 @@ function SlittingHubContent() {
     }
   }, [selectedParent, slitRuns]);
 
-  // VISUAL PREVIEW DATA GENERATION
   const previewParts = useMemo(() => {
     if (!selectedParent) return [];
     const parts: any[] = [];
@@ -311,7 +305,7 @@ function SlittingHubContent() {
 
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Industrial Slitting Hub</h2>
+          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Advance Slitting Features</h2>
           <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Precision width conversion and length split engine.</p>
         </div>
         <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-black text-[10px] uppercase">
