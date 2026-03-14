@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -370,7 +369,7 @@ export default function StockImportPage() {
           "Job Size": r.jobSize || '-',
           "Job Name": r.jobName || '-',
           "Lot No": r.lotNo || '-',
-          "Company Roll No": r.companyRoll No || '-',
+          "Company Roll No": r.companyRollNo || '-',
           "Remarks": r.remarks || '-'
         };
       });
