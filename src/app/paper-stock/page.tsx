@@ -29,7 +29,9 @@ import {
   Columns as ColumnsIcon,
   ArrowUp,
   ArrowDown,
-  ArrowUpDown
+  ArrowUpDown,
+  History,
+  FileSpreadsheet
 } from "lucide-react"
 import { 
   Dialog, 
@@ -70,11 +72,11 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
-  { value: "Available", label: "Available", color: "bg-emerald-500", rowBg: "bg-[#E8F8F1]" },
-  { value: "Reserved", label: "Reserved", color: "bg-amber-500", rowBg: "bg-[#FFF4E5]" },
-  { value: "In Production", label: "In Production", color: "bg-blue-500", rowBg: "bg-[#EAF2FF]" },
-  { value: "Slitted", label: "Slitted", color: "bg-purple-500", rowBg: "bg-[#F4E8FF]" },
-  { value: "Consumed", label: "Consumed", color: "bg-destructive", rowBg: "bg-[#FFECEC]" },
+  { value: "Available", label: "Available", color: "bg-emerald-500", rowBg: "bg-white" },
+  { value: "Reserved", label: "Reserved", color: "bg-amber-500", rowBg: "bg-amber-50/20" },
+  { value: "In Production", label: "In Production", color: "bg-blue-500", rowBg: "bg-blue-50/20" },
+  { value: "Slitted", label: "Slitted", color: "bg-purple-500", rowBg: "bg-purple-50/20" },
+  { value: "Consumed", label: "Consumed", color: "bg-destructive", rowBg: "bg-destructive/5" },
 ];
 
 const COLUMN_KEYS = [
@@ -389,7 +391,7 @@ export default function PaperStockPage() {
     const ws = XLSX.utils.json_to_sheet(filteredRows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Stock Registry");
-    XLSX.writeFile(wb, "Reel_Inventory_Export.xlsx");
+    XLSX.writeFile(wb, "Paper_Stock_Export.xlsx");
   }
 
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
@@ -404,7 +406,7 @@ export default function PaperStockPage() {
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto z-[200]">
+      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto z-[100]">
         <DropdownMenuLabel className="text-[10px] uppercase font-black">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
@@ -432,7 +434,7 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[20]", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30] text-center", 
           isActive && "bg-slate-200", 
           className
         )} 
@@ -461,7 +463,7 @@ export default function PaperStockPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input 
-              placeholder="Search master registry..." 
+              placeholder="Search Paper Stock Registry..." 
               className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-bold" 
               value={filters.search} 
               onChange={e => setFilters({ ...filters, search: e.target.value })} 
@@ -471,11 +473,11 @@ export default function PaperStockPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2">
-                  <ColumnsIcon className="h-4 w-4 text-primary" /> Display Settings
+                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[200]">
-                <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2 tracking-widest">Toggle Columns</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[100]">
+                <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2 tracking-widest">Select Columns</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="max-h-[400px] overflow-y-auto industrial-scroll">
                   {COLUMN_KEYS.map(col => (
@@ -493,33 +495,35 @@ export default function PaperStockPage() {
             </DropdownMenu>
 
             <Button variant="outline" size="sm" onClick={exportStock} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-all">
-              <FileDown className="h-4 w-4" /> Download XLSX
+              <FileDown className="h-4 w-4" /> Export XLSX
             </Button>
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
               search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
               widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-            })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset</Button>
+            })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
           </div>
         </div>
         <div className="flex flex-wrap gap-2 pb-1">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
-          <MultiSelectFilter label="Mfr" field="paperCompany" options={getUniqueOptions('paperCompany')} />
-          <MultiSelectFilter label="Substrate" field="paperType" options={getUniqueOptions('paperType')} />
-          <MultiSelectFilter label="Job #" field="jobNo" options={getUniqueOptions('jobNo')} />
+          <MultiSelectFilter label="Paper Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
+          <MultiSelectFilter label="Paper Type" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
           <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="Job Size" field="jobSize" options={getUniqueOptions('jobSize')} />
           <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
+          <MultiSelectFilter label="Company Roll" field="companyRollNo" options={getUniqueOptions('companyRollNo')} />
         </div>
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-xl bg-white">
         <div className="bg-slate-800 text-white p-3 px-6 flex items-center justify-between shrink-0">
           <h2 className="font-black text-xs uppercase tracking-[0.2em] flex items-center gap-3">
-            <LayoutGrid className="h-5 w-5 text-primary" /> Technical Data Grid
+            <LayoutGrid className="h-5 w-5 text-primary" /> Paper Stock Details
           </h2>
           <Button variant="ghost" size="sm" className="h-9 px-4 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest" onClick={() => handleOpenDialog()}>
-            <Plus className="h-4 w-4 mr-2" /> New Technical Intake
+            <Plus className="h-4 w-4 mr-2" /> Add Roll
           </Button>
         </div>
 
@@ -561,7 +565,7 @@ export default function PaperStockPage() {
                 const statusColor = STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500";
                 const rowBg = STATUS_OPTIONS.find(o => o.value === j.status)?.rowBg || "bg-white";
                 return (
-                  <TableRow key={j.id} className={cn("h-9 group hover:brightness-95 transition-all", rowBg)}>
+                  <TableRow key={j.id} className={cn("h-9 group hover:brightness-95 transition-all text-center", rowBg)}>
                     <TableCell className="text-center border-r border-b sticky left-0 z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
                       <div className="flex items-center justify-center h-full">
                         <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
@@ -596,7 +600,7 @@ export default function PaperStockPage() {
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-orange-500 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-700 hover:bg-slate-100" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => { if(confirm('Delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -612,7 +616,7 @@ export default function PaperStockPage() {
               <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="z-[200]">
+              <SelectContent className="z-[100]">
                 {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
             </Select>
@@ -630,8 +634,9 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
+      {/* VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-[300]">
+        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-[200]">
           <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
             <DialogTitle className="uppercase font-black text-sm flex items-center gap-3 tracking-widest"><Package className="h-5 w-5 text-primary" /> Technical Profile: {viewingRoll?.rollNo}</DialogTitle>
           </DialogHeader>
@@ -646,8 +651,9 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* PRINT DIALOG */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[450px] p-8 z-[300]">
+        <DialogContent className="sm:max-w-[450px] p-8 z-[200]">
           <div className="p-8 border-8 border-black text-center space-y-6 rounded-lg bg-white shadow-2xl">
             <h2 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h2>
             <div className="border-y-4 border-black py-4 bg-black/5">
@@ -663,19 +669,21 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-[300]">
+        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-[200]">
           <form onSubmit={handleSave}>
             <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
               <DialogTitle className="uppercase font-black text-sm tracking-widest">
-                {editingRoll ? `Update Registry: ${formData.rollNo}` : 'Direct Technical Stock Intake'}
+                {editingRoll ? `Update Registry: ${formData.rollNo}` : 'Add Roll to Master Registry'}
               </DialogTitle>
             </DialogHeader>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white">
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Status</Label>
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
                   <SelectTrigger className="h-11 font-black border-2"><SelectValue /></SelectTrigger>
-                  <SelectContent className="shadow-2xl z-[400]">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
+                  <SelectContent className="shadow-2xl z-[300]">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2" /></div>
@@ -695,7 +703,11 @@ export default function PaperStockPage() {
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2" /></div>
               <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium" /></div>
             </div>
-            <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4"><Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-[0.2em] bg-slate-800 shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">{isProcessing ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : 'Commit Registry Entry'}</Button></DialogFooter>
+            <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4">
+              <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-[0.2em] bg-slate-800 shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">
+                {isProcessing ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : editingRoll ? 'Update Roll Profile' : 'Commit Registry Entry'}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
