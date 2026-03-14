@@ -25,7 +25,9 @@ import {
   History,
   ArrowRightLeft,
   FileText,
-  Maximize2
+  Maximize2,
+  LayoutGrid,
+  ArrowUpDown
 } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, query, where, runTransaction, serverTimestamp, limit } from "firebase/firestore"
@@ -76,8 +78,7 @@ function SlittingHubContent() {
   useEffect(() => {
     if (initialRollData && initialRollData.length > 0) {
       setSelectedParent(initialRollData[0]);
-      // Update length default for initial row
-      setSlitRuns(prev => prev.map(r => ({ ...r, lengthMeters: initialRollData[0].lengthMeters })));
+      setSlitRuns(prev => prev.map(r => ({ ...r, lengthMeters: initialRollData[0].lengthMeters, widthMm: initialRollData[0].widthMm })));
     }
   }, [initialRollData]);
 
@@ -98,8 +99,15 @@ function SlittingHubContent() {
           setSelectedParent(null);
         } else {
           setSelectedParent(data);
-          // Auto-fill length for convenience
-          setSlitRuns(prev => prev.map(r => ({ ...r, lengthMeters: data.lengthMeters })));
+          setSlitRuns([{ 
+            id: crypto.randomUUID(), 
+            jobNo: "", 
+            jobName: "", 
+            jobSize: "", 
+            widthMm: data.widthMm, 
+            lengthMeters: data.lengthMeters, 
+            parts: 1 
+          }]);
         }
       }
     } catch (e) {
@@ -132,8 +140,6 @@ function SlittingHubContent() {
   const calculation = useMemo(() => {
     if (!selectedParent) return { usedWidth: 0, remainder: 0, isValid: true, mode: 'WIDTH' };
     
-    // Determine mode: If any run width is less than parent AND length is full, it's Width Slitting.
-    // If width is full AND length is less, it's Length Splitting.
     const hasLengthSplit = slitRuns.some(r => Number(r.lengthMeters) > 0 && Number(r.lengthMeters) < Number(selectedParent.lengthMeters));
     const mode = hasLengthSplit ? 'LENGTH' : 'WIDTH';
 
@@ -147,6 +153,43 @@ function SlittingHubContent() {
       return { usedLength, remainder, isValid: remainder >= 0, mode: 'LENGTH' };
     }
   }, [selectedParent, slitRuns]);
+
+  // VISUAL PREVIEW DATA GENERATION
+  const previewParts = useMemo(() => {
+    if (!selectedParent) return [];
+    const parts: any[] = [];
+    let childIdx = 0;
+
+    slitRuns.forEach((run) => {
+      const pCount = Number(run.parts) || 0;
+      for (let i = 0; i < pCount; i++) {
+        const char = ALPHABET[childIdx % 26];
+        const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+        
+        parts.push({
+          label: suffix,
+          width: calculation.mode === 'WIDTH' ? (Number(run.widthMm) || selectedParent.widthMm) : selectedParent.widthMm,
+          length: calculation.mode === 'LENGTH' ? (Number(run.lengthMeters) || selectedParent.lengthMeters) : selectedParent.lengthMeters,
+          isJob: !!run.jobNo,
+          jobNo: run.jobNo
+        });
+        childIdx++;
+      }
+    });
+
+    if (calculation.remainder > 0) {
+      const char = ALPHABET[childIdx % 26];
+      const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+      parts.push({
+        label: suffix,
+        width: calculation.mode === 'WIDTH' ? calculation.remainder : selectedParent.widthMm,
+        length: calculation.mode === 'LENGTH' ? calculation.remainder : selectedParent.lengthMeters,
+        isRemainder: true
+      });
+    }
+
+    return parts;
+  }, [selectedParent, slitRuns, calculation]);
 
   const handleExecuteSlitting = async () => {
     if (!firestore || !user || !selectedParent || !calculation.isValid) return;
@@ -360,7 +403,7 @@ function SlittingHubContent() {
         </div>
 
         <div className="lg:col-span-3 space-y-6">
-          <Card className="shadow-xl border-none rounded-2xl overflow-hidden min-h-[500px] flex flex-col">
+          <Card className="shadow-xl border-none rounded-2xl overflow-hidden flex flex-col">
             <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between p-6">
               <div className="space-y-1">
                 <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
@@ -372,7 +415,7 @@ function SlittingHubContent() {
                 <Plus className="h-4 w-4 mr-2" /> Add Run Row
               </Button>
             </CardHeader>
-            <CardContent className="p-0 flex-1 overflow-auto industrial-scroll">
+            <CardContent className="p-0 flex-1 overflow-auto industrial-scroll max-h-[400px]">
               <Table>
                 <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
                   <TableRow>
@@ -484,6 +527,64 @@ function SlittingHubContent() {
                 <span className="text-[10px] font-black uppercase text-slate-400">Integrity Verified</span>
               </div>
             </CardFooter>
+          </Card>
+
+          {/* SLITTING VISUAL PREVIEW SECTION */}
+          <Card className="shadow-xl border-none rounded-2xl overflow-hidden bg-white">
+            <CardHeader className="bg-slate-50 border-b py-6 px-8">
+              <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                <LayoutGrid className="h-4 w-4 text-primary" /> Slitting Visual Preview
+              </CardTitle>
+              <p className="text-[9px] font-black text-slate-400 uppercase">Live layout visualization of output rolls and stock remainders.</p>
+            </CardHeader>
+            <CardContent className="p-8">
+              <div className="flex flex-wrap gap-6 justify-start">
+                {previewParts.length === 0 ? (
+                  <div className="py-12 text-center w-full border-4 border-dashed rounded-3xl opacity-20 flex flex-col items-center gap-3">
+                    <LayoutGrid className="h-10 w-10" />
+                    <p className="text-[10px] font-black uppercase tracking-widest">Define runs to visualize layout</p>
+                  </div>
+                ) : (
+                  previewParts.map((part, i) => (
+                    <div key={i} className={cn(
+                      "w-[150px] h-[150px] rounded-2xl border-4 flex flex-col items-center justify-center p-4 relative transition-all duration-300 shadow-lg hover:scale-105",
+                      part.isRemainder ? "bg-emerald-50 border-emerald-200 text-emerald-700" : 
+                      part.isJob ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-slate-50 border-slate-200 text-slate-600"
+                    )}>
+                      {/* Name Label */}
+                      <div className="absolute top-3 left-4 font-black text-[11px] uppercase opacity-40">[{part.label}]</div>
+                      
+                      {/* Status Badges */}
+                      {part.isRemainder && <Badge className="absolute top-3 right-3 bg-emerald-500 text-[8px] h-4 px-1.5 font-black uppercase border-none">STOCK</Badge>}
+                      {part.isJob && <Badge className="absolute top-3 right-3 bg-blue-500 text-[8px] h-4 px-1.5 font-black uppercase border-none">JOB</Badge>}
+                      
+                      {/* Dimensional Icons/Labels */}
+                      <div className="flex flex-col items-center gap-3 mt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-black opacity-40">↔</span>
+                          <span className="text-xl font-black tracking-tighter tabular-nums leading-none">
+                            {part.width}<small className="text-[9px] ml-0.5 font-bold uppercase opacity-60">MM</small>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-black opacity-40">↕</span>
+                          <span className="text-xl font-black tracking-tighter tabular-nums leading-none">
+                            {part.length}<small className="text-[9px] ml-0.5 font-bold uppercase opacity-60">MTR</small>
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Job Metadata Footer */}
+                      {part.jobNo && (
+                        <div className="mt-4 pt-3 border-t w-full text-center border-blue-100">
+                          <p className="text-[10px] font-black uppercase truncate leading-none opacity-80">{part.jobNo}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
           </Card>
         </div>
       </div>
