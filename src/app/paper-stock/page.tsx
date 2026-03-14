@@ -339,9 +339,23 @@ export default function PaperStockPage() {
       setEditingRoll(roll);
       setFormData({ ...formData, ...roll });
     } else {
+      // Logic to find the suggested next Roll Number
+      let nextRollNo = "RL-0001";
+      if (rolls && rolls.length > 0) {
+        const numbers = rolls
+          .map(r => {
+            const match = String(r.rollNo || "").match(/\d+/);
+            return match ? parseInt(match[0], 10) : 0;
+          })
+          .filter(n => !isNaN(n));
+        const max = numbers.length > 0 ? Math.max(...numbers) : 0;
+        nextRollNo = `RL-${(max + 1).toString().padStart(4, '0')}`;
+      }
+
       setEditingRoll(null);
       setFormData({
-        rollNo: "", paperCompany: "", paperType: "", status: "Available",
+        rollNo: nextRollNo, 
+        paperCompany: "", paperType: "", status: "Available",
         widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0, purchaseRate: 0,
         receivedDate: new Date().toISOString().split('T')[0],
         dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", 
@@ -363,26 +377,56 @@ export default function PaperStockPage() {
       updatedById: user.uid
     };
 
+    const rollId = formData.rollNo.trim();
+
     try {
       if (editingRoll) {
-        await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
+        // If the roll number changed, we migrate document ID
+        if (editingRoll.id !== rollId) {
+          await runTransaction(firestore, async (transaction) => {
+            const oldRef = doc(firestore, 'paper_stock', editingRoll.id);
+            const newRef = doc(firestore, 'paper_stock', rollId);
+            
+            const checkSnap = await transaction.get(newRef);
+            if (checkSnap.exists()) {
+              throw new Error(`Roll No ${rollId} already exists in registry.`);
+            }
+
+            transaction.delete(oldRef);
+            transaction.set(newRef, { ...finalData, id: rollId, createdAt: editingRoll.createdAt || serverTimestamp() });
+          });
+        } else {
+          await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
+        }
         setIsDialogOpen(false);
         setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
+        // Add new roll
         await runTransaction(firestore, async (transaction) => {
-          const counterRef = doc(firestore, 'counters', 'paper_roll');
-          const counterSnap = await transaction.get(counterRef);
-          let nextNum = counterSnap.exists() ? (counterSnap.data().current_number || 0) + 1 : 1;
-          const rollId = `RL-${nextNum.toString().padStart(4, '0')}`;
-          const newDocRef = doc(collection(firestore, 'paper_stock'), rollId);
-          transaction.set(newDocRef, { ...finalData, rollNo: rollId, createdAt: serverTimestamp(), createdById: user.uid, id: rollId });
-          transaction.set(counterRef, { current_number: nextNum }, { merge: true });
+          const newDocRef = doc(firestore, 'paper_stock', rollId);
+          const checkSnap = await transaction.get(newDocRef);
+          if (checkSnap.exists()) {
+            throw new Error(`Roll No ${rollId} already exists in registry.`);
+          }
+          
+          transaction.set(newDocRef, { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
+          
+          // Atomic sync for counter if numeric
+          const numericPart = parseInt(rollId.replace(/\D/g, ''));
+          if (!isNaN(numericPart)) {
+            const counterRef = doc(firestore, 'counters', 'paper_roll');
+            const counterSnap = await transaction.get(counterRef);
+            const currentCounter = counterSnap.exists() ? (counterSnap.data().current_number || 0) : 0;
+            if (numericPart > currentCounter) {
+              transaction.set(counterRef, { current_number: numericPart }, { merge: true });
+            }
+          }
         });
         setIsDialogOpen(false);
         setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
       }
     } catch (error: any) {
-      setModal({ isOpen: true, type: 'ERROR', title: 'Transaction Failed', description: error.message });
+      setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message });
     } finally {
       setIsProcessing(false);
     }
@@ -410,9 +454,7 @@ export default function PaperStockPage() {
 
   const exportStock = () => {
     if (filteredRows.length === 0) return;
-    
-    // Map internal data to technical template headers
-    const exportData = filteredRows.map((r, i) => ({
+    const exportData = filteredRows.map((r) => ({
       "ROLL NO": r.rollNo || "",
       "STATUS": r.status || "Available",
       "PAPER COMPANY": r.paperCompany || "",
@@ -480,14 +522,14 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[20] text-center", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30] text-center", 
           isActive && "bg-slate-200", 
           className
         )} 
         onClick={() => requestSort(field)} 
       >
         <div className="flex items-center justify-center gap-1.5 px-2">
-          <span className="font-black text-[10px] uppercase text-slate-700 tracking-tighter">{label}</span>
+          <span className="font-black text-[11px] uppercase text-slate-700 tracking-tighter">{label}</span>
           {isActive ? (
             sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
           ) : (
@@ -559,8 +601,8 @@ export default function PaperStockPage() {
         </div>
         <div className="flex flex-wrap gap-2 pb-1">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
-          <MultiSelectFilter label="Paper Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
-          <MultiSelectFilter label="Paper Type" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="Mfr" field="paperCompany" options={getUniqueOptions('paperCompany')} />
+          <MultiSelectFilter label="Substrate" field="paperType" options={getUniqueOptions('paperType')} />
           <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
           <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
           <MultiSelectFilter label="Job Size" field="jobSize" options={getUniqueOptions('jobSize')} />
@@ -588,7 +630,7 @@ export default function PaperStockPage() {
                     <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                   </div>
                 </TableHead>
-                <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
+                <TableHead className="w-[50px] text-center font-bold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
                 <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[40] shadow-[1px_0_0_#e2e8f0]" />
                 <SortableHeader label="Status" field="status" className="w-[120px]" />
                 <SortableHeader label="Paper Company" field="paperCompany" />
@@ -607,7 +649,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Lot No / Batch No" field="lotNo" />
                 <SortableHeader label="Company Roll No" field="companyRollNo" />
                 <SortableHeader label="Remarks" field="remarks" />
-                <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
+                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -617,42 +659,42 @@ export default function PaperStockPage() {
                 const statusColor = STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500";
                 const rowBg = STATUS_OPTIONS.find(o => o.value === j.status)?.rowBg || "bg-white";
                 return (
-                  <TableRow key={j.id} className={cn("h-9 group hover:brightness-95 transition-all text-center", rowBg)}>
+                  <TableRow key={j.id} className={cn("h-10 group hover:brightness-95 transition-all text-center", rowBg)}>
                     <TableCell className="text-center border-r border-b sticky left-0 z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
                       <div className="flex items-center justify-center h-full">
                         <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                       </div>
                     </TableCell>
-                    <TableCell className="text-center font-black text-[10px] text-slate-400 border-r border-b sticky left-[40px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className="font-black text-[11px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
+                    <TableCell className="text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className="font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
                     <TableCell className="text-center border-r border-b p-0">
                       <div className="flex items-center justify-center">
-                        <span className={cn("px-2.5 py-0.5 rounded-full text-[8px] font-black text-white uppercase tracking-tighter shadow-sm", statusColor)}>{j.status || "Available"}</span>
+                        <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusColor)}>{j.status || "Available"}</span>
                       </div>
                     </TableCell>
-                    {visibleColumns['paperCompany'] && <TableCell className="text-[10px] font-bold border-r border-b uppercase px-3 truncate max-w-[150px] text-center">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-[10px] font-bold border-r border-b px-3 truncate max-w-[150px] text-center">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-center text-[10px] border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">₹{j.purchaseRate || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[10px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
-                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[10px] font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[10px] border-r border-b px-2">{j.jobSize || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-[10px] font-bold border-r border-b truncate max-w-[150px] px-2 text-center">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
-                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[10px] border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
-                    {visibleColumns['remarks'] && <TableCell className="text-[10px] border-r border-b px-2 italic text-center">{j.remarks || '-'}</TableCell>}
+                    {visibleColumns['paperCompany'] && <TableCell className="text-sm font-bold border-r border-b uppercase px-3 truncate max-w-[150px] text-center">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-sm font-bold border-r border-b px-3 truncate max-w-[150px] text-center">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-center text-sm border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">₹{j.purchaseRate || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-sm font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-sm font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-center text-sm border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-center text-sm border-r border-b px-2">{j.jobSize || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-sm font-bold border-r border-b truncate max-w-[150px] px-2 text-center">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-sm border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-sm border-r border-b px-2 italic text-center truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
                     <TableCell className="text-center border-b sticky right-0 z-10 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
                       <div className="flex items-center justify-center gap-1.5">
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-orange-500 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-700 hover:bg-slate-100" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-700 hover:bg-slate-100" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-5 w-5" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -665,23 +707,23 @@ export default function PaperStockPage() {
         <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
+              <SelectTrigger className="h-8 w-[110px] bg-white text-[12px] font-black uppercase">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="z-portal">
                 {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
             </Select>
-            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
+            <span className="text-[12px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 px-4 text-[10px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button>
+            <Button variant="outline" size="sm" className="h-8 px-4 text-[12px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button>
             <div className="flex items-center gap-1">
-              <span className="text-[10px] font-black bg-white border-2 border-slate-200 h-8 w-12 flex items-center justify-center rounded-lg shadow-inner">{currentPage}</span>
-              <span className="text-[10px] font-black text-slate-400 mx-1">/</span>
-              <span className="text-[10px] font-black text-slate-500">{totalPages || 1}</span>
+              <span className="text-[12px] font-black bg-white border-2 border-slate-200 h-8 w-12 flex items-center justify-center rounded-lg shadow-inner">{currentPage}</span>
+              <span className="text-[12px] font-black text-slate-400 mx-1">/</span>
+              <span className="text-[12px] font-black text-slate-500">{totalPages || 1}</span>
             </div>
-            <Button variant="outline" size="sm" className="h-8 px-4 text-[10px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button>
+            <Button variant="outline" size="sm" className="h-8 px-4 text-[12px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button>
           </div>
         </div>
       </Card>
@@ -693,10 +735,10 @@ export default function PaperStockPage() {
             <DialogTitle className="uppercase font-black text-sm flex items-center gap-3 tracking-widest"><Package className="h-5 w-5 text-primary" /> Technical Profile: {viewingRoll?.rollNo}</DialogTitle>
           </DialogHeader>
           <div className="p-8 grid grid-cols-2 md:grid-cols-3 gap-8 bg-white industrial-scroll max-h-[70vh] overflow-y-auto">
-            {COLUMN_KEYS.map((item, idx) => (
+            {Object.keys(FIELD_LABELS).map((key, idx) => (
               <div key={idx} className="space-y-1 group">
-                <Label className="text-[9px] uppercase font-black text-slate-400 tracking-widest block transition-colors group-hover:text-primary">{item.label}</Label>
-                <p className="text-xs font-black text-slate-800 tracking-tight">{viewingRoll?.[item.id] || '-'}</p>
+                <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest block transition-colors group-hover:text-primary">{FIELD_LABELS[key]}</Label>
+                <p className="text-sm font-black text-slate-800 tracking-tight">{viewingRoll?.[key] || '-'}</p>
               </div>
             ))}
           </div>
@@ -732,28 +774,32 @@ export default function PaperStockPage() {
             </DialogHeader>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white">
               <div className="space-y-2">
-                <Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Status</Label>
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Roll No (Editable)</Label>
+                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-11 font-black text-primary border-2 text-sm" required />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="h-11 font-black border-2"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-11 font-black border-2 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent className="shadow-2xl z-portal">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
-              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20"><Label className="text-[10px] uppercase font-black text-primary tracking-widest">SQM (Auto-calc)</Label><Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Weight (KG)</Label><Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Purchase Rate</Label><Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Date of Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Date of Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Job No</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Lot No / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2" /></div>
-              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" /></div>
+              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20"><Label className="text-[11px] uppercase font-black text-primary tracking-widest">SQM (Auto-calc)</Label><Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Weight (KG)</Label><Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Purchase Rate</Label><Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Date of Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Date of Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Job No</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Lot No / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2 text-sm" /></div>
+              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium text-sm" /></div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4">
               <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-[0.2em] bg-slate-800 shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">
