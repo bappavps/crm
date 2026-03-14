@@ -162,7 +162,6 @@ export default function PaperStockPage() {
     setIsMounted(true);
     setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
     
-    // Load column visibility after hydration
     const saved = localStorage.getItem('paperStockVisibleColumns')
     if (saved) {
       try {
@@ -173,7 +172,6 @@ export default function PaperStockPage() {
     }
   }, [])
 
-  // Persist Visibility
   useEffect(() => {
     if (isMounted) {
       localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
@@ -189,7 +187,6 @@ export default function PaperStockPage() {
     autoClose?: boolean;
   }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
-  // Filter State
   const [filters, setFilters] = useState<any>({
     search: "",
     paperCompany: [],
@@ -475,7 +472,7 @@ export default function PaperStockPage() {
           className
         )} 
         onClick={() => requestSort(field)} 
-        style={{ zIndex: field === 'rollNo' ? 70 : 50 }}
+        style={{ zIndex: (field === 'rollNo' || field === 'id' || field === 'slNo') ? 110 : 100 }}
       >
         <div className="flex items-center justify-center gap-1 h-9">
           <span className="font-black text-[10px] uppercase leading-none">{label}</span>
@@ -575,11 +572,11 @@ export default function PaperStockPage() {
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
             <TableHeader className="sticky top-0 z-[100] bg-white">
               <TableRow className="h-9 bg-white">
-                <TableHead className="w-[50px] text-center border-r border-b sticky top-0 left-0 bg-white z-[65] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">
+                <TableHead className="w-[50px] text-center border-r border-b sticky top-0 left-0 bg-white z-[115] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky top-0 left-[50px] bg-white z-[65] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky top-0 left-[110px] bg-white z-[65] shadow-[2px_2px_5px_rgba(0,0,0,0.05)]" />
+                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky top-0 left-[50px] bg-white z-[115] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky top-0 left-[110px] bg-white z-[115] shadow-[2px_2px_5px_rgba(0,0,0,0.05)]" />
                 <SortableHeader label="Status" field="status" className="w-[140px] border-r" />
                 <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
                 <SortableHeader label="Paper Type" field="paperType" className="border-r" />
@@ -595,7 +592,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Job No" field="jobNo" className="border-r" />
                 <SortableHeader label="Job Name" field="jobName" className="border-r" />
                 <SortableHeader label="Lot No" field="lotNo" className="border-r" />
-                <TableHead className="text-center font-black text-[10px] uppercase sticky top-0 right-0 bg-white z-[65] border-l border-b shadow-[-2px_2px_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
+                <TableHead className="text-center font-black text-[10px] uppercase sticky top-0 right-0 bg-white z-[115] border-l border-b shadow-[-2px_2px_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -644,7 +641,9 @@ export default function PaperStockPage() {
         <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase"><SelectValue /></Trigger>
+              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
             </Select>
             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
