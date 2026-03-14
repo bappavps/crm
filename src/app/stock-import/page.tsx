@@ -46,7 +46,8 @@ const STEPS = [
   { id: 'final', label: 'Result', icon: Database }
 ];
 
-const REQUIRED_FIELDS = ["paperCompany", "paperType", "widthMm", "lengthMeters", "gsm", "receivedDate"];
+// Roll No is now mandatory because it serves as the Document ID
+const REQUIRED_FIELDS = ["rollNo", "paperCompany", "paperType", "widthMm", "lengthMeters", "gsm", "receivedDate"];
 
 const FIELD_LABELS: Record<string, string> = {
   rollNo: "Roll No",
@@ -72,8 +73,16 @@ const FIELD_LABELS: Record<string, string> = {
 const TEMPLATE_HEADERS = Object.values(FIELD_LABELS);
 
 const MAX_ROWS = 5000;
-const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_MB = 10;
 const CHUNK_SIZE = 200;
+
+const STATUS_OPTIONS = [
+  { value: "Available", label: "Available", color: "bg-emerald-500" },
+  { value: "Reserved", label: "Reserved", color: "bg-amber-500" },
+  { value: "In Production", label: "In Production", color: "bg-blue-500" },
+  { value: "Slitted", label: "Slitted", color: "bg-purple-500" },
+  { value: "Consumed", label: "Consumed", color: "bg-destructive" },
+];
 
 const normalizeHeader = (str: string) => 
   String(str || "").toLowerCase()
@@ -102,7 +111,7 @@ const parseExcelDate = (val: any): string => {
   return str;
 };
 
-const cleanForFirestore = (v: any) => (v === undefined || v === null) ? "" : v;
+const cleanForFirestore = (v: any) => (v === undefined || v === null) ? "" : String(v).trim();
 
 const findBestMatch = (targetLabel: string, systemKey: string, fileHeaders: string[]) => {
   const normTarget = normalizeHeader(targetLabel);
@@ -112,12 +121,13 @@ const findBestMatch = (targetLabel: string, systemKey: string, fileHeaders: stri
   if (match) return match;
 
   const aliases: Record<string, string[]> = {
-    receivedDate: ['date', 'entry', 'received', 'datereceived'],
+    rollNo: ['roll', 'rollno', 'id', 'reeliid', 'reelno'],
+    receivedDate: ['date', 'entry', 'received', 'datereceived', 'dateofreceived'],
     widthMm: ['width', 'wmm', 'widthmm'],
     lengthMeters: ['length', 'lmtr', 'mtr', 'lengthmtr'],
     paperCompany: ['company', 'mfr', 'supplier', 'papercompany', 'vendor'],
     paperType: ['type', 'substrate', 'material', 'papertype'],
-    lotNo: ['lot', 'batch', 'invoice', 'lotno'],
+    lotNo: ['lot', 'batch', 'invoice', 'lotno', 'lotnobatchno'],
     companyRollNo: ['parent', 'reel', 'mfrroll', 'companyrollno'],
     jobSize: ['jobsize', 'size'],
     status: ['inventory', 'rollstatus', 'status']
@@ -186,10 +196,13 @@ export default function StockImportPage() {
       try {
         const ab = evt.target?.result as ArrayBuffer;
         const wb = XLSX.read(ab, { type: 'array' });
+        
+        if (!wb.SheetNames.length) throw new Error("Spreadsheet contains no sheets.");
+        
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1 });
         
-        if (rawRows.length < 2) throw new Error("Spreadsheet has no data.");
+        if (rawRows.length < 2) throw new Error("Spreadsheet has no data rows.");
         
         const fileHeaders = (rawRows[0] as any[]).map(h => String(h || "").trim()).filter(h => h !== "");
         const rows = XLSX.utils.sheet_to_json(ws);
@@ -211,6 +224,10 @@ export default function StockImportPage() {
         showModal('ERROR', 'Parse Failed', err.message);
         setIsProcessing(false);
       }
+    };
+    reader.onerror = () => {
+      showModal('ERROR', 'File Read Error', 'Could not access the selected file.');
+      setIsProcessing(false);
     };
     reader.readAsArrayBuffer(file);
   }
@@ -239,19 +256,23 @@ export default function StockImportPage() {
             if (["widthMm", "lengthMeters", "gsm"].includes(key) && val <= 0) {
               reasons.push(`${FIELD_LABELS[key]} must be > 0`);
             }
-          } else if (key === "receivedDate") {
-            val = parseExcelDate(val);
+          } else if (key === "receivedDate" || key === "dateOfUsed") {
+            if (val) val = parseExcelDate(val);
           }
           mapped[key] = cleanForFirestore(val);
         });
 
+        // Mandatory check
         REQUIRED_FIELDS.forEach(f => {
-          if (!mapping[f] || mapped[f] === undefined || mapped[f] === "") {
+          if (!mapped[f] || mapped[f] === "") {
             reasons.push(`Missing mandatory field: ${FIELD_LABELS[f]}`);
           }
         });
 
-        if (!mapped.status) mapped.status = "Available";
+        // DEFAULT STATUS LOGIC: If missing or empty, default to "Available"
+        if (!mapped.status || mapped.status === "") {
+          mapped.status = "Available";
+        }
 
         if (reasons.length > 0) {
           errors.push({ index: globalIdx + 2, row, reasons });
@@ -275,10 +296,6 @@ export default function StockImportPage() {
     setProgress(0);
     
     try {
-      const counterRef = doc(firestore, 'counters', 'paper_roll');
-      const counterSnap = await getDoc(counterRef);
-      let currentSerial = counterSnap.exists() ? (counterSnap.data().current_number || 0) : 0;
-      
       const dataToImport = allowPartial 
         ? processedData.filter(d => d._errors.length === 0)
         : processedData;
@@ -291,8 +308,9 @@ export default function StockImportPage() {
         const chunk = dataToImport.slice(i, i + 500);
 
         chunk.forEach((d) => {
-          currentSerial++;
-          const rollId = `RL-${currentSerial.toString().padStart(4, '0')}`;
+          // KEY FIX: Use the rollNo from Excel as the document ID
+          const rollId = String(d.rollNo).trim();
+          if (!rollId) return; // Should be blocked by REQUIRED_FIELDS but safety first
           
           const final: any = {
             id: rollId,
@@ -317,10 +335,6 @@ export default function StockImportPage() {
           batch.set(doc(firestore, 'paper_stock', rollId), final);
           imported++;
         });
-
-        if (i + 500 >= total) {
-          batch.set(counterRef, { current_number: currentSerial }, { merge: true });
-        }
 
         await batch.commit();
         setProgress(Math.round(((i + chunk.length) / total) * 100));
@@ -421,7 +435,7 @@ export default function StockImportPage() {
             <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl"><Download className="h-10 w-10 text-primary" /></div>
             <div className="space-y-2 max-w-md mx-auto">
               <h3 className="text-xl font-black uppercase tracking-tight">Technical Data Preparation</h3>
-              <p className="text-xs text-muted-foreground font-medium">Use the 18-column grid including Roll Status. Sanitized import prevents registry conflicts.</p>
+              <p className="text-xs text-muted-foreground font-medium">Use the 18-column grid. Sanitized import preserves your existing Roll Numbers exactly as they are in Excel.</p>
             </div>
             <div className="flex gap-4 justify-center">
               <Button onClick={downloadTemplate} size="lg" className="h-14 px-8 rounded-xl font-black uppercase shadow-xl">Download ERP Template</Button>
@@ -445,7 +459,7 @@ export default function StockImportPage() {
                   <div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2"><FileUp className="h-10 w-10 text-primary" /></div>
                   <Label htmlFor="file-upload" className="cursor-pointer space-y-4 block">
                     <span className="text-2xl font-black text-primary underline underline-offset-8">Select inventory file</span>
-                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV (Max 5MB)</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV (Max 10MB)</p>
                     <Input id="file-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
                   </Label>
                 </>
@@ -465,7 +479,7 @@ export default function StockImportPage() {
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="max-h-[500px] overflow-y-auto scrollbar-thin">
+              <div className="max-h-[500px] overflow-y-auto industrial-scroll">
                 <Table>
                   <TableHeader className="bg-muted/30"><TableRow>
                     <TableHead className="font-black text-[10px] uppercase pl-8 py-4">System Field</TableHead>
@@ -483,7 +497,7 @@ export default function StockImportPage() {
                         <TableCell className="py-4">
                           <Select value={mapping[key]} onValueChange={(val) => setMapping({ ...mapping, [key]: val })}>
                             <SelectTrigger className={cn("h-10 text-xs font-bold border-2", mapping[key] ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200")}>
-                              <SelectValue placeholder="Select column..." />
+                              <SelectValue placeholder={key === 'status' ? "Optional (Default: Available)" : "Select column..."} />
                             </SelectTrigger>
                             <SelectContent>{headers.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>)}</SelectContent>
                           </Select>
@@ -513,6 +527,11 @@ export default function StockImportPage() {
                     <div className="p-4 bg-white/10 rounded-xl space-y-4">
                       <div className="flex justify-between items-center text-[10px] font-black uppercase"><span>Mapped</span><span>{Object.keys(mapping).length} / 18</span></div>
                       <Progress value={(Object.keys(mapping).length / 18) * 100} className="h-1.5 bg-white/20" />
+                    </div>
+                    <div className="text-[10px] font-medium leading-relaxed opacity-80">
+                      * Status defaults to <strong>Available</strong> if column is not mapped.
+                      <br />
+                      * Your <strong>Roll IDs</strong> from Excel will be preserved.
                     </div>
                     <Button onClick={startDataAnalysis} disabled={!REQUIRED_FIELDS.every(f => !!mapping[f])} className="w-full h-14 rounded-xl bg-white text-primary hover:bg-slate-50 font-black uppercase tracking-widest shadow-2xl transition-all">
                       Verify & Analyze <ChevronRight className="ml-2 h-4 w-4" />
@@ -550,16 +569,16 @@ export default function StockImportPage() {
               <div><CardTitle className="text-xs font-black uppercase tracking-widest">Integrity Review (Top 10 Rows)</CardTitle></div>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="overflow-x-auto scrollbar-thin">
+              <div className="overflow-x-auto industrial-scroll">
                 <Table className="min-w-[1800px]">
                   <TableHeader className="bg-muted/20"><TableRow>
-                    {Object.keys(FIELD_LABELS).map(key => <TableHead key={key} className="text-[9px] font-black uppercase">{FIELD_LABELS[key]}</TableHead>)}
+                    {Object.keys(FIELD_LABELS).map(key => <TableHead key={key} className="text-[9px] font-black uppercase text-center">{FIELD_LABELS[key]}</TableHead>)}
                   </TableRow></TableHeader>
                   <TableBody>
                     {processedData.slice(0, 10).map((d, i) => (
                       <TableRow key={i} className={cn("h-10", d._errors.length > 0 && "bg-destructive/5")}>
                         {Object.keys(FIELD_LABELS).map(key => (
-                          <TableCell key={key} className="text-[10px] font-medium border-r">
+                          <TableCell key={key} className="text-[10px] font-medium border-r text-center">
                             {key === 'status' ? (
                               <Badge className={cn("text-[8px] font-black h-4 uppercase", STATUS_OPTIONS.find(o => o.value === d[key])?.color || "bg-slate-500")}>
                                 {d[key] || "Available"}
@@ -595,7 +614,7 @@ export default function StockImportPage() {
             <div className="h-24 w-24 bg-emerald-500 rounded-full flex items-center justify-center mx-auto shadow-2xl animate-bounce"><CheckCircle2 className="text-white h-12 w-12" /></div>
             <div className="space-y-2">
               <h3 className="text-4xl font-black text-emerald-900 uppercase tracking-tighter">Inventory Synchronized</h3>
-              <p className="text-emerald-700 font-bold uppercase text-xs tracking-widest">Successfully ingested {summary?.imported} technical units.</p>
+              <p className="text-emerald-700 font-bold uppercase text-xs tracking-widest">Successfully ingested {summary?.imported} technical units with legacy IDs preserved.</p>
             </div>
             <div className="flex gap-4 justify-center pt-6">
               <Button onClick={() => router.push('/paper-stock')} size="lg" className="h-14 px-10 rounded-xl bg-emerald-600 font-black uppercase shadow-xl">View Stock Registry <ArrowRight className="ml-2 h-5 w-5" /></Button>
