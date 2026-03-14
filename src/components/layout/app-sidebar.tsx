@@ -1,4 +1,3 @@
-
 "use client"
 
 import { 
@@ -31,7 +30,8 @@ import {
   FileJson,
   ClipboardType,
   Boxes,
-  ShoppingBag
+  ShoppingBag,
+  Printer
 } from "lucide-react"
 import {
   Sidebar,
@@ -62,6 +62,7 @@ const masterGroup = {
     { name: 'Master Data', icon: Settings, href: '/master-data', permission: 'admin' as PermissionKey },
     { name: 'Stock Import & Export', icon: FileUp, href: '/stock-import', permission: 'admin' as PermissionKey },
     { name: 'User Management', icon: Users, href: '/users', permission: 'admin' as PermissionKey },
+    { name: 'Print Studio', icon: Printer, href: '/admin/print-studio', permission: 'printStudio' as PermissionKey },
     { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
     { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
   ]
