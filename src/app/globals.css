@@ -52,8 +52,8 @@
 }
 
 /* 
- * PROFESSIONAL DATA GRID SCROLLBARS 
- * Forced visibility and high-contrast dark theme
+ * MODERN INDUSTRIAL SCROLLBARS 
+ * Dark theme with forced visibility for technical grids
  */
 ::-webkit-scrollbar {
   width: 10px;
@@ -62,26 +62,28 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 10px;
+  background: #e5e5e5;
+  border-radius: 0px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569; /* Dark Gray */
-  border-radius: 10px;
-  border: 2px solid #f1f5f9;
+  background: #555;
+  border-radius: 6px;
+  border: 2px solid #e5e5e5;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary)); /* Primary Orange on hover */
+  background: #333;
 }
 
 /* Firefox Support */
 * {
-  scrollbar-width: auto;
-  scrollbar-color: #475569 #f1f5f9;
+  scrollbar-width: thin;
+  scrollbar-color: #555 #e5e5e5;
 }
 
+/* Ensure horizontal scroll is always active for sync */
 .custom-grid-container {
-  scrollbar-gutter: stable;
+  overflow-x: scroll !important;
+  overflow-y: scroll !important;
 }

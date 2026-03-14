@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
@@ -161,13 +160,25 @@ export default function PaperStockPage() {
   }
 
   // Column Visibility State
-  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {
-      rollNo: true,
-      status: true,
-    }
-    COLUMN_KEYS.forEach(col => initial[col.id] = true)
-    return initial
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+    rollNo: true,
+    status: true,
+    paperCompany: true,
+    paperType: true,
+    widthMm: true,
+    lengthMeters: true,
+    sqm: true,
+    gsm: true,
+    weightKg: true,
+    purchaseRate: true,
+    receivedDate: true,
+    dateOfUsed: true,
+    jobNo: true,
+    jobSize: true,
+    jobName: true,
+    lotNo: true,
+    companyRollNo: true,
+    remarks: true
   })
 
   useEffect(() => { 
@@ -719,16 +730,16 @@ export default function PaperStockPage() {
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl h-[calc(100vh-16rem)]">
-        {/* TOP DUMMY SCROLLBAR */}
+        {/* TOP DUMMY SCROLLBAR (ALWAYS VISIBLE) */}
         <div 
           ref={topScrollRef} 
           onScroll={handleTopScroll}
-          className="overflow-x-scroll overflow-y-hidden h-4 shrink-0 bg-slate-50 border-b custom-grid-container"
+          className="overflow-x-scroll h-4 shrink-0 bg-slate-50 border-b custom-grid-container"
         >
           <div className="h-full" style={{ width: '3200px' }} />
         </div>
 
-        {/* MAIN TABLE CONTAINER */}
+        {/* MAIN TABLE CONTAINER (FIXED HEADER & ALWAYS VISIBLE SCROLLBARS) */}
         <div 
           ref={tableContainerRef} 
           onScroll={handleTableScroll}
