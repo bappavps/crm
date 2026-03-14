@@ -79,11 +79,11 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
-  { value: "Main", label: "Main", color: "bg-zinc-900", rowBg: "bg-zinc-100/50" },
-  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50/60" },
-  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50/40" },
-  { value: "Job Assign", label: "Job Assign", color: "bg-indigo-600", rowBg: "bg-indigo-50/40" },
-  { value: "In Production", label: "In Production", color: "bg-blue-600", rowBg: "bg-blue-50/40" },
+  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50/80" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50/80" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50/80" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50/80" },
+  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50/80" },
 ];
 
 const COLUMN_KEYS = [
@@ -774,13 +774,13 @@ export default function PaperStockPage() {
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-10">
-                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[1px_0_0_#e2e8f0]">
+                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
                   <div className="flex items-center justify-center h-full">
                     <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                   </div>
                 </TableHead>
-                <TableHead className="w-[50px] text-center font-bold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[40] shadow-[1px_0_0_#e2e8f0]" />
+                <TableHead className="w-[50px] text-center font-bold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]" />
                 <SortableHeader label="Status" field="status" className="w-[120px]" />
                 <SortableHeader label="Paper Company" field="paperCompany" />
                 <SortableHeader label="Paper Type" field="paperType" />
@@ -798,7 +798,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Lot No / Batch No" field="lotNo" />
                 <SortableHeader label="Company Roll No" field="companyRollNo" />
                 <SortableHeader label="Remarks" field="remarks" />
-                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
+                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[180px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -806,15 +806,17 @@ export default function PaperStockPage() {
                 <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
                 const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-white" };
+                const rowBg = statusInfo.rowBg;
+                
                 return (
-                  <TableRow key={j.id} className={cn("h-10 group hover:brightness-95 transition-all text-center", statusInfo.rowBg)}>
-                    <TableCell className="text-center border-r border-b sticky left-0 z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
+                  <TableRow key={j.id} className={cn("h-10 group hover:brightness-95 transition-all text-center", rowBg)}>
+                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowBg)}>
                       <div className="flex items-center justify-center h-full">
                         <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                       </div>
                     </TableCell>
-                    <TableCell className="text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className="font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
+                    <TableCell className={cn("text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowBg)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowBg)}>{j.rollNo}</TableCell>
                     <TableCell className="text-center border-r border-b p-0">
                       <div className="flex items-center justify-center">
                         <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusInfo.color)}>{j.status || "Stock"}</span>
@@ -836,13 +838,13 @@ export default function PaperStockPage() {
                     {visibleColumns['lotNo'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[13px] border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic text-center truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
-                    <TableCell className="text-center border-b sticky right-0 z-10 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-500 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-5 w-5" /></Button>
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[180px] p-0", rowBg)}>
+                      <div className="flex items-center justify-center gap-1.5 px-2">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-indigo-600 hover:bg-indigo-50 transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-sky-600 hover:bg-sky-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-orange-600 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-5 w-5" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-700 hover:bg-slate-100" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-5 w-5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-5 w-5" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-rose-600 hover:bg-rose-50" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-5 w-5" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
