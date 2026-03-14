@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
 import { 
   Search, 
   Plus, 
@@ -635,7 +636,7 @@ export default function PaperStockPage() {
                 <div className="space-y-2 max-w-[60%]">
                   <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
                   <p className="text-3xl font-black leading-none truncate">{printingRoll?.paperType}</p>
-                  <p className="text-[12px] font-bold uppercase opacity-60 mt-4">Technical Reel ID</p>
+                  <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
                   <p className="text-6xl font-black tracking-tighter leading-none">{printingRoll?.rollNo}</p>
                 </div>
                 <div className="flex flex-col items-end gap-4">
