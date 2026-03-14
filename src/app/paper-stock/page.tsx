@@ -97,11 +97,11 @@ import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 const STATUS_OPTIONS = [
-  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
-  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50" },
-  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50" },
-  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50" },
-  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50" },
+  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-100" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-100" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-100" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-100" },
+  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-100" },
 ];
 
 const COLUMN_KEYS = [
@@ -416,7 +416,7 @@ export default function PaperStockPage() {
               {itemsLoading ? (
                 <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
-                const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-slate-50" };
+                const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-slate-100" };
                 const isHighlighted = highlightedId === j.id;
                 const canSlit = ["Main", "Stock", "Slitting"].includes(j.status);
                 
