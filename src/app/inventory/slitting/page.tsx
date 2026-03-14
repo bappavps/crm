@@ -1,134 +1,402 @@
 
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useMemo, useEffect, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Scissors, Plus, Loader2, ArrowRightLeft, RefreshCw, ListTodo, CheckCircle2, AlertTriangle, Sparkles, Clock } from "lucide-react"
 import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogFooter,
-  DialogDescription
-} from "@/components/ui/dialog"
-import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc, errorEmitter, FirestorePermissionError } from "@/firebase"
-import { collection, doc, query, where, getDocs, runTransaction, serverTimestamp, limit, orderBy } from "firebase/firestore"
+  Scissors, 
+  Plus, 
+  Loader2, 
+  Search, 
+  Trash2, 
+  Save, 
+  ArrowLeft, 
+  AlertTriangle, 
+  CheckCircle2, 
+  Package, 
+  Ruler, 
+  Briefcase,
+  History
+} from "lucide-react"
+import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { collection, doc, query, where, runTransaction, serverTimestamp, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { ActionModal, ModalType } from "@/components/action-modal"
 
-export default function SlittingPage() {
+interface SlitRun {
+  id: string;
+  jobNo: string;
+  widthMm: number;
+  parts: number;
+}
+
+function SlittingHubContent() {
   const { toast } = useToast()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialRollNo = searchParams.get('rollNo')
+  
   const { user } = useUser()
   const firestore = useFirestore()
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const [selectedJumboId, setSelectedJumboId] = useState<string | null>(null)
   const [isMounted, setIsMounted] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
+  const [searchQuery, setSearchQuery] = useState(initialRollNo || "")
+  const [selectedParent, setSelectedParent] = useState<any>(null)
+  const [slitRuns, setSlitRuns] = useState<SlitRun[]>([
+    { id: crypto.randomUUID(), jobNo: "", widthMm: 0, parts: 1 }
+  ])
+
+  const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string }>({ 
+    isOpen: false, type: 'SUCCESS', title: '' 
+  });
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  const adminDocRef = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return doc(firestore, 'adminUsers', user.uid);
-  }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  // Auto-fetch if rollNo is provided in URL
+  const rollsQuery = useMemoFirebase(() => {
+    if (!firestore || !initialRollNo) return null;
+    return query(collection(firestore, 'paper_stock'), where('rollNo', '==', initialRollNo), limit(1));
+  }, [firestore, initialRollNo]);
+  const { data: initialRollData } = useCollection(rollsQuery);
 
-  // Optimized Queries with strict limits to prevent Quota Exceeded
-  const jumboQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    // Only fetch In Stock jumbos to slit
-    return query(collection(firestore, 'paper_stock'), where('status', '==', 'Available'), limit(50));
-  }, [firestore, user])
+  useEffect(() => {
+    if (initialRollData && initialRollData.length > 0) {
+      setSelectedParent(initialRollData[0]);
+    }
+  }, [initialRollData]);
 
-  const slittedQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return query(collection(firestore, 'inventoryItems'), where("itemType", "==", "Slitted Roll"), limit(50));
-  }, [firestore, user])
-
-  const planningQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
-    return query(collection(firestore, 'jobs'), where("status", "==", "Approved"), limit(50));
-  }, [firestore, user])
-
-  const { data: jumbos, isLoading: jumbosLoading } = useCollection(jumboQuery)
-  const { data: slittedRolls, isLoading: itemsLoading } = useCollection(slittedQuery)
-  const { data: jobs } = useCollection(planningQuery)
-
-  const activeJumbos = jumbos || []
-  const waitingJobs = jobs || []
-
-  const handleSlittingConversion = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!firestore || !user || !selectedJobId || !selectedJumboId) return
-
-    setIsProcessing(true)
-    const selectedJumbo = activeJumbos.find(j => j.id === selectedJumboId)
-    const selectedJob = waitingJobs.find(j => j.id === selectedJobId)
-    
-    if (!selectedJumbo || !selectedJob) return;
-
-    runTransaction(firestore, async (transaction) => {
-      const jumboRef = doc(firestore, 'paper_stock', selectedJumboId)
-      const jobRef = doc(firestore, 'jobs', selectedJobId)
-      const slitRef = doc(collection(firestore, 'inventoryItems'))
-
-      transaction.update(jumboRef, { status: "Used", updatedAt: serverTimestamp() })
-      transaction.update(jobRef, { currentStage: "Production", status: "In Production", updatedAt: serverTimestamp() })
-      
-      transaction.set(slitRef, {
-        barcode: `SLIT-${selectedJumbo.rollNo}`,
-        itemType: "Slitted Roll",
-        status: "ASSIGNED",
-        assigned_job_id: selectedJob.jobNumber,
-        createdAt: serverTimestamp(),
-        createdById: user.uid
-      })
-    }).then(() => {
-      setIsProcessing(false)
-      toast({ title: "Conversion Complete" })
-      setIsDialogOpen(false)
-    }).catch(() => setIsProcessing(false))
+  const handleSearch = async () => {
+    if (!firestore || !searchQuery) return;
+    setIsProcessing(true);
+    try {
+      const q = query(collection(firestore, 'paper_stock'), where('rollNo', '==', searchQuery), limit(1));
+      const { getDocs } = await import('firebase/firestore');
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        toast({ variant: "destructive", title: "Roll Not Found", description: `ID ${searchQuery} does not exist in master registry.` });
+        setSelectedParent(null);
+      } else {
+        const data = { ...snap.docs[0].data(), id: snap.docs[0].id };
+        if (!["Main", "Stock", "Slitting"].includes(data.status)) {
+          toast({ variant: "destructive", title: "Invalid Status", description: `Roll status is ${data.status}. Only Main, Stock, or Slitting rolls can be slit.` });
+          setSelectedParent(null);
+        } else {
+          setSelectedParent(data);
+        }
+      }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Search Error" });
+    } finally {
+      setIsProcessing(false);
+    }
   }
 
-  if (!isMounted) return null
+  const addRun = () => {
+    setSlitRuns([...slitRuns, { id: crypto.randomUUID(), jobNo: "", widthMm: 0, parts: 1 }]);
+  }
+
+  const removeRun = (id: string) => {
+    if (slitRuns.length > 1) setSlitRuns(slitRuns.filter(r => r.id !== id));
+  }
+
+  const updateRun = (id: string, field: keyof SlitRun, value: any) => {
+    setSlitRuns(slitRuns.map(r => r.id === id ? { ...r, [field]: value } : r));
+  }
+
+  const calculation = useMemo(() => {
+    if (!selectedParent) return { usedWidth: 0, remainder: 0, isValid: true };
+    const usedWidth = slitRuns.reduce((acc, r) => acc + (Number(r.widthMm) * Number(r.parts)), 0);
+    const remainder = Number(selectedParent.widthMm) - usedWidth;
+    return { usedWidth, remainder, isValid: remainder >= 0 };
+  }, [selectedParent, slitRuns]);
+
+  const handleExecuteSlitting = async () => {
+    if (!firestore || !user || !selectedParent || !calculation.isValid) return;
+    setIsProcessing(true);
+
+    try {
+      await runTransaction(firestore, async (transaction) => {
+        // 1. Consume Parent Roll
+        const parentRef = doc(firestore, 'paper_stock', selectedParent.id);
+        transaction.update(parentRef, { 
+          status: "Consumed", 
+          dateOfUsed: new Date().toISOString().split('T')[0],
+          updatedAt: serverTimestamp() 
+        });
+
+        // 2. Create Child Rolls for each Run
+        let childCount = 1;
+        for (const run of slitRuns) {
+          for (let i = 0; i < run.parts; i++) {
+            const childId = `${selectedParent.rollNo}/${childCount}`;
+            const childRef = doc(firestore, 'paper_stock', childId);
+            
+            transaction.set(childRef, {
+              ...selectedParent,
+              id: childId,
+              rollNo: childId,
+              widthMm: Number(run.widthMm),
+              status: "Job Assign",
+              jobNo: run.jobNo,
+              parentRollNo: selectedParent.rollNo,
+              sqm: Number(((Number(run.widthMm) / 1000) * Number(selectedParent.lengthMeters)).toFixed(2)),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              createdById: user.uid
+            });
+            childCount++;
+          }
+        }
+
+        // 3. Handle Remainder if > 0
+        if (calculation.remainder > 0) {
+          const remainderId = `${selectedParent.rollNo}/R`;
+          const remainderRef = doc(firestore, 'paper_stock', remainderId);
+          transaction.set(remainderRef, {
+            ...selectedParent,
+            id: remainderId,
+            rollNo: remainderId,
+            widthMm: calculation.remainder,
+            status: "Stock",
+            jobNo: "",
+            parentRollNo: selectedParent.rollNo,
+            sqm: Number(((calculation.remainder / 1000) * Number(selectedParent.lengthMeters)).toFixed(2)),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            createdById: user.uid,
+            remarks: `Remainder from slitting ${selectedParent.rollNo}`
+          });
+        }
+      });
+
+      setModal({ 
+        isOpen: true, 
+        type: 'SUCCESS', 
+        title: 'Slitting Complete', 
+        description: `Successfully converted ${selectedParent.rollNo} into ${slitRuns.reduce((a,b)=>a+b.parts, 0)} child rolls and ${calculation.remainder > 0 ? '1 remainder.' : '0 remainders.'}` 
+      });
+      setSelectedParent(null);
+      setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", widthMm: 0, parts: 1 }]);
+      setSearchQuery("");
+    } catch (e: any) {
+      setModal({ isOpen: true, type: 'ERROR', title: 'Transaction Failed', description: e.message });
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  if (!isMounted) return null;
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-6xl mx-auto space-y-8 pb-20 font-sans animate-in fade-in duration-500">
+      <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
+
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-primary">Technical Slitting</h2>
-          <p className="text-muted-foreground">Limited view to maintain free tier quotas.</p>
+        <div className="space-y-1">
+          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Industrial Slitting Hub</h2>
+          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Precision width conversion and job allocation engine.</p>
         </div>
-        <Button onClick={() => setIsDialogOpen(true)}><Scissors className="mr-2 h-4 w-4" /> Start Slitting</Button>
+        <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-black text-[10px] uppercase">
+          <ArrowLeft className="mr-2 h-3 w-3" /> Back to Registry
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card><CardHeader><CardTitle className="text-sm font-bold uppercase">Recent Assignments</CardTitle></CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader><TableRow><TableHead>Barcode</TableHead><TableHead>Job</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {itemsLoading ? (
-                  <TableRow><TableCell colSpan={3} className="text-center py-10"><Loader2 className="animate-spin" /></TableCell></TableRow>
-                ) : slittedRolls?.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell className="font-mono text-xs">{s.barcode}</TableCell>
-                    <TableCell className="text-xs font-bold">{s.assigned_job_id}</TableCell>
-                    <TableCell><Badge variant="outline">{s.status}</Badge></TableCell>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-1 space-y-6">
+          <Card className="shadow-xl border-none rounded-2xl overflow-hidden">
+            <CardHeader className="bg-slate-900 text-white p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                <Search className="h-4 w-4 text-primary" /> Source Roll Selection
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-6">
+              <div className="flex gap-2">
+                <Input 
+                  placeholder="Scan or Enter Roll ID..." 
+                  className="h-12 font-black uppercase rounded-xl border-2" 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                />
+                <Button onClick={handleSearch} disabled={isProcessing} className="h-12 w-12 rounded-xl bg-slate-900 text-white shrink-0">
+                  {isProcessing ? <Loader2 className="animate-spin h-5 w-5" /> : <Search className="h-5 w-5" />}
+                </Button>
+              </div>
+
+              {selectedParent ? (
+                <div className="space-y-4 animate-in slide-in-from-top-2">
+                  <div className="p-4 bg-primary/5 rounded-2xl border-2 border-primary/20 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <Badge className="bg-purple-600 font-black">{selectedParent.rollNo}</Badge>
+                      <Badge variant="outline" className="font-black uppercase">{selectedParent.status}</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-[10px] font-black uppercase opacity-50">Substrate</Label>
+                        <p className="text-sm font-bold truncate">{selectedParent.paperType}</p>
+                      </div>
+                      <div>
+                        <Label className="text-[10px] font-black uppercase opacity-50">Mfr</Label>
+                        <p className="text-sm font-bold truncate">{selectedParent.paperCompany}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-primary/10">
+                      <div className="flex items-center gap-2">
+                        <Ruler className="h-4 w-4 text-primary" />
+                        <span className="text-lg font-black">{selectedParent.widthMm}<small className="text-[10px] ml-1">MM</small></span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <ArrowRightLeft className="h-4 w-4 text-primary" />
+                        <span className="text-lg font-black">{selectedParent.lengthMeters}<small className="text-[10px] ml-1">MTR</small></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-12 text-center space-y-4 border-4 border-dashed rounded-3xl opacity-30">
+                  <Package className="h-12 w-12 mx-auto" />
+                  <p className="text-[10px] font-black uppercase tracking-widest">No Roll Loaded</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className={cn("shadow-2xl border-none rounded-2xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[10px] font-black uppercase tracking-widest opacity-70">Slitting Analytics</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-6 py-4">
+              <div className="flex justify-between items-end">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black uppercase opacity-60">Total Conversion</p>
+                  <p className="text-4xl font-black tracking-tighter">{calculation.usedWidth} <small className="text-xs">MM</small></p>
+                </div>
+                <div className="text-right space-y-1">
+                  <p className="text-[10px] font-black uppercase opacity-60">Stock Remainder</p>
+                  <p className={cn("text-2xl font-black tracking-tighter", calculation.remainder < 0 ? "text-rose-200" : "text-emerald-400")}>{calculation.remainder} <small className="text-xs">MM</small></p>
+                </div>
+              </div>
+              
+              {!calculation.isValid && (
+                <div className="bg-white/10 p-3 rounded-xl flex items-center gap-3 animate-pulse">
+                  <AlertTriangle className="h-5 w-5 text-rose-200" />
+                  <p className="text-[10px] font-black uppercase leading-tight">Conversion exceeds parent width. Reduce parts or width.</p>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="p-0 border-t border-white/10">
+              <Button 
+                onClick={handleExecuteSlitting} 
+                disabled={!selectedParent || !calculation.isValid || isProcessing || calculation.usedWidth === 0} 
+                className={cn("w-full h-16 rounded-none font-black uppercase tracking-[0.25em] transition-all", calculation.isValid ? "bg-primary hover:bg-primary/90" : "bg-rose-700")}
+              >
+                {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : <Scissors className="mr-3 h-5 w-5" />}
+                Execute Slit Run
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="shadow-xl border-none rounded-2xl overflow-hidden min-h-[500px] flex flex-col">
+            <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between p-6">
+              <div className="space-y-1">
+                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-primary" /> Run Specification Table
+                </CardTitle>
+                <p className="text-[9px] font-black text-slate-400 uppercase">Define target widths and job assignments for conversion.</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={addRun} className="h-9 px-4 font-black uppercase text-[10px] rounded-xl border-2">
+                <Plus className="h-4 w-4 mr-2" /> Add Part
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0 flex-1 overflow-auto industrial-scroll">
+              <Table>
+                <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
+                  <TableRow>
+                    <TableHead className="font-black text-[10px] uppercase pl-8">Job ID / Run Ref</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-center w-[150px]">Part Width (MM)</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-center w-[120px]">Qty (Parts)</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-right w-[150px]">Total Width</TableHead>
+                    <TableHead className="w-20 pr-8"></TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent></Card>
+                </TableHeader>
+                <TableBody>
+                  {slitRuns.map((run, idx) => (
+                    <TableRow key={run.id} className="hover:bg-slate-50/50 h-16 group">
+                      <TableCell className="pl-8">
+                        <Input 
+                          placeholder="e.g. JOB-4501" 
+                          className="h-10 font-bold uppercase border-none bg-slate-100/50 rounded-lg text-sm" 
+                          value={run.jobNo} 
+                          onChange={e => updateRun(run.id, 'jobNo', e.target.value)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center">
+                          <Input 
+                            type="number" 
+                            className="h-10 w-24 text-center font-black border-2 border-slate-200 rounded-lg" 
+                            value={run.widthMm || ""} 
+                            onChange={e => updateRun(run.id, 'widthMm', Number(e.target.value))}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center">
+                          <Input 
+                            type="number" 
+                            className="h-10 w-16 text-center font-black border-2 border-slate-200 rounded-lg" 
+                            value={run.parts || ""} 
+                            onChange={e => updateRun(run.id, 'parts', Number(e.target.value))}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className="text-sm font-black text-slate-400 group-hover:text-primary transition-colors">
+                          {Number(run.widthMm) * Number(run.parts)} MM
+                        </span>
+                      </TableCell>
+                      <TableCell className="pr-8 text-right">
+                        <Button variant="ghost" size="icon" onClick={() => removeRun(run.id)} className="h-8 w-8 text-slate-300 hover:text-rose-500 transition-colors">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+            <CardFooter className="bg-slate-50 p-6 border-t flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white border-2 rounded-xl flex items-center gap-3">
+                  <History className="h-4 w-4 text-slate-400" />
+                  <span className="text-[10px] font-black uppercase text-slate-500">Derivative Sequence: Auto-Increment (/1, /2...)</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className={cn("h-5 w-5 transition-colors", calculation.isValid && selectedParent ? "text-emerald-500" : "text-slate-200")} />
+                <span className="text-[10px] font-black uppercase text-slate-400">Integrity Verified</span>
+              </div>
+            </CardFooter>
+          </Card>
+        </div>
       </div>
     </div>
+  )
+}
+
+export default function SlittingPage() {
+  return (
+    <Suspense fallback={<div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto" /></div>}>
+      <SlittingHubContent />
+    </Suspense>
   )
 }
