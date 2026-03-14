@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -143,7 +143,24 @@ export default function PaperStockPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
 
-  // Column Visibility State - Initialize with default values, load from localStorage in useEffect
+  // REFS FOR DUAL SCROLLBAR SYNC
+  const topScrollRef = useRef<HTMLDivElement>(null)
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+
+  // Sync scroll positions
+  const handleTopScroll = () => {
+    if (topScrollRef.current && tableContainerRef.current) {
+      tableContainerRef.current.scrollLeft = topScrollRef.current.scrollLeft
+    }
+  }
+
+  const handleTableScroll = () => {
+    if (topScrollRef.current && tableContainerRef.current) {
+      topScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft
+    }
+  }
+
+  // Column Visibility State
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {
       rollNo: true,
@@ -701,8 +718,22 @@ export default function PaperStockPage() {
         <Button variant="ghost" size="icon" className="h-9 w-9 text-white hover:bg-white/20 rounded-full" onClick={() => handleOpenDialog()}><Plus className="h-5 w-5" /></Button>
       </div>
 
-      <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl h-[calc(100vh-14rem)]">
-        <div className="flex-1 overflow-auto scrollbar-thin">
+      <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl h-[calc(100vh-16rem)]">
+        {/* TOP DUMMY SCROLLBAR */}
+        <div 
+          ref={topScrollRef} 
+          onScroll={handleTopScroll}
+          className="overflow-x-scroll overflow-y-hidden h-4 shrink-0 bg-slate-50 border-b custom-grid-container"
+        >
+          <div className="h-full" style={{ width: '3200px' }} />
+        </div>
+
+        {/* MAIN TABLE CONTAINER */}
+        <div 
+          ref={tableContainerRef} 
+          onScroll={handleTableScroll}
+          className="flex-1 overflow-x-scroll overflow-y-scroll custom-grid-container"
+        >
           <Table className="border-separate border-spacing-0 min-w-[3200px]">
             <TableHeader className="sticky top-0 z-40 bg-slate-50 border-b shadow-sm">
               <TableRow className="h-9">

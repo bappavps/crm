@@ -51,16 +51,37 @@
   --sidebar-width-icon: 3rem;
 }
 
-/* Custom scrollbar styling for a premium ERP feel */
+/* 
+ * PROFESSIONAL DATA GRID SCROLLBARS 
+ * Forced visibility and high-contrast dark theme
+ */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
+  display: block !important;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: #f1f5f9;
+  border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/20 rounded-full hover:bg-muted-foreground/40 transition-colors;
+  background: #475569; /* Dark Gray */
+  border-radius: 10px;
+  border: 2px solid #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary)); /* Primary Orange on hover */
+}
+
+/* Firefox Support */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: #475569 #f1f5f9;
+}
+
+.custom-grid-container {
+  scrollbar-gutter: stable;
 }
