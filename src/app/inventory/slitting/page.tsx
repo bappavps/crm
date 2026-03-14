@@ -38,6 +38,8 @@ interface SlitRun {
   parts: number;
 }
 
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
 function SlittingHubContent() {
   const { toast } = useToast()
   const router = useRouter()
@@ -133,39 +135,45 @@ function SlittingHubContent() {
         });
 
         // 2. Create Child Rolls for each Run
-        let childCount = 1;
+        let childIdx = 0;
         for (const run of slitRuns) {
           for (let i = 0; i < run.parts; i++) {
-            const childId = `${selectedParent.rollNo}/${childCount}`;
+            // Document IDs cannot contain slashes. Using Dash as requested.
+            const char = ALPHABET[childIdx % 26];
+            const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+            const childId = `${selectedParent.rollNo}-${suffix}`;
             const childRef = doc(firestore, 'paper_stock', childId);
             
+            // Logic for Status: If Job Assigned -> Job Assign, else Slitting
+            const childStatus = run.jobNo ? "Job Assign" : "Slitting";
+
             transaction.set(childRef, {
               ...selectedParent,
               id: childId,
               rollNo: childId,
               widthMm: Number(run.widthMm),
-              status: "Job Assign",
-              jobNo: run.jobNo,
+              status: childStatus,
+              jobNo: run.jobNo || "",
               parentRollNo: selectedParent.rollNo,
               sqm: Number(((Number(run.widthMm) / 1000) * Number(selectedParent.lengthMeters)).toFixed(2)),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               createdById: user.uid
             });
-            childCount++;
+            childIdx++;
           }
         }
 
         // 3. Handle Remainder if > 0
         if (calculation.remainder > 0) {
-          const remainderId = `${selectedParent.rollNo}/R`;
+          const remainderId = `${selectedParent.rollNo}-R`;
           const remainderRef = doc(firestore, 'paper_stock', remainderId);
           transaction.set(remainderRef, {
             ...selectedParent,
             id: remainderId,
             rollNo: remainderId,
             widthMm: calculation.remainder,
-            status: "Stock",
+            status: "Stock", // Remainders go back to stock
             jobNo: "",
             parentRollNo: selectedParent.rollNo,
             sqm: Number(((calculation.remainder / 1000) * Number(selectedParent.lengthMeters)).toFixed(2)),
@@ -181,7 +189,7 @@ function SlittingHubContent() {
         isOpen: true, 
         type: 'SUCCESS', 
         title: 'Slitting Complete', 
-        description: `Successfully converted ${selectedParent.rollNo} into ${slitRuns.reduce((a,b)=>a+b.parts, 0)} child rolls and ${calculation.remainder > 0 ? '1 remainder.' : '0 remainders.'}` 
+        description: `Converted ${selectedParent.rollNo} into ${slitRuns.reduce((a,b)=>a+b.parts, 0)} child rolls. ID format changed to Dash (-) to resolve system error.` 
       });
       setSelectedParent(null);
       setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", widthMm: 0, parts: 1 }]);
@@ -379,7 +387,7 @@ function SlittingHubContent() {
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white border-2 rounded-xl flex items-center gap-3">
                   <History className="h-4 w-4 text-slate-400" />
-                  <span className="text-[10px] font-black uppercase text-slate-500">Derivative Sequence: Auto-Increment (/1, /2...)</span>
+                  <span className="text-[10px] font-black uppercase text-slate-500">Naming logic: Dash (-) + Alphabet (-A, -B...)</span>
                 </div>
               </div>
               <div className="flex items-center gap-3">

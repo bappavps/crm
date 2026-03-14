@@ -27,12 +27,11 @@ export default function RollSettingsPage() {
     subChildType: "number",
     separator: "-",
     barcodePrefix: "BC-",
-    trackingYear: 2026 // Static default to avoid hydration mismatch
+    trackingYear: 2026 
   })
 
   useEffect(() => {
     setIsMounted(true)
-    // Update tracking year to current once on client mount if not already loaded from settings
     setFormValues(prev => ({ ...prev, trackingYear: new Date().getFullYear() }))
   }, [])
 
@@ -243,7 +242,7 @@ export default function RollSettingsPage() {
               </div>
 
               <div className="text-xs text-muted-foreground italic leading-relaxed">
-                * Previews update instantly. The numbering system respects your start number ({formValues.startNumber}) and handles separators and prefix types dynamically.
+                * System logic enforces dash (-) to prevent database errors. Child IDs will alternate letters (-A, -B...).
               </div>
             </CardContent>
           </Card>
