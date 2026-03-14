@@ -59,17 +59,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import {
-  Tooltip,
-  TooltipProvider,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
@@ -78,7 +67,6 @@ import {
   limit, 
   serverTimestamp,
   runTransaction,
-  writeBatch,
   deleteDoc,
   updateDoc,
   getDoc
@@ -480,7 +468,7 @@ export default function PaperStockPage() {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
     return (
-      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100 p-0 border-b z-30", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)}>
+      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-100 border-b z-30 sticky top-0 bg-white", isActive && "text-primary bg-primary/5", className)} onClick={() => requestSort(field)} style={{ zIndex: 50 }}>
         <div className="flex items-center justify-center gap-1 h-9">
           <span className="font-black text-[10px] uppercase leading-none">{label}</span>
           {isActive ? (
@@ -503,7 +491,7 @@ export default function PaperStockPage() {
   if (!isMounted) return null;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-10rem)] space-y-4 font-sans">
+    <div className="flex flex-col h-full space-y-4 font-sans">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} isProcessing={isProcessing} />
 
       <div className="bg-white p-4 rounded-2xl border shadow-sm space-y-4 px-6 shrink-0 border-primary/10">
@@ -558,6 +546,10 @@ export default function PaperStockPage() {
         <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-50">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
           <MultiSelectFilter label="Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
+          <MultiSelectFilter label="Material Type" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
+          <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
           <MultiSelectFilter label="GSM" field="gsm" options={getUniqueOptions('gsm')} />
           <MultiSelectFilter label="BF" field="bf" options={getUniqueOptions('bf')} />
           <MultiSelectFilter label="Shade" field="shade" options={getUniqueOptions('shade')} />
@@ -573,13 +565,13 @@ export default function PaperStockPage() {
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
         <div className="flex-1 overflow-x-scroll overflow-y-scroll max-h-[600px] relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
-            <TableHeader className="sticky top-0 z-40">
+            <TableHeader className="sticky top-0 z-50">
               <TableRow className="h-9 bg-white">
-                <TableHead className="w-[50px] text-center border-r border-b sticky left-0 bg-white z-50 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
+                <TableHead className="w-[50px] text-center border-r border-b sticky left-0 bg-white z-[60] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky left-[50px] bg-white z-50 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky left-[110px] bg-white z-50 shadow-[2px_0_5px_rgba(0,0,0,0.05)]" />
+                <TableHead className="w-[60px] text-center font-black text-[10px] uppercase border-r border-b sticky left-[50px] bg-white z-[60] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky left-[110px] bg-white z-[60] shadow-[2px_0_5px_rgba(0,0,0,0.05)]" />
                 <SortableHeader label="Status" field="status" className="w-[140px] border-r" />
                 <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
                 <SortableHeader label="Paper Type" field="paperType" className="border-r" />
@@ -595,7 +587,7 @@ export default function PaperStockPage() {
                 <SortableHeader label="Job No" field="jobNo" className="border-r" />
                 <SortableHeader label="Job Name" field="jobName" className="border-r" />
                 <SortableHeader label="Lot No" field="lotNo" className="border-r" />
-                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-white z-50 border-l border-b shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
+                <TableHead className="text-center font-black text-[10px] uppercase sticky right-0 bg-white z-[60] border-l border-b shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -657,8 +649,6 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* --- REUSED DIALOGS (VIEW, PRINT, ADD/EDIT) --- */}
-      {/* (MODALS KEPT AS PER PREVIOUS STABLE CODE TO ENSURE NO FEATURE BREAKAGE) */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[700px] p-0 border-none rounded-2xl shadow-3xl">
           <DialogHeader className="p-6 bg-slate-50 border-b">
