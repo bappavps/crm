@@ -128,27 +128,6 @@ const COLUMN_KEYS = [
   { id: 'remarks', label: 'Remarks' },
 ];
 
-const FIELD_LABELS: Record<string, string> = {
-  rollNo: "Roll No",
-  status: "Status",
-  paperCompany: "Paper Company",
-  paperType: "Paper Type",
-  widthMm: "Width (MM)",
-  lengthMeters: "Length (MTR)",
-  sqm: "SQM",
-  gsm: "GSM",
-  weightKg: "Weight (KG)",
-  purchaseRate: "Purchase Rate",
-  receivedDate: "Date of Received",
-  dateOfUsed: "Date of Used",
-  jobNo: "Job No",
-  jobSize: "Job Size",
-  jobName: "Job Name",
-  lotNo: "Lot No / Batch No",
-  companyRollNo: "Company Roll No",
-  remarks: "Remarks"
-};
-
 type SortDirection = 'asc' | 'desc' | null;
 
 interface SortConfig {
@@ -160,7 +139,6 @@ export default function PaperStockPage() {
   const { user } = useUser()
   const router = useRouter()
   const firestore = useFirestore()
-  const { hasPermission } = usePermissions()
   
   const [isMounted, setIsMounted] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -197,13 +175,12 @@ export default function PaperStockPage() {
     if (isMounted) localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
   }, [visibleColumns, isMounted])
 
-  // Scroll to highlighted row
   useEffect(() => {
     if (highlightedId && isMounted) {
       const el = document.getElementById(`row-${highlightedId}`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => setHighlightedId(null), 5000); // Remove pulse after 5s
+        setTimeout(() => setHighlightedId(null), 5000);
       }
     }
   }, [highlightedId, isMounted]);
@@ -257,20 +234,6 @@ export default function PaperStockPage() {
       for (const cat of categories) {
         if (filters[cat]?.length > 0 && !filters[cat].includes(String(row[cat] || ""))) return false;
       }
-      const numericRanges = [
-        { key: 'widthMm', min: 'widthMin', max: 'widthMax' }, { key: 'lengthMeters', min: 'lengthMin', max: 'lengthMax' },
-        { key: 'sqm', min: 'sqmMin', max: 'sqmMax' }, { key: 'gsm', min: 'gsmMin', max: 'gsmMax' },
-        { key: 'weightKg', min: 'weightMin', max: 'weightMax' }, { key: 'purchaseRate', min: 'rateMin', max: 'rateMax' }
-      ];
-      for (const r of numericRanges) {
-        const val = Number(row[r.key] || 0);
-        if (filters[r.min] && val < Number(filters[r.min])) return false;
-        if (filters[r.max] && val > Number(filters[r.max])) return false;
-      }
-      if (filters.receivedFrom && (row.receivedDate || "") < filters.receivedFrom) return false;
-      if (filters.receivedTo && (row.receivedDate || "") > filters.receivedTo) return false;
-      if (filters.usedFrom && (row.dateOfUsed || "") < filters.usedFrom) return false;
-      if (filters.usedTo && (row.dateOfUsed || "") > filters.usedTo) return false;
       return true;
     });
 
@@ -302,9 +265,9 @@ export default function PaperStockPage() {
       setEditingRoll(roll);
       setFormData({ ...formData, ...roll });
     } else {
-      let nextRollNo = "RL-0001";
+      let nextRollNo = "T-1001";
       if (rolls && rolls.length > 0) {
-        let maxNum = -1; let bestPrefix = "RL-";
+        let maxNum = -1; let bestPrefix = "T-";
         rolls.forEach(r => {
           const match = String(r.rollNo || "").match(/^(.*?)(\d+)$/);
           if (match) {
@@ -312,7 +275,7 @@ export default function PaperStockPage() {
             if (num > maxNum) { maxNum = num; bestPrefix = match[1]; }
           }
         });
-        if (maxNum !== -1) nextRollNo = `${bestPrefix}${(maxNum + 1).toString().padStart(4, '0')}`;
+        if (maxNum !== -1) nextRollNo = `${bestPrefix}${(maxNum + 1).toString()}`;
       }
       setEditingRoll(null);
       setFormData({
@@ -361,28 +324,14 @@ export default function PaperStockPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
       scanner.render((decodedText) => {
-        try {
-          const data = JSON.parse(decodedText);
-          const rollId = data.roll || decodedText;
-          const match = rolls?.find(r => r.rollNo === rollId);
-          if (match) {
-            setHighlightedId(match.id);
-            setViewingRoll(match);
-            setIsViewOpen(true);
-            scanner.clear();
-            setIsScannerOpen(false);
-          } else {
-            alert("Roll not found in registry: " + rollId);
-          }
-        } catch (e) {
-          const match = rolls?.find(r => r.rollNo === decodedText);
-          if (match) {
-            setHighlightedId(match.id);
-            setViewingRoll(match);
-            setIsViewOpen(true);
-            scanner.clear();
-            setIsScannerOpen(false);
-          }
+        const rollId = decodedText;
+        const match = rolls?.find(r => r.rollNo === rollId);
+        if (match) {
+          setHighlightedId(match.id);
+          setViewingRoll(match);
+          setIsViewOpen(true);
+          scanner.clear();
+          setIsScannerOpen(false);
         }
       }, (error) => {});
     }, 500);
@@ -431,8 +380,6 @@ export default function PaperStockPage() {
     );
   };
 
-  if (!isMounted) return null;
-
   return (
     <div className="flex flex-col h-full space-y-4 font-sans animate-in fade-in duration-500 pb-20">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
@@ -468,10 +415,14 @@ export default function PaperStockPage() {
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" onClick={() => { const ws = XLSX.utils.json_to_sheet(filteredRows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_'))))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stock"); XLSX.writeFile(wb, "Stock_Export.xlsx"); }} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl hover:bg-emerald-50 text-emerald-700">
+            <Button variant="outline" size="sm" onClick={() => { const ws = XLSX.utils.json_to_sheet(filteredRows.map(r => {
+              const row: any = {};
+              COLUMN_KEYS.forEach(col => row[col.label] = r[col.id]);
+              return row;
+            })); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stock"); XLSX.writeFile(wb, "Stock_Export.xlsx"); }} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl hover:bg-emerald-50 text-emerald-700">
               <FileDown className="h-4 w-4" /> Export Stock
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => { setFilters({ search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [], widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "", receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: "" }); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setFilters({ search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [] }); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
           </div>
         </div>
         
@@ -538,7 +489,12 @@ export default function PaperStockPage() {
                 const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-white" };
                 const isHighlighted = highlightedId === j.id;
                 return (
-                  <TableRow id={`row-${j.id}`} key={j.id} className={cn("h-12 group transition-all text-center", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")}>
+                  <TableRow 
+                    id={`row-${j.id}`} 
+                    key={j.id} 
+                    onDoubleClick={() => handleOpenDialog(j)}
+                    className={cn("h-12 group transition-all text-center cursor-pointer select-none", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")}
+                  >
                     <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
@@ -562,11 +518,11 @@ export default function PaperStockPage() {
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
                     <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[200px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => { if(confirm('Delete?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(j); }}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); router.push(`/inventory/slitting?rollId=${j.id}`); }}><Scissors className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); if(confirm('Delete?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -596,7 +552,7 @@ export default function PaperStockPage() {
 
       {/* TECHNICAL PROFILE MODAL */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100] animate-in zoom-in-95 duration-200">
+        <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100]">
           <DialogHeader className="p-8 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-white/5">
             <div className="space-y-1">
               <DialogTitle className="uppercase font-black text-xl flex items-center gap-3 tracking-tighter">
@@ -695,31 +651,31 @@ export default function PaperStockPage() {
 
       {/* THERMAL PRINT MODAL */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0 border-none shadow-3xl rounded-3xl z-[150] overflow-hidden">
+        <DialogContent className="sm:max-w-[600px] p-0 border-none shadow-3xl rounded-3xl z-[150] overflow-hidden">
           <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
             <h3 className="text-xs font-black uppercase tracking-widest">Thermal Print Preview (150x100mm)</h3>
             <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-4 w-4" /></Button>
           </div>
           
-          <div className="p-8 bg-slate-100 flex justify-center">
-            <div id="thermal-label" className="bg-white border-4 border-black p-6 w-[150mm] h-[100mm] shadow-2xl flex flex-col text-black font-sans box-border overflow-hidden">
-              <div className="text-center border-b-2 border-black pb-2 mb-4 shrink-0">
+          <div className="p-12 bg-slate-100 flex justify-center overflow-hidden">
+            <div id="thermal-label" className="bg-white border-[4px] border-black p-8 w-[150mm] h-[100mm] shadow-2xl flex flex-col text-black font-sans box-border overflow-hidden relative">
+              <div className="text-center border-b-[2px] border-black pb-3 mb-4 shrink-0">
                 <h1 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h1>
               </div>
               
-              <div className="flex-1 flex flex-col justify-between">
+              <div className="flex-1 flex flex-col justify-between overflow-hidden">
                 <div className="text-center space-y-1">
                   <p className="text-[10px] font-bold uppercase opacity-70">Item Name</p>
-                  <p className="text-lg font-black uppercase tracking-tight">{printingRoll?.paperType}</p>
+                  <p className="text-xl font-black uppercase tracking-tight truncate">{printingRoll?.paperType}</p>
                 </div>
 
-                <div className="text-center py-2 bg-black/5 rounded-lg border-2 border-black/10">
+                <div className="text-center py-2 bg-black/5 rounded-lg border-[2px] border-black/10">
                   <p className="text-[10px] font-black uppercase opacity-60">TECHNICAL REEL ID</p>
                   <p className="text-5xl font-black tracking-tighter leading-none">{printingRoll?.rollNo}</p>
                 </div>
 
-                <div className="flex items-center justify-between gap-4 py-4">
-                  <div className="p-2 border-2 border-black rounded flex items-center justify-center bg-white">
+                <div className="flex items-center justify-between gap-6 py-4 px-2">
+                  <div className="p-2 border-[2px] border-black rounded flex items-center justify-center bg-white shrink-0">
                     {printingRoll && (
                       <QRCodeSVG 
                         value={JSON.stringify({
@@ -729,18 +685,18 @@ export default function PaperStockPage() {
                           gsm: printingRoll.gsm,
                           length: printingRoll.lengthMeters
                         })} 
-                        size={80}
+                        size={90}
                         level="H"
                       />
                     )}
                   </div>
-                  <div className="flex-1 flex flex-col items-center">
+                  <div className="flex-1 flex flex-col items-center justify-center overflow-hidden">
                     {printingRoll && (
                       <Barcode 
                         value={printingRoll.rollNo} 
-                        width={1.5} 
-                        height={50} 
-                        fontSize={10} 
+                        width={1.8} 
+                        height={60} 
+                        fontSize={12} 
                         margin={0} 
                         format="CODE128"
                       />
@@ -748,29 +704,29 @@ export default function PaperStockPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm border-t-2 border-black pt-3">
+                <div className="grid grid-cols-2 gap-x-10 gap-y-1.5 text-sm border-t-[2px] border-black pt-4">
                   <div className="flex justify-between">
-                    <span className="font-bold uppercase text-[10px]">Width:</span>
+                    <span className="font-bold uppercase text-[9px]">Width:</span>
                     <span className="font-black">{printingRoll?.widthMm} mm</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="font-bold uppercase text-[10px]">Company:</span>
-                    <span className="font-black uppercase">{printingRoll?.paperCompany}</span>
+                    <span className="font-bold uppercase text-[9px]">Company:</span>
+                    <span className="font-black uppercase truncate">{printingRoll?.paperCompany}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="font-bold uppercase text-[10px]">Length:</span>
+                    <span className="font-bold uppercase text-[9px]">Length:</span>
                     <span className="font-black">{printingRoll?.lengthMeters} mtr</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="font-bold uppercase text-[10px]">Received:</span>
+                    <span className="font-bold uppercase text-[9px]">Received:</span>
                     <span className="font-black">{printingRoll?.receivedDate}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="font-bold uppercase text-[10px]">GSM:</span>
+                    <span className="font-bold uppercase text-[9px]">GSM:</span>
                     <span className="font-black">{printingRoll?.gsm}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="font-bold uppercase text-[10px]">Weight:</span>
+                    <span className="font-bold uppercase text-[9px]">Weight:</span>
                     <span className="font-black">{printingRoll?.weightKg} kg</span>
                   </div>
                 </div>
@@ -810,34 +766,34 @@ export default function PaperStockPage() {
         <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-3xl shadow-3xl z-[100] animate-in slide-in-from-bottom-4">
           <form onSubmit={handleSave}>
             <DialogHeader className="p-8 bg-slate-900 text-white">
-              <DialogTitle className="uppercase font-black text-xl tracking-widest flex items-center gap-3">
+              <DialogTitle className="uppercase font-black text-xl tracking-widest flex items-center gap-3 text-left">
                 {editingRoll ? <Pencil className="h-6 w-6 text-sky-400" /> : <Plus className="h-6 w-6 text-primary" />}
                 {editingRoll ? `Edit Registry: ${editingRoll.rollNo}` : 'New Master Roll Registration'}
               </DialogTitle>
-              <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest pt-1">Populate all 18 technical parameters for pharma-grade tracking.</DialogDescription>
+              <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest pt-1 text-left">Populate all 18 technical parameters for pharma-grade tracking.</DialogDescription>
             </DialogHeader>
-            <div className="p-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-white">
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Roll ID (Primary Key)</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-12 font-black text-primary border-2 rounded-xl text-sm" required /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Stock Status</Label><Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
+            <div className="p-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-white text-left">
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Roll ID (Primary Key)</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-12 font-black text-primary border-2 rounded-xl text-sm" required /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Stock Status</Label><Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
                 <SelectTrigger className="h-12 font-black border-2 rounded-xl text-sm"><SelectValue /></SelectTrigger>
                 <SelectContent className="shadow-2xl rounded-xl border-none">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
               </Select></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Mfr / Company</Label><Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Substrate / Type</Label><Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Width (mm)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Length (mtr)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2 bg-primary/5 p-4 rounded-2xl border-2 border-primary/20"><Label className="text-[11px] uppercase font-black text-primary">SQM (Auto-calc)</Label><Input value={calculatedSqm} readOnly className="h-12 bg-white font-black text-2xl text-primary border-none shadow-inner rounded-xl" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Weight (kg)</Label><Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Rate (₹)</Label><Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Job Name</Label><Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Job Size</Label><Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Lot No</Label><Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Company Roll No</Label><Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2 md:col-span-2 lg:col-span-3"><Label className="text-[11px] uppercase font-black text-slate-500">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[100px] border-2 rounded-2xl font-medium text-sm" placeholder="Any quality issues or technical flags..." /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Mfr / Company</Label><Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Substrate / Type</Label><Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Width (mm)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Length (mtr)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 bg-primary/5 p-4 rounded-2xl border-2 border-primary/20 text-left"><Label className="text-[11px] uppercase font-black text-primary">SQM (Auto-calc)</Label><Input value={calculatedSqm} readOnly className="h-12 bg-white font-black text-2xl text-primary border-none shadow-inner rounded-xl" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Weight (kg)</Label><Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Rate (₹)</Label><Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Job Name</Label><Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Job Size</Label><Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Lot No</Label><Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Company Roll No</Label><Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 md:col-span-2 lg:col-span-3 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[100px] border-2 rounded-2xl font-medium text-sm" placeholder="Any quality issues or technical flags..." /></div>
             </div>
             <DialogFooter className="p-8 bg-slate-50 border-t">
               <Button type="submit" disabled={isProcessing} className="w-full h-16 uppercase font-black tracking-[0.25em] bg-slate-900 text-white rounded-2xl shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">
@@ -865,10 +821,11 @@ export default function PaperStockPage() {
             left: 0;
             top: 0;
             margin: 0;
-            width: 150mm;
-            height: 100mm;
+            width: 150mm !important;
+            height: 100mm !important;
             border: 4px solid black !important;
             box-shadow: none !important;
+            box-sizing: border-box !important;
           }
           @page { size: 150mm 100mm; margin: 0; }
         }
