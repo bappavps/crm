@@ -85,20 +85,38 @@ const COLUMN_KEYS = [
   { id: 'lengthMeters', label: 'Length (MTR)' },
   { id: 'sqm', label: 'SQM' },
   { id: 'gsm', label: 'GSM' },
-  { id: 'bf', label: 'BF' },
-  { id: 'shade', label: 'Shade' },
-  { id: 'location', label: 'Location' },
   { id: 'weightKg', label: 'Weight (KG)' },
   { id: 'purchaseRate', label: 'Purchase Rate' },
-  { id: 'receivedDate', label: 'Date Received' },
-  { id: 'dateOfUsed', label: 'Date Used' },
+  { id: 'receivedDate', label: 'Date of Received' },
+  { id: 'dateOfUsed', label: 'Date of Used' },
   { id: 'jobNo', label: 'Job No' },
   { id: 'jobSize', label: 'Job Size' },
   { id: 'jobName', label: 'Job Name' },
-  { id: 'lotNo', label: 'Lot No' },
+  { id: 'lotNo', label: 'Lot No / Batch No' },
   { id: 'companyRollNo', label: 'Company Roll No' },
   { id: 'remarks', label: 'Remarks' },
 ];
+
+const FIELD_LABELS: Record<string, string> = {
+  rollNo: "Roll No",
+  status: "Status",
+  paperCompany: "Paper Company",
+  paperType: "Paper Type",
+  widthMm: "Width (MM)",
+  lengthMeters: "Length (MTR)",
+  sqm: "SQM",
+  gsm: "GSM",
+  weightKg: "Weight (KG)",
+  purchaseRate: "Purchase Rate",
+  receivedDate: "Date of Received",
+  dateOfUsed: "Date of Used",
+  jobNo: "Job No",
+  jobSize: "Job Size",
+  jobName: "Job Name",
+  lotNo: "Lot No / Batch No",
+  companyRollNo: "Company Roll No",
+  remarks: "Remarks"
+};
 
 type SortDirection = 'asc' | 'desc' | null;
 
@@ -136,9 +154,6 @@ export default function PaperStockPage() {
     lengthMeters: true,
     sqm: true,
     gsm: true,
-    bf: true,
-    shade: true,
-    location: true,
     weightKg: true,
     purchaseRate: true,
     receivedDate: true,
@@ -188,10 +203,6 @@ export default function PaperStockPage() {
     jobName: [],
     lotNo: [],
     companyRollNo: [],
-    location: [],
-    shade: [],
-    gsm: [],
-    bf: [],
     widthMin: "", widthMax: "",
     lengthMin: "", lengthMax: "",
     sqmMin: "", sqmMax: "",
@@ -211,9 +222,6 @@ export default function PaperStockPage() {
     lengthMeters: 0,
     sqm: 0,
     gsm: 0,
-    bf: "",
-    shade: "",
-    location: "",
     weightKg: 0,
     purchaseRate: 0,
     receivedDate: "",
@@ -263,7 +271,7 @@ export default function PaperStockPage() {
         return Object.values(row).some(v => String(v || "").toLowerCase().includes(s));
       }
 
-      const categories = ['paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo', 'location', 'shade', 'gsm', 'bf'];
+      const categories = ['paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo'];
       for (const cat of categories) {
         if (filters[cat]?.length > 0 && !filters[cat].includes(String(row[cat] || ""))) return false;
       }
@@ -332,7 +340,6 @@ export default function PaperStockPage() {
       setFormData({
         rollNo: "", paperCompany: "", paperType: "", status: "Available",
         widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0, purchaseRate: 0,
-        bf: "", shade: "", location: "",
         receivedDate: new Date().toISOString().split('T')[0],
         dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", 
         companyRollNo: "", remarks: ""
@@ -426,7 +433,7 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[20]", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30]", 
           isActive && "bg-slate-200", 
           className
         )} 
@@ -492,7 +499,7 @@ export default function PaperStockPage() {
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
               search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
-              location: [], shade: [], gsm: [], bf: [], widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
+              widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
             })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset</Button>
           </div>
@@ -502,10 +509,8 @@ export default function PaperStockPage() {
           <MultiSelectFilter label="Mfr" field="paperCompany" options={getUniqueOptions('paperCompany')} />
           <MultiSelectFilter label="Substrate" field="paperType" options={getUniqueOptions('paperType')} />
           <MultiSelectFilter label="Job #" field="jobNo" options={getUniqueOptions('jobNo')} />
-          <MultiSelectFilter label="GSM" field="gsm" options={getUniqueOptions('gsm')} />
-          <MultiSelectFilter label="BF" field="bf" options={getUniqueOptions('bf')} />
-          <MultiSelectFilter label="Shade" field="shade" options={getUniqueOptions('shade')} />
-          <MultiSelectFilter label="Loc" field="location" options={getUniqueOptions('location')} />
+          <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
         </div>
       </div>
 
@@ -523,27 +528,29 @@ export default function PaperStockPage() {
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-10">
-                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[30] p-0 shadow-[1px_0_0_#e2e8f0]">
+                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[1px_0_0_#e2e8f0]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
-                <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[30] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[30] shadow-[1px_0_0_#e2e8f0]" />
-                <SortableHeader label="Status" field="status" className="w-[120px] border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Paper Company" field="paperCompany" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Paper Type" field="paperType" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Width (MM)" field="widthMm" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="SQM" field="sqm" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="GSM" field="gsm" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="BF" field="bf" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Shade" field="shade" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Location" field="location" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Received Date" field="receivedDate" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Job No" field="jobNo" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Job Name" field="jobName" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <SortableHeader label="Lot No" field="lotNo" className="border-r sticky top-0 bg-slate-100 z-[20]" />
-                <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[30] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
+                <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[40] shadow-[1px_0_0_#e2e8f0]" />
+                <SortableHeader label="Status" field="status" className="w-[120px]" />
+                <SortableHeader label="Paper Company" field="paperCompany" />
+                <SortableHeader label="Paper Type" field="paperType" />
+                <SortableHeader label="Width (MM)" field="widthMm" />
+                <SortableHeader label="Length (MTR)" field="lengthMeters" />
+                <SortableHeader label="SQM" field="sqm" />
+                <SortableHeader label="GSM" field="gsm" />
+                <SortableHeader label="Weight (KG)" field="weightKg" />
+                <SortableHeader label="Purchase Rate" field="purchaseRate" />
+                <SortableHeader label="Date of Received" field="receivedDate" />
+                <SortableHeader label="Date of Used" field="dateOfUsed" />
+                <SortableHeader label="Job No" field="jobNo" />
+                <SortableHeader label="Job Size" field="jobSize" />
+                <SortableHeader label="Job Name" field="jobName" />
+                <SortableHeader label="Lot No / Batch No" field="lotNo" />
+                <SortableHeader label="Company Roll No" field="companyRollNo" />
+                <SortableHeader label="Remarks" field="remarks" />
+                <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -570,14 +577,16 @@ export default function PaperStockPage() {
                     {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
                     {visibleColumns['sqm'] && <TableCell className="text-center text-[10px] border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
                     {visibleColumns['gsm'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
-                    {visibleColumns['bf'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.bf || '-'}</TableCell>}
-                    {visibleColumns['shade'] && <TableCell className="text-center text-[10px] border-r border-b font-bold px-2">{j.shade || '-'}</TableCell>}
-                    {visibleColumns['location'] && <TableCell className="text-center text-[10px] border-r border-b font-black px-2 text-blue-600">{j.location || '-'}</TableCell>}
                     {visibleColumns['weightKg'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">₹{j.purchaseRate || 0}</TableCell>}
                     {visibleColumns['receivedDate'] && <TableCell className="text-center text-[10px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[10px] font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
                     {visibleColumns['jobNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[10px] border-r border-b px-2">{j.jobSize || '-'}</TableCell>}
                     {visibleColumns['jobName'] && <TableCell className="text-[10px] font-bold border-r border-b truncate max-w-[150px] px-2">{j.jobName || '-'}</TableCell>}
                     {visibleColumns['lotNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[10px] border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-[10px] border-r border-b px-2 italic">{j.remarks || '-'}</TableCell>}
                     <TableCell className="text-center border-b sticky right-0 z-10 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
                       <div className="flex items-center justify-center gap-1.5">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
@@ -631,9 +640,6 @@ export default function PaperStockPage() {
               { label: "Length (MTR)", value: viewingRoll?.lengthMeters },
               { label: "Net SQM", value: viewingRoll?.sqm },
               { label: "GSM Value", value: viewingRoll?.gsm },
-              { label: "Storage Location", value: viewingRoll?.location || '-' },
-              { label: "Bursting Factor (BF)", value: viewingRoll?.bf || '-' },
-              { label: "Shade Code", value: viewingRoll?.shade || '-' },
               { label: "Weight (KG)", value: viewingRoll?.weightKg || 0 },
               { label: "Registry Date", value: viewingRoll?.receivedDate },
               { label: "Last Allocation", value: viewingRoll?.jobNo || '-' }
@@ -686,7 +692,7 @@ export default function PaperStockPage() {
               <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20"><Label className="text-[10px] uppercase font-black text-primary tracking-widest">Automated SQM Calculation</Label><Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner" /></div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Warehouse Location</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-11 font-bold border-2" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Weight (KG)</Label><Input type="number" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2" /></div>
               </div>
               <div className="space-y-2 col-span-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Technical Remarks / Batch Notes</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[100px] border-2 font-medium" /></div>
             </div>
