@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -574,7 +573,7 @@ export default function PaperStockPage() {
               ) : paginatedRows.map((j, i) => {
                 const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-slate-100" };
                 const isHighlighted = highlightedId === j.id;
-                const canSlit = ["Main", "Stock", "Slitting"].includes(j.status);
+                const canSlit = ["Main", "Stock", "Slitting", "Available"].includes(j.status);
                 
                 return (
                   <TableRow 
@@ -641,7 +640,7 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        <div className="bg-slate-50 p-4 border-t flex items-center justify-between shrink-0 px-8 rounded-b-2xl">
+        <div className="bg-slate-50 p-4 border-t flex items-center justify-between shrink-0 px-8 rounded-b-2xl print:hidden">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
               <SelectTrigger className="h-9 w-[120px] bg-white text-[12px] font-semibold uppercase rounded-xl border-none shadow-sm"><SelectValue /></SelectTrigger>
@@ -912,6 +911,7 @@ export default function PaperStockPage() {
             background: white !important;
             z-index: 9999 !important;
             width: 100% !important;
+            display: block !important;
           }
           .label-page {
             page-break-after: always;

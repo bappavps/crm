@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -116,7 +115,7 @@ function SlittingHubContent() {
         setSelectedParent(null);
       } else {
         const data = { ...snap.docs[0].data(), id: snap.docs[0].id };
-        if (!["Main", "Stock", "Slitting"].includes(data.status)) {
+        if (!["Main", "Stock", "Slitting", "Available"].includes(data.status)) {
           toast({ variant: "destructive", title: "Invalid Status", description: `Roll status is ${data.status}.` });
           setSelectedParent(null);
         } else {
@@ -306,7 +305,7 @@ function SlittingHubContent() {
     <div className="max-w-7xl mx-auto space-y-8 pb-20 font-sans animate-in fade-in duration-500">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <div className="space-y-1">
           <h1 className="text-[28px] font-semibold tracking-tight">Advanced Slitting Features</h1>
           <p className="text-sm font-normal text-muted-foreground">Precision width conversion and length split engine for converting parent rolls into production-ready job rolls.</p>
@@ -321,9 +320,9 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- PRINTABLE JOB CARD AREA (Hidden on Screen) --- */}
+      {/* --- PRINTABLE JOB CARD AREA --- */}
       <div id="print-area" className="hidden print:block p-10 bg-white text-black font-mono">
-        <div className="border-4 border-black p-8 space-y-8">
+        <div className="border-4 border-black p-8 space-y-8 min-h-screen">
           <div className="text-center space-y-2 border-b-4 border-black pb-6">
             <h1 className="text-4xl font-bold uppercase tracking-tighter">SLITTING JOB CARD</h1>
             <p className="text-xl">SHREE LABEL CREATION • PRODUCTION DEPARTMENT</p>
@@ -347,15 +346,15 @@ function SlittingHubContent() {
             <Table className="border-2 border-black w-full text-xl">
               <TableHeader className="bg-slate-100">
                 <TableRow className="border-b-2 border-black">
-                  <TableHead className="font-bold text-black border-r-2 border-black px-4">ROLL NO</TableHead>
-                  <TableHead className="font-bold text-black border-r-2 border-black px-4">WIDTH</TableHead>
-                  <TableHead className="font-bold text-black border-r-2 border-black px-4">LENGTH</TableHead>
-                  <TableHead className="font-bold text-black px-4">JOB / CLIENT</TableHead>
+                  <TableHead className="font-bold text-black border-r-2 border-black px-4 py-2">ROLL NO</TableHead>
+                  <TableHead className="font-bold text-black border-r-2 border-black px-4 py-2">WIDTH</TableHead>
+                  <TableHead className="font-bold text-black border-r-2 border-black px-4 py-2">LENGTH</TableHead>
+                  <TableHead className="font-bold text-black px-4 py-2">JOB / CLIENT</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {previewParts.map((part, idx) => (
-                  <TableRow key={idx} className="border-b-2 border-black last:border-b-0">
+                  <TableRow key={idx} className="border-b-2 border-black last:border-b-0 h-16">
                     <TableCell className="border-r-2 border-black px-4 font-bold">{part.rollId}</TableCell>
                     <TableCell className="border-r-2 border-black px-4">{part.width} MM</TableCell>
                     <TableCell className="border-r-2 border-black px-4">{part.length} MTR</TableCell>
@@ -366,14 +365,14 @@ function SlittingHubContent() {
             </Table>
           </div>
 
-          <div className="pt-10 grid grid-cols-2 gap-20">
+          <div className="pt-20 grid grid-cols-2 gap-20 mt-auto">
             <div className="border-t-2 border-black text-center pt-2 font-bold">Technician Signature</div>
             <div className="border-t-2 border-black text-center pt-2 font-bold">Supervisor Approval</div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 print:hidden">
         <div className="lg:col-span-1 space-y-6">
           <Card className="shadow-xl border-none rounded-2xl overflow-hidden">
             <CardHeader className="bg-slate-900 text-white p-6">
@@ -672,6 +671,15 @@ function SlittingHubContent() {
             background: white !important;
             margin: 0 !important;
             padding: 0 !important;
+            display: block !important;
+          }
+          #print-area table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          #print-area th, #print-area td {
+            border: 2px solid black !important;
+            padding: 12px !important;
           }
         }
       `}</style>
