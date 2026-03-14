@@ -79,7 +79,8 @@ import {
   serverTimestamp,
   deleteDoc,
   setDoc,
-  writeBatch
+  writeBatch,
+  where
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
@@ -87,6 +88,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
+import { TemplateRenderer } from "@/components/printing/template-renderer"
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -138,6 +140,7 @@ export default function PaperStockPage() {
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [viewingRoll, setViewingRoll] = useState<any>(null)
   const [printingRoll, setPrintingRoll] = useState<any>(null)
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("default")
   const [isProcessing, setIsProcessing] = useState(false)
   
   const [currentPage, setCurrentPage] = useState(1)
@@ -189,7 +192,34 @@ export default function PaperStockPage() {
     return query(collection(firestore, 'paper_stock'), limit(1000));
   }, [firestore]);
 
+  const templatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Label'));
+  }, [firestore]);
+
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
+  const { data: labelTemplates } = useCollection(templatesQuery);
+
+  const selectedTemplate = useMemo(() => {
+    if (selectedTemplateId === "default") return null;
+    return labelTemplates?.find(t => t.id === selectedTemplateId);
+  }, [labelTemplates, selectedTemplateId]);
+
+  const printDataMapping = useMemo(() => {
+    if (!printingRoll) return {};
+    return {
+      roll_number: printingRoll.rollNo,
+      paper_item: printingRoll.paperType,
+      width: printingRoll.widthMm,
+      length: printingRoll.lengthMeters,
+      gsm: printingRoll.gsm,
+      weight: printingRoll.weightKg,
+      received_date: printingRoll.receivedDate,
+      company_name: "SHREE LABEL CREATION",
+      customer_name: printingRoll.jobName || "-",
+      date: new Date().toLocaleDateString()
+    };
+  }, [printingRoll]);
 
   const calculatedSqm = useMemo(() => {
     const w = Number(formData.widthMm) || 0;
@@ -768,44 +798,73 @@ export default function PaperStockPage() {
       </datalist>
 
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
-          <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Print Engine (150x100mm)</DialogTitle></div>
-          <div className="p-10 flex justify-center bg-slate-200">
-            <div id="thermal-label" className="bg-white p-8 shadow-2xl border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', color: 'black', fontFamily: 'monospace' }}>
-              <div className="flex justify-between items-center border-b-4 border-black pb-4 text-left">
-                <span className="text-3xl font-bold tracking-tighter">SHREE LABEL CREATION</span>
-                <span className="text-xl font-bold">V2.1</span>
-              </div>
-              <div className="mt-6 flex justify-between">
-                <div className="space-y-2 max-w-[60%] text-left">
-                  <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
-                  <p className="text-3xl font-bold leading-none truncate">{printingRoll?.paperType}</p>
-                  <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
-                  <p className="text-6xl font-bold tracking-tighter leading-none">{printingRoll?.rollNo}</p>
-                </div>
-                <div className="flex flex-col items-end gap-4">
-                  <div className="bg-white border-2 border-black p-1">
-                    <QRCodeSVG value={JSON.stringify({ roll: printingRoll?.rollNo, type: printingRoll?.paperType, w: printingRoll?.widthMm, l: printingRoll?.lengthMeters })} size={120} />
-                  </div>
-                  <div className="scale-75 origin-right"><Barcode value={printingRoll?.rollNo || "00000"} width={2} height={50} fontSize={14} /></div>
-                </div>
-              </div>
-              <div className="mt-8 grid grid-cols-2 gap-x-12 gap-y-4 border-t-4 border-black pt-6">
-                <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Width:</span><span className="text-2xl font-bold">{printingRoll?.widthMm} mm</span></div>
-                <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Length:</span><span className="text-2xl font-bold">{printingRoll?.lengthMeters} mtr</span></div>
-                <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">GSM:</span><span className="text-2xl font-bold">{printingRoll?.gsm}</span></div>
-                <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Weight:</span><span className="text-2xl font-bold">{printingRoll?.weightKg} kg</span></div>
-              </div>
-              <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[14px] font-semibold uppercase">
-                <span>Company: {printingRoll?.paperCompany}</span>
-                <span>Received: {printingRoll?.receivedDate}</span>
+        <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
+          <div className="bg-slate-900 text-white p-6">
+            <div className="flex justify-between items-center">
+              <DialogTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Professional Print Engine</DialogTitle>
+              <div className="flex items-center gap-2">
+                <Label className="text-[10px] uppercase font-bold text-slate-400">Layout:</Label>
+                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                  <SelectTrigger className="h-8 w-[200px] bg-white/10 border-none text-[10px] font-bold text-white">
+                    <SelectValue placeholder="Select Template" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100]">
+                    <SelectItem value="default" className="text-[10px] font-bold">Standard Industrial (150x100)</SelectItem>
+                    {labelTemplates?.map(t => (
+                      <SelectItem key={t.id} value={t.id} className="text-[10px] font-bold">{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+          </div>
+          <div className="p-10 flex justify-center bg-slate-200 overflow-auto max-h-[60vh] industrial-scroll">
+            {selectedTemplate ? (
+              <div id="print-area">
+                <TemplateRenderer 
+                  elements={selectedTemplate.elements} 
+                  data={printDataMapping} 
+                  paperWidth={selectedTemplate.paperWidth} 
+                  paperHeight={selectedTemplate.paperHeight} 
+                />
+              </div>
+            ) : (
+              <div id="print-area" className="bg-white p-8 shadow-2xl border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', color: 'black', fontFamily: 'monospace' }}>
+                <div className="flex justify-between items-center border-b-4 border-black pb-4 text-left">
+                  <span className="text-3xl font-bold tracking-tighter">SHREE LABEL CREATION</span>
+                  <span className="text-xl font-bold">V2.1</span>
+                </div>
+                <div className="mt-6 flex justify-between">
+                  <div className="space-y-2 max-w-[60%] text-left">
+                    <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
+                    <p className="text-3xl font-bold leading-none truncate">{printingRoll?.paperType}</p>
+                    <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
+                    <p className="text-6xl font-bold tracking-tighter leading-none">{printingRoll?.rollNo}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-4">
+                    <div className="bg-white border-2 border-black p-1">
+                      <QRCodeSVG value={JSON.stringify({ roll: printingRoll?.rollNo, type: printingRoll?.paperType, w: printingRoll?.widthMm, l: printingRoll?.lengthMeters })} size={120} />
+                    </div>
+                    <div className="scale-75 origin-right"><Barcode value={printingRoll?.rollNo || "00000"} width={2} height={50} fontSize={14} /></div>
+                  </div>
+                </div>
+                <div className="mt-8 grid grid-cols-2 gap-x-12 gap-y-4 border-t-4 border-black pt-6">
+                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Width:</span><span className="text-2xl font-bold">{printingRoll?.widthMm} mm</span></div>
+                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Length:</span><span className="text-2xl font-bold">{printingRoll?.lengthMeters} mtr</span></div>
+                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">GSM:</span><span className="text-2xl font-bold">{printingRoll?.gsm}</span></div>
+                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Weight:</span><span className="text-2xl font-bold">{printingRoll?.weightKg} kg</span></div>
+                </div>
+                <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[14px] font-semibold uppercase">
+                  <span>Company: {printingRoll?.paperCompany}</span>
+                  <span>Received: {printingRoll?.receivedDate}</span>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter className="p-6 bg-white border-t">
             <Button variant="outline" className="h-12 px-8 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsPrintOpen(false)}>Cancel</Button>
             <Button className="h-12 px-12 rounded-xl bg-slate-900 hover:bg-black font-semibold uppercase text-[10px] tracking-wider shadow-xl" onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-2" /> Execute Thermal Print
+              <Printer className="h-4 w-4 mr-2" /> Execute Print
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -828,21 +887,18 @@ export default function PaperStockPage() {
       <style jsx global>{`
         @media print {
           body * { visibility: hidden !important; }
-          #thermal-label, #thermal-label * { visibility: visible !important; }
-          #thermal-label {
+          #print-area, #print-area * { visibility: visible !important; }
+          #print-area {
             position: fixed !important;
             left: 0 !important;
             top: 0 !important;
             margin: 0 !important;
-            width: 150mm !important;
-            height: 100mm !important;
-            border: 4px solid black !important;
             box-shadow: none !important;
             box-sizing: border-box !important;
             background: white !important;
             z-index: 9999 !important;
           }
-          @page { size: 150mm 100mm; margin: 0 !important; }
+          @page { margin: 0 !important; }
         }
       `}</style>
     </div>
