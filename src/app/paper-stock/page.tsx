@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -34,7 +35,9 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   MoreHorizontal,
-  Calendar
+  Calendar,
+  CheckCircle2,
+  Info
 } from "lucide-react"
 import { 
   Dialog, 
@@ -76,11 +79,12 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
-  { value: "Available", label: "Available", color: "bg-emerald-500", rowBg: "bg-white" },
-  { value: "Reserved", label: "Reserved", color: "bg-amber-500", rowBg: "bg-amber-50/20" },
-  { value: "In Production", label: "In Production", color: "bg-blue-500", rowBg: "bg-blue-50/20" },
-  { value: "Slitted", label: "Slitted", color: "bg-purple-500", rowBg: "bg-purple-50/20" },
-  { value: "Consumed", label: "Consumed", color: "bg-destructive", rowBg: "bg-destructive/5" },
+  { value: "MAIN", label: "MAIN", color: "bg-zinc-900", rowBg: "bg-zinc-100/50" },
+  { value: "Available", label: "Available", color: "bg-emerald-600", rowBg: "bg-emerald-50/60" },
+  { value: "Reserved", label: "Reserved", color: "bg-amber-500", rowBg: "bg-amber-50/40" },
+  { value: "In Production", label: "In Production", color: "bg-blue-600", rowBg: "bg-blue-50/40" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50/40" },
+  { value: "Consumed", label: "Consumed", color: "bg-red-600", rowBg: "bg-red-50/40" },
 ];
 
 const COLUMN_KEYS = [
@@ -695,11 +699,15 @@ export default function PaperStockPage() {
               <FileDown className="h-4 w-4" /> Export Stock
             </Button>
 
-            <Button variant="ghost" size="sm" onClick={() => setFilters({
-              search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
-              widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
-              receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-            })} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
+            <Button variant="ghost" size="sm" onClick={() => {
+              setFilters({
+                search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
+                widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
+                receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
+              });
+              setSortConfig({ key: 'rollNo', direction: 'desc' });
+              setCurrentPage(1);
+            }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
           </div>
         </div>
         
@@ -735,6 +743,21 @@ export default function PaperStockPage() {
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
+        </div>
+
+        {/* STATUS DISPLAY BOARD / LEGEND */}
+        <div className="flex flex-wrap items-center gap-4 py-2 border-t border-slate-100 mt-2">
+          <span className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em] flex items-center gap-1.5">
+            <Info className="h-3 w-3" /> Status Display Board:
+          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            {STATUS_OPTIONS.map(opt => (
+              <div key={opt.value} className="flex items-center gap-1.5 group">
+                <div className={cn("w-2.5 h-2.5 rounded-sm shadow-sm ring-1 ring-black/5", opt.color)} />
+                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight group-hover:text-primary transition-colors cursor-default">{opt.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -783,10 +806,9 @@ export default function PaperStockPage() {
               {itemsLoading ? (
                 <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
-                const statusColor = STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500";
-                const rowBg = STATUS_OPTIONS.find(o => o.value === j.status)?.rowBg || "bg-white";
+                const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-white" };
                 return (
-                  <TableRow key={j.id} className={cn("h-10 group hover:brightness-95 transition-all text-center", rowBg)}>
+                  <TableRow key={j.id} className={cn("h-10 group hover:brightness-95 transition-all text-center", statusInfo.rowBg)}>
                     <TableCell className="text-center border-r border-b sticky left-0 z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
                       <div className="flex items-center justify-center h-full">
                         <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
@@ -796,25 +818,25 @@ export default function PaperStockPage() {
                     <TableCell className="font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
                     <TableCell className="text-center border-r border-b p-0">
                       <div className="flex items-center justify-center">
-                        <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusColor)}>{j.status || "Available"}</span>
+                        <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusInfo.color)}>{j.status || "Available"}</span>
                       </div>
                     </TableCell>
-                    {visibleColumns['paperCompany'] && <TableCell className="text-sm font-bold border-r border-b uppercase px-3 truncate max-w-[150px] text-center">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-sm font-bold border-r border-b px-3 truncate max-w-[150px] text-center">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-center text-sm border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">₹{j.purchaseRate || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-sm font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
-                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-sm font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-center text-sm border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobSize'] && <TableCell className="text-center text-sm border-r border-b px-2">{j.jobSize || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-sm font-bold border-r border-b truncate max-w-[150px] px-2 text-center">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-center text-sm border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
-                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-sm border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
-                    {visibleColumns['remarks'] && <TableCell className="text-sm border-r border-b px-2 italic text-center truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3 truncate max-w-[150px] text-center">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[13px] font-bold border-r border-b px-3 truncate max-w-[150px] text-center">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-center text-[13px] border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">₹{j.purchaseRate || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[13px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[13px] font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[13px] border-r border-b px-2">{j.jobSize || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-bold border-r border-b truncate max-w-[150px] px-2 text-center">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[13px] border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic text-center truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
                     <TableCell className="text-center border-b sticky right-0 z-10 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
                       <div className="flex items-center justify-center gap-1.5">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-5 w-5" /></Button>
@@ -905,80 +927,80 @@ export default function PaperStockPage() {
               </DialogTitle>
             </DialogHeader>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white">
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Roll No (Editable)</Label>
-                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-11 font-black text-primary border-2 text-sm text-left" required />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Roll No (Editable)</Label>
+                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-11 font-black text-primary border-2 text-sm" required />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Status</Label>
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="h-11 font-black border-2 text-sm text-left"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-11 font-black border-2 text-sm"><SelectValue /></SelectTrigger>
                   <SelectContent className="shadow-2xl z-portal">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Paper Company</Label>
-                <Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Paper Company</Label>
+                <Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Paper Type</Label>
-                <Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Paper Type</Label>
+                <Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Width (MM)</Label>
-                <Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Width (MM)</Label>
+                <Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Length (MTR)</Label>
-                <Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Length (MTR)</Label>
+                <Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20">
-                <Label className="text-[11px] uppercase font-black text-primary tracking-widest text-left block">SQM (Auto-calc)</Label>
-                <Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner text-left" />
+              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20 text-left">
+                <Label className="text-[11px] uppercase font-black text-primary tracking-widest block">SQM (Auto-calc)</Label>
+                <Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">GSM</Label>
-                <Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">GSM</Label>
+                <Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Weight (KG)</Label>
-                <Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Weight (KG)</Label>
+                <Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Purchase Rate</Label>
-                <Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Purchase Rate</Label>
+                <Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Date of Received</Label>
-                <Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Date of Received</Label>
+                <Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Date of Used</Label>
-                <Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Date of Used</Label>
+                <Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Job No</Label>
-                <Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Job No</Label>
+                <Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Job Size</Label>
-                <Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Job Size</Label>
+                <Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Job Name</Label>
-                <Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Job Name</Label>
+                <Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Lot No / Batch No</Label>
-                <Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Lot No / Batch No</Label>
+                <Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Company Roll No</Label>
-                <Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Company Roll No</Label>
+                <Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2 text-sm" />
               </div>
-              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Remarks</Label>
-                <Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium text-sm text-left" />
+              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Remarks</Label>
+                <Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium text-sm" />
               </div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4">
