@@ -47,6 +47,28 @@ interface SlitRun {
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+/**
+ * Helper to determine the child suffix based on industrial naming rules.
+ * Base (T-1038) -> Letters (-A, -B)
+ * Slitted (T-1038-C) -> Numbers (-1, -2)
+ */
+const getChildSuffix = (parentRollNo: string, index: number): string => {
+  const parts = parentRollNo.split('-');
+  const isBaseRoll = parts.length <= 2;
+  const lastPart = parts[parts.length - 1];
+  const hasLetterSuffix = /^[A-Z]+$/.test(lastPart);
+
+  if (isBaseRoll) {
+    const char = ALPHABET[index % 26];
+    return index >= 26 ? `${char}${Math.floor(index / 26)}` : char;
+  } else if (hasLetterSuffix) {
+    return (index + 1).toString();
+  } else {
+    // Deep nesting fallback to numeric
+    return (index + 1).toString();
+  }
+};
+
 function SlittingHubContent() {
   const { toast } = useToast()
   const router = useRouter()
@@ -78,7 +100,11 @@ function SlittingHubContent() {
   useEffect(() => {
     if (initialRollData && initialRollData.length > 0) {
       setSelectedParent(initialRollData[0]);
-      setSlitRuns(prev => prev.map(r => ({ ...r, lengthMeters: initialRollData[0].lengthMeters, widthMm: initialRollData[0].widthMm })));
+      setSlitRuns(prev => prev.map(r => ({ 
+        ...r, 
+        lengthMeters: initialRollData[0].lengthMeters, 
+        widthMm: initialRollData[0].widthMm 
+      })));
     }
   }, [initialRollData]);
 
@@ -163,8 +189,7 @@ function SlittingHubContent() {
     slitRuns.forEach((run) => {
       const pCount = Number(run.parts) || 0;
       for (let i = 0; i < pCount; i++) {
-        const char = ALPHABET[childIdx % 26];
-        const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+        const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
         
         parts.push({
           label: suffix,
@@ -178,8 +203,7 @@ function SlittingHubContent() {
     });
 
     if (calculation.remainder > 0) {
-      const char = ALPHABET[childIdx % 26];
-      const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+      const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
       parts.push({
         label: suffix,
         width: calculation.mode === 'WIDTH' ? calculation.remainder : selectedParent.widthMm,
@@ -207,8 +231,7 @@ function SlittingHubContent() {
         let childIdx = 0;
         for (const run of slitRuns) {
           for (let i = 0; i < run.parts; i++) {
-            const char = ALPHABET[childIdx % 26];
-            const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+            const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
             const childId = `${selectedParent.rollNo}-${suffix}`;
             const childRef = doc(firestore, 'paper_stock', childId);
             
@@ -237,8 +260,7 @@ function SlittingHubContent() {
         }
 
         if (calculation.remainder > 0) {
-          const char = ALPHABET[childIdx % 26];
-          const suffix = childIdx >= 26 ? `${char}${Math.floor(childIdx / 26)}` : char;
+          const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
           const remainderId = `${selectedParent.rollNo}-${suffix}`;
           const remainderRef = doc(firestore, 'paper_stock', remainderId);
           
@@ -392,7 +414,7 @@ function SlittingHubContent() {
             <CardFooter className="p-0 border-t border-white/10">
               <Button 
                 onClick={handleExecuteSlitting} 
-                disabled={!selectedParent || !calculation.isValid || isProcessing || calculation.remainder === selectedParent?.widthMm || calculation.remainder === selectedParent?.lengthMeters} 
+                disabled={!selectedParent || !calculation.isValid || isProcessing || (calculation.remainder === selectedParent?.widthMm && calculation.mode === 'WIDTH') || (calculation.remainder === selectedParent?.lengthMeters && calculation.mode === 'LENGTH')} 
                 className={cn("w-full h-16 rounded-none font-black uppercase tracking-[0.25em] transition-all", calculation.isValid ? "bg-primary hover:bg-primary/90" : "bg-rose-700")}
               >
                 {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : <Scissors className="mr-3 h-5 w-5" />}
