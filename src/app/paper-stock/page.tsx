@@ -31,7 +31,8 @@ import {
   ArrowDown,
   ArrowUpDown,
   History,
-  FileSpreadsheet
+  FileSpreadsheet,
+  AlertTriangle
 } from "lucide-react"
 import { 
   Dialog, 
@@ -64,7 +65,8 @@ import {
   serverTimestamp,
   runTransaction,
   deleteDoc,
-  updateDoc
+  updateDoc,
+  writeBatch
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { usePermissions } from "@/components/auth/permission-context"
@@ -386,12 +388,56 @@ export default function PaperStockPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!firestore || selectedIds.size === 0) return;
+    if (!confirm(`Permanently delete ${selectedIds.size} selected rolls?`)) return;
+
+    setIsProcessing(true);
+    try {
+      const batch = writeBatch(firestore);
+      selectedIds.forEach(id => {
+        batch.delete(doc(firestore, 'paper_stock', id));
+      });
+      await batch.commit();
+      setSelectedIds(new Set());
+      setModal({ isOpen: true, type: 'SUCCESS', title: 'Bulk Deletion Complete', description: 'Selected rolls removed from registry.' });
+    } catch (error: any) {
+      setModal({ isOpen: true, type: 'ERROR', title: 'Deletion Failed', description: error.message });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const exportStock = () => {
     if (filteredRows.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(filteredRows);
+    
+    // Map internal data to technical template headers
+    const exportData = filteredRows.map((r, i) => ({
+      "ROLL NO": r.rollNo || "",
+      "STATUS": r.status || "Available",
+      "PAPER COMPANY": r.paperCompany || "",
+      "PAPER TYPE": r.paperType || "",
+      "WIDTH (MM)": r.widthMm || 0,
+      "LENGTH (MTR)": r.lengthMeters || 0,
+      "SQM": r.sqm || 0,
+      "GSM": r.gsm || 0,
+      "WEIGHT (KG)": r.weightKg || 0,
+      "PURCHASE RATE": r.purchaseRate || 0,
+      "DATE OF RECEIVED": r.receivedDate || "",
+      "DATE OF USED": r.dateOfUsed || "-",
+      "JOB NO": r.jobNo || "-",
+      "JOB SIZE": r.jobSize || "-",
+      "JOB NAME": r.jobName || "-",
+      "LOT NO / BATCH NO": r.lotNo || "",
+      "COMPANY ROLL NO": r.companyRollNo || "",
+      "REMARKS": r.remarks || "-"
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Stock Registry");
-    XLSX.writeFile(wb, "Paper_Stock_Export.xlsx");
+    XLSX.writeFile(wb, `Shree_Label_Technical_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast({ title: "Export Ready", description: `Registry snapshot with ${exportData.length} records generated.` });
   }
 
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
@@ -406,7 +452,7 @@ export default function PaperStockPage() {
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto z-[100]">
+      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto z-portal">
         <DropdownMenuLabel className="text-[10px] uppercase font-black">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
@@ -434,7 +480,7 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30] text-center", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[20] text-center", 
           isActive && "bg-slate-200", 
           className
         )} 
@@ -463,20 +509,26 @@ export default function PaperStockPage() {
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input 
-              placeholder="Search Paper Stock Registry..." 
+              placeholder="Search Paper Stock Details..." 
               className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-bold" 
               value={filters.search} 
               onChange={e => setFilters({ ...filters, search: e.target.value })} 
             />
           </div>
           <div className="ml-auto flex items-center gap-3">
+            {selectedIds.size > 0 && (
+              <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest shadow-lg animate-in slide-in-from-right-2">
+                <Trash2 className="h-4 w-4" /> Delete {selectedIds.size} Selected
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2">
                   <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[100]">
+              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-portal">
                 <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2 tracking-widest">Select Columns</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="max-h-[400px] overflow-y-auto industrial-scroll">
@@ -616,7 +668,7 @@ export default function PaperStockPage() {
               <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="z-[100]">
+              <SelectContent className="z-portal">
                 {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
             </Select>
@@ -636,7 +688,7 @@ export default function PaperStockPage() {
 
       {/* VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-[200]">
+        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-portal">
           <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
             <DialogTitle className="uppercase font-black text-sm flex items-center gap-3 tracking-widest"><Package className="h-5 w-5 text-primary" /> Technical Profile: {viewingRoll?.rollNo}</DialogTitle>
           </DialogHeader>
@@ -653,7 +705,7 @@ export default function PaperStockPage() {
 
       {/* PRINT DIALOG */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[450px] p-8 z-[200]">
+        <DialogContent className="sm:max-w-[450px] p-8 z-portal">
           <div className="p-8 border-8 border-black text-center space-y-6 rounded-lg bg-white shadow-2xl">
             <h2 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h2>
             <div className="border-y-4 border-black py-4 bg-black/5">
@@ -671,7 +723,7 @@ export default function PaperStockPage() {
 
       {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-[200]">
+        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-portal">
           <form onSubmit={handleSave}>
             <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
               <DialogTitle className="uppercase font-black text-sm tracking-widest">
@@ -683,7 +735,7 @@ export default function PaperStockPage() {
                 <Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
                   <SelectTrigger className="h-11 font-black border-2"><SelectValue /></SelectTrigger>
-                  <SelectContent className="shadow-2xl z-[300]">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
+                  <SelectContent className="shadow-2xl z-portal">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2" /></div>
