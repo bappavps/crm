@@ -27,7 +27,8 @@ import {
   FileText,
   Maximize2,
   LayoutGrid,
-  ArrowUpDown
+  ArrowUpDown,
+  Printer
 } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, query, where, runTransaction, serverTimestamp, limit } from "firebase/firestore"
@@ -187,6 +188,7 @@ function SlittingHubContent() {
         
         parts.push({
           label: suffix,
+          rollId: `${selectedParent.rollNo}-${suffix}`,
           width: calculation.mode === 'WIDTH' ? (Number(run.widthMm) || selectedParent.widthMm) : selectedParent.widthMm,
           length: calculation.mode === 'LENGTH' ? (Number(run.lengthMeters) || selectedParent.lengthMeters) : selectedParent.lengthMeters,
           isJob: !!run.jobNo,
@@ -200,6 +202,7 @@ function SlittingHubContent() {
       const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
       parts.push({
         label: suffix,
+        rollId: `${selectedParent.rollNo}-${suffix}`,
         width: calculation.mode === 'WIDTH' ? calculation.remainder : selectedParent.widthMm,
         length: calculation.mode === 'LENGTH' ? calculation.remainder : selectedParent.lengthMeters,
         isRemainder: true
@@ -308,9 +311,66 @@ function SlittingHubContent() {
           <h1 className="text-[28px] font-semibold tracking-tight">Advanced Slitting Features</h1>
           <p className="text-sm font-normal text-muted-foreground">Precision width conversion and length split engine for converting parent rolls into production-ready job rolls.</p>
         </div>
-        <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-semibold text-xs">
-          <ArrowLeft className="mr-2 h-3 w-3" /> Back to Registry
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => window.print()} disabled={!selectedParent} className="font-semibold text-xs h-9 border-2 rounded-xl">
+            <Printer className="mr-2 h-4 w-4" /> Print Job Card
+          </Button>
+          <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-semibold text-xs">
+            <ArrowLeft className="mr-2 h-3 w-3" /> Back to Registry
+          </Button>
+        </div>
+      </div>
+
+      {/* --- PRINTABLE JOB CARD AREA (Hidden on Screen) --- */}
+      <div id="print-area" className="hidden print:block p-10 bg-white text-black font-mono">
+        <div className="border-4 border-black p-8 space-y-8">
+          <div className="text-center space-y-2 border-b-4 border-black pb-6">
+            <h1 className="text-4xl font-bold uppercase tracking-tighter">SLITTING JOB CARD</h1>
+            <p className="text-xl">SHREE LABEL CREATION • PRODUCTION DEPARTMENT</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-8 text-xl">
+            <div className="space-y-2">
+              <p><strong>DATE:</strong> {new Date().toLocaleDateString()}</p>
+              <p><strong>SOURCE ROLL:</strong> {selectedParent?.rollNo}</p>
+              <p><strong>MATERIAL:</strong> {selectedParent?.paperType}</p>
+            </div>
+            <div className="text-right space-y-2">
+              <p><strong>PARENT WIDTH:</strong> {selectedParent?.widthMm} MM</p>
+              <p><strong>PARENT LENGTH:</strong> {selectedParent?.lengthMeters} MTR</p>
+              <p><strong>OPERATOR:</strong> _________________</p>
+            </div>
+          </div>
+
+          <div className="pt-6">
+            <h2 className="text-2xl font-bold mb-4 uppercase border-b-2 border-black pb-2">SLITTING PLAN (OUTPUT ROLLS)</h2>
+            <Table className="border-2 border-black w-full text-xl">
+              <TableHeader className="bg-slate-100">
+                <TableRow className="border-b-2 border-black">
+                  <TableHead className="font-bold text-black border-r-2 border-black px-4">ROLL NO</TableHead>
+                  <TableHead className="font-bold text-black border-r-2 border-black px-4">WIDTH</TableHead>
+                  <TableHead className="font-bold text-black border-r-2 border-black px-4">LENGTH</TableHead>
+                  <TableHead className="font-bold text-black px-4">JOB / CLIENT</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {previewParts.map((part, idx) => (
+                  <TableRow key={idx} className="border-b-2 border-black last:border-b-0">
+                    <TableCell className="border-r-2 border-black px-4 font-bold">{part.rollId}</TableCell>
+                    <TableCell className="border-r-2 border-black px-4">{part.width} MM</TableCell>
+                    <TableCell className="border-r-2 border-black px-4">{part.length} MTR</TableCell>
+                    <TableCell className="px-4 font-bold uppercase">{part.isRemainder ? 'STOCK' : (part.jobNo || '-')}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="pt-10 grid grid-cols-2 gap-20">
+            <div className="border-t-2 border-black text-center pt-2 font-bold">Technician Signature</div>
+            <div className="border-t-2 border-black text-center pt-2 font-bold">Supervisor Approval</div>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -599,6 +659,22 @@ function SlittingHubContent() {
           </Card>
         </div>
       </div>
+
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #print-area, #print-area * { visibility: visible !important; }
+          #print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

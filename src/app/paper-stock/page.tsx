@@ -139,7 +139,7 @@ export default function PaperStockPage() {
   
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [viewingRoll, setViewingRoll] = useState<any>(null)
-  const [printingRoll, setPrintingRoll] = useState<any>(null)
+  const [printingRolls, setPrintingRolls] = useState<any[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("default")
   const [isProcessing, setIsProcessing] = useState(false)
   
@@ -205,21 +205,21 @@ export default function PaperStockPage() {
     return labelTemplates?.find(t => t.id === selectedTemplateId);
   }, [labelTemplates, selectedTemplateId]);
 
-  const printDataMapping = useMemo(() => {
-    if (!printingRoll) return {};
+  const getPrintDataMapping = (roll: any) => {
+    if (!roll) return {};
     return {
-      roll_number: printingRoll.rollNo,
-      paper_item: printingRoll.paperType,
-      width: printingRoll.widthMm,
-      length: printingRoll.lengthMeters,
-      gsm: printingRoll.gsm,
-      weight: printingRoll.weightKg,
-      received_date: printingRoll.receivedDate,
+      roll_number: roll.rollNo,
+      paper_item: roll.paperType,
+      width: roll.widthMm,
+      length: roll.lengthMeters,
+      gsm: roll.gsm,
+      weight: roll.weightKg,
+      received_date: roll.receivedDate,
       company_name: "SHREE LABEL CREATION",
-      customer_name: printingRoll.jobName || "-",
+      customer_name: roll.jobName || "-",
       date: new Date().toLocaleDateString()
     };
-  }, [printingRoll]);
+  };
 
   const calculatedSqm = useMemo(() => {
     const w = Number(formData.widthMm) || 0;
@@ -420,6 +420,13 @@ export default function PaperStockPage() {
     }
   }
 
+  const handleBulkPrint = () => {
+    if (selectedIds.size === 0) return;
+    const selectedRolls = rolls?.filter(r => selectedIds.has(r.id)) || [];
+    setPrintingRolls(selectedRolls);
+    setIsPrintOpen(true);
+  }
+
   const startScanner = () => {
     setIsScannerOpen(true);
     setTimeout(() => {
@@ -487,6 +494,9 @@ export default function PaperStockPage() {
             {selectedIds.size > 0 && (
               <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
                 <Badge className="bg-primary text-white font-semibold">{selectedIds.size} SELECTED</Badge>
+                <Button variant="secondary" size="sm" onClick={handleBulkPrint} className="h-8 px-3 rounded-lg font-semibold text-[10px] uppercase tracking-wider bg-white text-slate-900 hover:bg-slate-100">
+                  <Printer className="h-3.5 w-3.5 mr-1.5" /> Print Selected Labels
+                </Button>
                 <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="h-8 px-3 rounded-lg font-semibold text-[10px] uppercase tracking-wider">
                   <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Bulk Delete
                 </Button>
@@ -603,6 +613,7 @@ export default function PaperStockPage() {
                     {visibleColumns['jobNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-semibold text-slate-700 text-center">{j.jobNo || '-'}</TableCell>}
                     {visibleColumns['jobSize'] && <TableCell className="text-[13px] border-r border-b text-center">{j.jobSize || '-'}</TableCell>}
                     {visibleColumns['jobName'] && <TableCell className="text-[13px] font-medium border-r border-b truncate max-w-[150px] text-center">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-medium border-r border-b truncate max-w-[150px] text-center">{j.jobName || '-'}</TableCell>}
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
@@ -619,7 +630,7 @@ export default function PaperStockPage() {
                         >
                           <Scissors className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setPrintingRolls([j]); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
@@ -696,7 +707,7 @@ export default function PaperStockPage() {
           </div>
           <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3">
             <Button variant="outline" className="flex-1 h-12 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsViewOpen(false)}>Close</Button>
-            <Button className="flex-1 h-12 rounded-xl bg-slate-800 hover:bg-slate-900 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setPrintingRoll(viewingRoll); setIsPrintOpen(true); }}>
+            <Button className="flex-1 h-12 rounded-xl bg-slate-800 hover:bg-slate-900 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setPrintingRolls([viewingRoll]); setIsPrintOpen(true); }}>
               <Printer className="h-4 w-4 mr-2" /> Print Label
             </Button>
             <Button className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setEditingRoll(viewingRoll); setFormData({...viewingRoll}); setIsViewOpen(false); setIsDialogOpen(true); }}>
@@ -818,53 +829,57 @@ export default function PaperStockPage() {
               </div>
             </div>
           </div>
-          <div className="p-10 flex justify-center bg-slate-200 overflow-auto max-h-[60vh] industrial-scroll">
-            {selectedTemplate ? (
-              <div id="print-area">
-                <TemplateRenderer 
-                  elements={selectedTemplate.elements} 
-                  data={printDataMapping} 
-                  paperWidth={selectedTemplate.paperWidth} 
-                  paperHeight={selectedTemplate.paperHeight} 
-                />
-              </div>
-            ) : (
-              <div id="print-area" className="bg-white p-8 shadow-2xl border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', color: 'black', fontFamily: 'monospace' }}>
-                <div className="flex justify-between items-center border-b-4 border-black pb-4 text-left">
-                  <span className="text-3xl font-bold tracking-tighter">SHREE LABEL CREATION</span>
-                  <span className="text-xl font-bold">V2.1</span>
-                </div>
-                <div className="mt-6 flex justify-between">
-                  <div className="space-y-2 max-w-[60%] text-left">
-                    <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
-                    <p className="text-3xl font-bold leading-none truncate">{printingRoll?.paperType}</p>
-                    <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
-                    <p className="text-6xl font-bold tracking-tighter leading-none">{printingRoll?.rollNo}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-4">
-                    <div className="bg-white border-2 border-black p-1">
-                      <QRCodeSVG value={JSON.stringify({ roll: printingRoll?.rollNo, type: printingRoll?.paperType, w: printingRoll?.widthMm, l: printingRoll?.lengthMeters })} size={120} />
+          <div className="p-10 flex flex-col items-center bg-slate-200 overflow-auto max-h-[60vh] industrial-scroll gap-10">
+            <div id="print-area">
+              {printingRolls.map((roll, idx) => (
+                <div key={roll.id} className="label-page">
+                  {selectedTemplate ? (
+                    <TemplateRenderer 
+                      elements={selectedTemplate.elements} 
+                      data={getPrintDataMapping(roll)} 
+                      paperWidth={selectedTemplate.paperWidth} 
+                      paperHeight={selectedTemplate.paperHeight} 
+                    />
+                  ) : (
+                    <div className="bg-white p-8 shadow-2xl border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', color: 'black', fontFamily: 'monospace' }}>
+                      <div className="flex justify-between items-center border-b-4 border-black pb-4 text-left">
+                        <span className="text-3xl font-bold tracking-tighter">SHREE LABEL CREATION</span>
+                        <span className="text-xl font-bold">V2.1</span>
+                      </div>
+                      <div className="mt-6 flex justify-between">
+                        <div className="space-y-2 max-w-[60%] text-left">
+                          <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
+                          <p className="text-3xl font-bold leading-none truncate">{roll.paperType}</p>
+                          <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
+                          <p className="text-6xl font-bold tracking-tighter leading-none">{roll.rollNo}</p>
+                        </div>
+                        <div className="flex flex-col items-end gap-4">
+                          <div className="bg-white border-2 border-black p-1">
+                            <QRCodeSVG value={roll.rollNo} size={120} />
+                          </div>
+                          <div className="scale-75 origin-right"><Barcode value={roll.rollNo || "00000"} width={2} height={50} fontSize={14} /></div>
+                        </div>
+                      </div>
+                      <div className="mt-8 grid grid-cols-2 gap-x-12 gap-y-4 border-t-4 border-black pt-6">
+                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Width:</span><span className="text-2xl font-bold">{roll.widthMm} mm</span></div>
+                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Length:</span><span className="text-2xl font-bold">{roll.lengthMeters} mtr</span></div>
+                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">GSM:</span><span className="text-2xl font-bold">{roll.gsm}</span></div>
+                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Weight:</span><span className="text-2xl font-bold">{roll.weightKg} kg</span></div>
+                      </div>
+                      <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[14px] font-semibold uppercase">
+                        <span>Company: {roll.paperCompany}</span>
+                        <span>Received: {roll.receivedDate}</span>
+                      </div>
                     </div>
-                    <div className="scale-75 origin-right"><Barcode value={printingRoll?.rollNo || "00000"} width={2} height={50} fontSize={14} /></div>
-                  </div>
+                  )}
                 </div>
-                <div className="mt-8 grid grid-cols-2 gap-x-12 gap-y-4 border-t-4 border-black pt-6">
-                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Width:</span><span className="text-2xl font-bold">{printingRoll?.widthMm} mm</span></div>
-                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Length:</span><span className="text-2xl font-bold">{printingRoll?.lengthMeters} mtr</span></div>
-                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">GSM:</span><span className="text-2xl font-bold">{printingRoll?.gsm}</span></div>
-                  <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Weight:</span><span className="text-2xl font-bold">{printingRoll?.weightKg} kg</span></div>
-                </div>
-                <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[14px] font-semibold uppercase">
-                  <span>Company: {printingRoll?.paperCompany}</span>
-                  <span>Received: {printingRoll?.receivedDate}</span>
-                </div>
-              </div>
-            )}
+              ))}
+            </div>
           </div>
           <DialogFooter className="p-6 bg-white border-t">
             <Button variant="outline" className="h-12 px-8 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsPrintOpen(false)}>Cancel</Button>
             <Button className="h-12 px-12 rounded-xl bg-slate-900 hover:bg-black font-semibold uppercase text-[10px] tracking-wider shadow-xl" onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-2" /> Execute Print
+              <Printer className="h-4 w-4 mr-2" /> Execute Print ({printingRolls.length})
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -889,14 +904,21 @@ export default function PaperStockPage() {
           body * { visibility: hidden !important; }
           #print-area, #print-area * { visibility: visible !important; }
           #print-area {
-            position: fixed !important;
+            position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             margin: 0 !important;
             box-shadow: none !important;
-            box-sizing: border-box !important;
             background: white !important;
             z-index: 9999 !important;
+            width: 100% !important;
+          }
+          .label-page {
+            page-break-after: always;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
           }
           @page { margin: 0 !important; }
         }
