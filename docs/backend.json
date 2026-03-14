@@ -42,12 +42,18 @@
       },
       "required": ["rollNo", "paperCompany", "widthMm", "lengthMeters", "gsm"]
     },
-    "PaperMetadata": {
-      "title": "PaperMetadata",
+    "PrintTemplate": {
+      "title": "PrintTemplate",
       "type": "object",
+      "description": "Visual layout for official CRM documents.",
       "properties": {
+        "id": { "type": "string" },
         "name": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "documentType": { "type": "string" },
+        "paperWidth": { "type": "number" },
+        "paperHeight": { "type": "number" },
+        "elements": { "type": "array" },
+        "isDefault": { "type": "boolean" }
       }
     }
   },
@@ -61,6 +67,10 @@
     "/paper_stock/{rollId}": {
       "schema": { "$ref": "#/backend/entities/PaperStock" },
       "description": "Primary substrate inventory registry."
+    },
+    "/print_templates/{templateId}": {
+      "schema": { "$ref": "#/backend/entities/PrintTemplate" },
+      "description": "Visual document layouts."
     },
     "/roles/{roleId}": {
       "description": "System access roles and granular permissions."

@@ -4,7 +4,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.5)
+     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.6)
      */
 
     function isSignedIn() {
@@ -52,6 +52,11 @@ service cloud.firestore {
     }
 
     match /quotation_templates/{id} {
+      allow get, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /print_templates/{id} {
       allow get, list: if isSignedIn();
       allow write: if isAdmin();
     }
