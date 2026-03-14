@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -13,32 +13,24 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { 
-  Search, 
   Plus, 
   Loader2, 
-  FilterX, 
   Pencil,
   Trash2,
   Package,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   LayoutGrid,
   Eye,
   Scissors,
   Printer,
-  FileDown,
-  Columns as ColumnsIcon,
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
   History,
-  AlertTriangle,
   Calendar,
-  CheckCircle2,
   Info,
   QrCode,
-  Barcode as BarcodeIcon,
   Hash,
   Building2,
   FileText,
@@ -50,10 +42,10 @@ import {
   CircleDollarSign,
   Maximize2,
   MessageSquare,
-  X,
   Camera,
   CalendarDays,
-  Save
+  Save,
+  X
 } from "lucide-react"
 import { 
   Dialog, 
@@ -71,14 +63,6 @@ import {
   SelectValue,
   SelectSeparator
 } from "@/components/ui/select"
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { 
   collection, 
@@ -86,17 +70,15 @@ import {
   query, 
   limit, 
   serverTimestamp,
-  runTransaction,
   deleteDoc,
-  setDoc,
-  writeBatch
+  setDoc
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
-import * as XLSX from 'xlsx'
 import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
+import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -181,9 +163,14 @@ export default function PaperStockPage() {
 
   const initialFilters = {
     search: "",
-    rollNo: [], paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
-    widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "",
-    rateMin: "", rateMax: "", receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
+    paperCompany: [],
+    paperType: [],
+    gsm: [],
+    status: [],
+    lotNoSearch: "",
+    rollNoSearch: "",
+    receivedFrom: "",
+    receivedTo: ""
   }
 
   const [filters, setFilters] = useState<any>(initialFilters)
@@ -199,11 +186,6 @@ export default function PaperStockPage() {
   }, [firestore]);
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
-
-  const getUniqueOptions = (key: string) => {
-    if (!rolls) return [];
-    return Array.from(new Set(rolls.map(r => String(r[key] || "")).filter(v => v !== ""))).sort();
-  }
 
   const calculatedSqm = useMemo(() => {
     const w = Number(formData.widthMm) || 0;
@@ -221,6 +203,7 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     let result = rolls.filter(row => {
+      // 1. Global Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const matchesGlobal = Object.entries(row).some(([key, val]) => {
@@ -229,10 +212,21 @@ export default function PaperStockPage() {
         });
         if (!matchesGlobal) return false;
       }
-      const categories = ['rollNo', 'paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo'];
-      for (const cat of categories) {
-        if (filters[cat]?.length > 0 && !filters[cat].includes(String(row[cat] || ""))) return false;
-      }
+
+      // 2. Technical Text Searches
+      if (filters.lotNoSearch && !String(row.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
+      if (filters.rollNoSearch && !String(row.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
+
+      // 3. Multi-Select Filters
+      if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(row.paperCompany || ""))) return false;
+      if (filters.paperType?.length > 0 && !filters.paperType.includes(String(row.paperType || ""))) return false;
+      if (filters.gsm?.length > 0 && !filters.gsm.includes(String(row.gsm || ""))) return false;
+      if (filters.status?.length > 0 && !filters.status.includes(String(row.status || ""))) return false;
+
+      // 4. Date Range Filters
+      if (filters.receivedFrom && row.receivedDate < filters.receivedFrom) return false;
+      if (filters.receivedTo && row.receivedDate > filters.receivedTo) return false;
+
       return true;
     });
 
@@ -339,10 +333,8 @@ export default function PaperStockPage() {
 
   const handleResetAll = () => {
     setFilters(initialFilters);
-    setVisibleColumns(defaultVisibleColumns);
     setSortConfig({ key: 'rollNo', direction: 'desc' });
     setCurrentPage(1);
-    toast({ title: "Filters Reset" });
   }
 
   if (!isMounted) return null;
@@ -351,36 +343,27 @@ export default function PaperStockPage() {
     <div className="flex flex-col h-full space-y-4 font-sans animate-in fade-in duration-500 pb-20">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-6 shrink-0 border-slate-200">
-        <div className="flex items-center gap-6">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input placeholder="Global search..." className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-black rounded-xl" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
-          </div>
-          <div className="ml-auto flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={startScanner} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50">
-              <QrCode className="h-4 w-4" /> Scan Roll QR
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleResetAll} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4 border-2 rounded-xl border-destructive/20 hover:bg-destructive/5"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-4 border-t pt-4">
-          <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Status Legend:</span>
-          {STATUS_OPTIONS.map(opt => (
-            <div key={opt.value} className="flex items-center gap-1.5"><div className={cn("w-2.5 h-2.5 rounded-sm shadow-sm", opt.color)} /><span className="text-[10px] font-bold text-slate-600 uppercase">{opt.label}</span></div>
-          ))}
-        </div>
-      </div>
+      {/* MODULAR PERMANENT FILTER COMPONENT */}
+      <PaperStockFilters 
+        data={rolls || []} 
+        filters={filters} 
+        setFilters={setFilters} 
+        onReset={handleResetAll} 
+      />
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
           <h2 className="font-black text-xs uppercase tracking-[0.25em] flex items-center gap-3">
             <LayoutGrid className="h-5 w-5 text-primary" /> Technical Paper Stock Details
           </h2>
-          <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}>
-            <Plus className="h-4 w-4 mr-2" /> Add Roll
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-black uppercase text-[10px] tracking-widest rounded-xl transition-all">
+              <QrCode className="h-4 w-4 mr-2" /> Live Scanner
+            </Button>
+            <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}>
+              <Plus className="h-4 w-4 mr-2" /> Add Roll
+            </Button>
+          </div>
         </div>
 
         <div className="w-full h-[600px] overflow-scroll relative border-t industrial-scroll">
@@ -495,7 +478,7 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* --- MODAL: TECHNICAL PROFILE --- */}
+      {/* MODALS REMAIN THE SAME */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-8">
@@ -511,7 +494,6 @@ export default function PaperStockPage() {
               </Badge>
             </div>
           </div>
-          
           <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-50 industrial-scroll overflow-y-auto max-h-[70vh]">
             <div className="space-y-6">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2 flex items-center gap-2">
@@ -522,7 +504,6 @@ export default function PaperStockPage() {
               <ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} />
               <ProfileField icon={Layers} label="Company Roll No" value={viewingRoll?.companyRollNo} />
             </div>
-
             <div className="space-y-6">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2 flex items-center gap-2">
                 <Maximize2 className="h-3 w-3" /> Size Details
@@ -533,7 +514,6 @@ export default function PaperStockPage() {
               <ProfileField icon={Weight} label="GSM" value={viewingRoll?.gsm} />
               <ProfileField icon={Scale} label="Weight (KG)" value={viewingRoll?.weightKg} />
             </div>
-
             <div className="space-y-6">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 border-b pb-2 flex items-center gap-2">
                 <CircleDollarSign className="h-3 w-3" /> Info & Jobs
@@ -545,7 +525,6 @@ export default function PaperStockPage() {
               <ProfileField icon={MessageSquare} label="Remarks" value={viewingRoll?.remarks} />
             </div>
           </div>
-
           <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3">
             <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsViewOpen(false)}>Close</Button>
             <Button className="flex-1 h-12 rounded-xl bg-slate-800 hover:bg-slate-900 font-black uppercase text-[10px] tracking-widest" onClick={() => { setPrintingRoll(viewingRoll); setIsPrintOpen(true); }}>
@@ -558,7 +537,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- MODAL: ADD / EDIT DIALOG (Full 18 Fields) --- */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <form onSubmit={handleSave}>
@@ -569,17 +547,15 @@ export default function PaperStockPage() {
               </DialogTitle>
               <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] mt-1 tracking-widest">Enterprise Technical Inventory Registry System (V2.1)</DialogDescription>
             </div>
-
-            <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 max-h-[75vh] overflow-y-auto bg-slate-50 industrial-scroll">
-              {/* COLUMN 1: IDENTITY & ORIGIN */}
+            <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 max-h-[75vh] overflow-y-auto bg-slate-50 industrial-scroll text-left">
               <div className="space-y-4">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2">Identity & Source</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4>
                 <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-black opacity-50">Roll ID / Serial *</Label>
+                  <Label className="text-[10px] uppercase font-black opacity-50 block text-left">Roll ID / Serial *</Label>
                   <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-black border-2 bg-white" disabled={!!editingRoll} />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-black opacity-50">Current Status</Label>
+                <div className="space-y-2 text-left">
+                  <Label className="text-[10px] uppercase font-black opacity-50 block text-left">Current Status</Label>
                   <Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}>
                     <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-black"><SelectValue placeholder="Select Status" /></SelectTrigger>
                     <SelectContent className="z-[100] border-none shadow-2xl rounded-xl">
@@ -590,66 +566,60 @@ export default function PaperStockPage() {
                   </Select>
                   {isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-black border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
               </div>
-
-              {/* COLUMN 2: PHYSICAL SPECIFICATIONS */}
               <div className="space-y-4">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2">Technical Specs</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2 text-left">Technical Specs</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Calculated SQM (System)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-black text-primary">{calculatedSqm}</div></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Calculated SQM (System)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-black text-primary">{calculatedSqm}</div></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Purchase Rate (₹)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Purchase Rate (₹)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
               </div>
-
-              {/* COLUMN 3: WORKFLOW & TIMELINE */}
               <div className="space-y-4">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2">Workflow & Timeline</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-primary border-b border-primary/10 pb-2 text-left">Workflow & History</h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-black" /></div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-bold" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[100px]" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black opacity-50 block text-left">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" /></div>
               </div>
             </div>
-
             <DialogFooter className="p-6 bg-white border-t">
               <Button type="button" variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">
                 {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                {editingRoll ? 'Update Technical Record' : 'Finalize Roll Entry'}
+                {editingRoll ? 'Update Master Record' : 'Initialize Roll Record'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* --- MODAL: THERMAL PRINT --- */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Print Engine (150x100mm)</DialogTitle></div>
           <div className="p-10 flex justify-center bg-slate-200">
             <div id="thermal-label" className="bg-white p-8 shadow-2xl border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', color: 'black', fontFamily: 'monospace' }}>
-              <div className="flex justify-between items-center border-b-4 border-black pb-4">
+              <div className="flex justify-between items-center border-b-4 border-black pb-4 text-left">
                 <span className="text-3xl font-black tracking-tighter">SHREE LABEL CREATION</span>
                 <span className="text-xl font-bold">V2.1</span>
               </div>
               <div className="mt-6 flex justify-between">
-                <div className="space-y-2 max-w-[60%]">
+                <div className="space-y-2 max-w-[60%] text-left">
                   <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
                   <p className="text-3xl font-black leading-none truncate">{printingRoll?.paperType}</p>
                   <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
@@ -683,7 +653,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* --- MODAL: QR SCANNER --- */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-black uppercase tracking-[0.3em] flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Technical Intake Scanner</DialogTitle></div>
@@ -725,11 +694,11 @@ export default function PaperStockPage() {
 function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: any, label: string, value: any, highlight?: boolean }) {
   return (
     <div className="space-y-1.5 transition-all group text-left">
-      <Label className="text-[10px] uppercase font-black text-slate-400 flex items-center gap-1.5 transition-colors group-hover:text-primary">
+      <Label className="text-[10px] uppercase font-black text-slate-400 flex items-center gap-1.5 transition-colors group-hover:text-primary block text-left">
         <Icon className="h-3 w-3" /> {label}
       </Label>
       <div className={cn(
-        "text-sm font-black tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm",
+        "text-sm font-black tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm text-left",
         highlight ? "text-primary text-base border-primary/20 bg-primary/5" : "text-slate-800"
       )}>
         {value || "—"}
