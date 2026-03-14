@@ -70,6 +70,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectSeparator
 } from "@/components/ui/select"
 import {
   DropdownMenu,
@@ -307,7 +308,6 @@ export default function PaperStockPage() {
 
     try {
       if (editingRoll) {
-        // If ID changed, we need a transaction to delete old and create new
         if (editingRoll.id !== rollId) {
           await runTransaction(firestore, async (transaction) => {
             const oldRef = doc(firestore, 'paper_stock', editingRoll.id);
@@ -318,13 +318,11 @@ export default function PaperStockPage() {
             transaction.set(newRef, { ...finalData, id: rollId, createdAt: editingRoll.createdAt || serverTimestamp() });
           });
         } else {
-          // Standard update for existing ID
           await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true });
         }
         setIsDialogOpen(false); 
         setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
-        // New roll registration
         await runTransaction(firestore, async (transaction) => {
           const newDocRef = doc(firestore, 'paper_stock', rollId);
           const checkSnap = await transaction.get(newDocRef);
@@ -546,21 +544,21 @@ export default function PaperStockPage() {
                     <TableCell className="border-r border-b text-center">
                       <Badge className={cn("text-[10px] font-black text-white px-2", statusInfo.color)}>{j.status}</Badge>
                     </TableCell>
-                    {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-[13px] font-bold border-r border-b px-3">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-[13px] border-r border-b font-black text-primary font-mono">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.gsm}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['purchaseRate'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">₹{j.purchaseRate || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-[13px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
-                    {visibleColumns['dateOfUsed'] && <TableCell className="text-[13px] font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-black text-slate-700">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobSize'] && <TableCell className="text-[13px] border-r border-b">{j.jobSize || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-bold border-r border-b truncate max-w-[150px]">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.lotNo || '-'}</TableCell>}
-                    {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3 text-center">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[13px] font-bold border-r border-b px-3 text-center">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-[13px] border-r border-b font-black text-primary font-mono text-center">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">{j.gsm}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">₹{j.purchaseRate || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-[13px] font-bold border-r border-b px-2 text-center">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-[13px] font-bold border-r border-b px-2 text-center">{j.dateOfUsed || '-'}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-black text-slate-700 text-center">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-[13px] border-r border-b text-center">{j.jobSize || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-bold border-r border-b truncate max-w-[150px] text-center">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
                     <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[200px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
                         <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
@@ -597,7 +595,7 @@ export default function PaperStockPage() {
 
       {/* TECHNICAL PROFILE MODAL */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100]">
+        <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100] [&>button]:text-white [&>button]:opacity-100">
           <DialogHeader className="p-8 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-white/5">
             <div className="space-y-1">
               <DialogTitle className="uppercase font-black text-xl flex items-center gap-3 tracking-tighter">
@@ -605,7 +603,6 @@ export default function PaperStockPage() {
               </DialogTitle>
               <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest">Roll ID: {viewingRoll?.rollNo}</DialogDescription>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-5 w-5" /></Button>
           </DialogHeader>
           
           <div className="p-10 bg-slate-50 space-y-8 max-h-[75vh] overflow-y-auto industrial-scroll text-left">
@@ -696,10 +693,9 @@ export default function PaperStockPage() {
 
       {/* THERMAL PRINT MODAL */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[600px] p-0 border-none shadow-3xl rounded-3xl z-[150] overflow-hidden">
+        <DialogContent className="sm:max-w-[600px] p-0 border-none shadow-3xl rounded-3xl z-[150] overflow-hidden [&>button]:text-white [&>button]:opacity-100">
           <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
             <h3 className="text-xs font-black uppercase tracking-widest">Thermal Print Preview (150x100mm)</h3>
-            <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-4 w-4" /></Button>
           </div>
           
           <div className="p-12 bg-slate-100 flex justify-center overflow-hidden">
@@ -789,13 +785,12 @@ export default function PaperStockPage() {
 
       {/* QR SCANNER DIALOG */}
       <Dialog open={isScannerOpen} onOpenChange={(open) => { setIsScannerOpen(open); if(!open) Html5QrcodeScanner.prototype.clear; }}>
-        <DialogContent className="sm:max-w-[450px] p-0 border-none shadow-3xl rounded-3xl z-[200] overflow-hidden">
+        <DialogContent className="sm:max-w-[450px] p-0 border-none shadow-3xl rounded-3xl z-[200] overflow-hidden [&>button]:text-white [&>button]:opacity-100">
           <DialogHeader className="p-6 bg-indigo-600 text-white flex flex-row items-center justify-between border-none">
             <div className="space-y-1">
               <DialogTitle className="uppercase font-black text-sm flex items-center gap-2 tracking-widest"><Camera className="h-4 w-4" /> Scanner Hub</DialogTitle>
               <DialogDescription className="text-white/70 text-[10px] font-bold">Point camera at roll QR or Barcode</DialogDescription>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setIsScannerOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-4 w-4" /></Button>
           </DialogHeader>
           <div className="p-0 bg-black min-h-[350px]">
             <div id="reader" className="w-full"></div>
@@ -808,7 +803,7 @@ export default function PaperStockPage() {
 
       {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-3xl shadow-3xl z-[100] animate-in slide-in-from-bottom-4">
+        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-3xl shadow-3xl z-[100] animate-in slide-in-from-bottom-4 [&>button]:text-white [&>button]:opacity-100">
           <form onSubmit={handleSave}>
             <DialogHeader className="p-8 bg-slate-900 text-white">
               <DialogTitle className="uppercase font-black text-xl tracking-widest flex items-center gap-3 text-left">
@@ -839,9 +834,9 @@ export default function PaperStockPage() {
                 ) : (
                   <Select value={formData.status} onValueChange={v => { if(v === "CUSTOM") setIsCustomStatus(true); else setFormData({...formData, status: v}); }}>
                     <SelectTrigger className="h-12 font-black border-2 rounded-xl text-sm"><SelectValue /></SelectTrigger>
-                    <SelectContent className="shadow-2xl rounded-xl border-none">
+                    <SelectContent className="shadow-2xl rounded-xl border-none z-[110]">
                       {STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}
-                      <DropdownMenuSeparator />
+                      <SelectSeparator />
                       <SelectItem value="CUSTOM" className="font-bold text-primary italic">+ Add Custom Stage</SelectItem>
                     </SelectContent>
                   </Select>
