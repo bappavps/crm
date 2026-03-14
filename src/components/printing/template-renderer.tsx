@@ -1,4 +1,3 @@
-
 "use client"
 
 import React from 'react'
@@ -31,15 +30,16 @@ const MM_TO_PX = 3.78;
 
 const FONT_FAMILIES = [
   { id: 'inter', value: 'var(--font-inter), sans-serif' },
-  { id: 'roboto', value: 'Roboto, sans-serif' },
-  { id: 'playfair', value: 'Playfair Display, serif' },
-  { id: 'montserrat', value: 'Montserrat, sans-serif' },
-  { id: 'oswald', value: 'Oswald, sans-serif' },
-  { id: 'lato', value: 'Lato, sans-serif' },
-  { id: 'poppins', value: 'Poppins, sans-serif' },
-  { id: 'merriweather', value: 'Merriweather, serif' },
-  { id: 'mono', value: 'ui-monospace, SFMono-Regular, monospace' },
-  { id: 'narrow', value: 'Arial Narrow, sans-serif' },
+  { id: 'roboto', value: "'Roboto', sans-serif" },
+  { id: 'playfair', value: "'Playfair Display', serif" },
+  { id: 'montserrat', value: "'Montserrat', sans-serif" },
+  { id: 'oswald', value: "'Oswald', sans-serif" },
+  { id: 'lato', value: "'Lato', sans-serif" },
+  { id: 'poppins', value: "'Poppins', sans-serif" },
+  { id: 'merriweather', value: "'Merriweather', serif" },
+  { id: 'mono', value: "ui-monospace, SFMono-Regular, monospace" },
+  { id: 'cursive', value: "cursive" },
+  { id: 'narrow', value: "Arial Narrow, sans-serif" },
 ];
 
 export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scale = 1 }: TemplateRendererProps) {

@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -110,16 +109,16 @@ const PAPER_SIZES = [
 
 const FONT_FAMILIES = [
   { id: 'inter', name: 'Inter (Sans)', value: 'var(--font-inter), sans-serif' },
-  { id: 'roboto', name: 'Roboto', value: 'Roboto, sans-serif' },
-  { id: 'playfair', name: 'Playfair Display', value: 'Playfair Display, serif' },
-  { id: 'montserrat', name: 'Montserrat', value: 'Montserrat, sans-serif' },
-  { id: 'oswald', name: 'Oswald', value: 'Oswald, sans-serif' },
-  { id: 'lato', name: 'Lato', value: 'Lato, sans-serif' },
-  { id: 'poppins', name: 'Poppins', value: 'Poppins, sans-serif' },
-  { id: 'merriweather', name: 'Merriweather', value: 'Merriweather, serif' },
-  { id: 'mono', name: 'Monospace', value: 'ui-monospace, SFMono-Regular, monospace' },
-  { id: 'cursive', name: 'Script', value: 'cursive' },
-  { id: 'narrow', name: 'Arial Narrow', value: 'Arial Narrow, sans-serif' },
+  { id: 'roboto', name: 'Roboto', value: "'Roboto', sans-serif" },
+  { id: 'playfair', name: 'Playfair Display', value: "'Playfair Display', serif" },
+  { id: 'montserrat', name: 'Montserrat', value: "'Montserrat', sans-serif" },
+  { id: 'oswald', name: 'Oswald', value: "'Oswald', sans-serif" },
+  { id: 'lato', name: 'Lato', value: "'Lato', sans-serif" },
+  { id: 'poppins', name: 'Poppins', value: "'Poppins', sans-serif" },
+  { id: 'merriweather', name: 'Merriweather', value: "'Merriweather', serif" },
+  { id: 'mono', name: 'Monospace', value: "ui-monospace, SFMono-Regular, monospace" },
+  { id: 'cursive', name: 'Script', value: "cursive" },
+  { id: 'narrow', name: 'Arial Narrow', value: "Arial Narrow, sans-serif" },
 ];
 
 const CRM_PLACEHOLDERS = [
@@ -770,7 +769,6 @@ export default function PrintTemplateStudio() {
             z-index: 9999 !important;
           }
         }
-        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&family=Playfair+Display:wght@700&family=Montserrat:wght@400;700&family=Oswald:wght@400;700&family=Lato:wght@400;700&family=Poppins:wght@400;700&family=Merriweather:wght@400;700&display=swap');
       `}</style>
     </div>
   )
@@ -900,7 +898,12 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       }}
       onMouseDown={handleMouseDown}
     >
-      <div className="w-full h-full flex items-center overflow-hidden">
+      <div 
+        className="w-full h-full flex items-center overflow-hidden"
+        style={{
+          justifyContent: element.style.textAlign === 'center' ? 'center' : element.style.textAlign === 'right' ? 'flex-end' : 'flex-start',
+        }}
+      >
         {renderContent()}
       </div>
 
