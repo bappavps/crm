@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -47,19 +48,18 @@ interface SlitRun {
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 /**
- * Helper to determine the child suffix based on industrial naming rules.
+ * Industrial Naming Rules (V2):
  * Level 1 (Base Roll T-1038) -> Alphabetical (-A, -B)
  * Level 2 (Slitted Roll T-1038-C) -> Numeric (-1, -2)
  */
 const getChildSuffix = (parentRollNo: string, index: number): string => {
   const parts = parentRollNo.split('-');
-  const isBaseRoll = parts.length <= 2; // Pattern T-XXXX
+  const isBaseRoll = parts.length <= 2; 
   
   if (isBaseRoll) {
     const char = ALPHABET[index % 26];
     return index >= 26 ? `${char}${Math.floor(index / 26)}` : char;
   } else {
-    // Level 2 or deeper -> Numeric
     return (index + 1).toString();
   }
 };
@@ -111,12 +111,12 @@ function SlittingHubContent() {
       const { getDocs } = await import('firebase/firestore');
       const snap = await getDocs(q);
       if (snap.empty) {
-        toast({ variant: "destructive", title: "Roll Not Found", description: `ID ${searchQuery} does not exist in master registry.` });
+        toast({ variant: "destructive", title: "Roll Not Found", description: `ID ${searchQuery} does not exist.` });
         setSelectedParent(null);
       } else {
         const data = { ...snap.docs[0].data(), id: snap.docs[0].id };
         if (!["Main", "Stock", "Slitting"].includes(data.status)) {
-          toast({ variant: "destructive", title: "Invalid Status", description: `Roll status is ${data.status}. Only Main, Stock, or Slitting rolls can be slit.` });
+          toast({ variant: "destructive", title: "Invalid Status", description: `Roll status is ${data.status}.` });
           setSelectedParent(null);
         } else {
           setSelectedParent(data);
@@ -305,10 +305,10 @@ function SlittingHubContent() {
 
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Advance Slitting Features</h2>
-          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Precision width conversion and length split engine.</p>
+          <h1 className="text-[28px] font-semibold tracking-tight">Advanced Slitting Features</h1>
+          <p className="text-sm font-normal text-muted-foreground">Precision width conversion and length split engine for converting parent rolls into production-ready job rolls.</p>
         </div>
-        <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-black text-[10px] uppercase">
+        <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-semibold text-xs">
           <ArrowLeft className="mr-2 h-3 w-3" /> Back to Registry
         </Button>
       </div>
@@ -317,7 +317,7 @@ function SlittingHubContent() {
         <div className="lg:col-span-1 space-y-6">
           <Card className="shadow-xl border-none rounded-2xl overflow-hidden">
             <CardHeader className="bg-slate-900 text-white p-6">
-              <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Search className="h-4 w-4 text-primary" /> Source Roll Selection
               </CardTitle>
             </CardHeader>
@@ -325,7 +325,7 @@ function SlittingHubContent() {
               <div className="flex gap-2">
                 <Input 
                   placeholder="Scan or Enter Roll ID..." 
-                  className="h-12 font-black uppercase rounded-xl border-2" 
+                  className="h-12 font-semibold uppercase rounded-xl border-2" 
                   value={searchQuery} 
                   onChange={e => setSearchQuery(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -339,27 +339,27 @@ function SlittingHubContent() {
                 <div className="space-y-4 animate-in slide-in-from-top-2">
                   <div className="p-4 bg-primary/5 rounded-2xl border-2 border-primary/20 space-y-3">
                     <div className="flex justify-between items-center">
-                      <Badge className="bg-purple-600 font-black">{selectedParent.rollNo}</Badge>
-                      <Badge variant="outline" className="font-black uppercase">{selectedParent.status}</Badge>
+                      <Badge className="bg-purple-600 font-semibold">{selectedParent.rollNo}</Badge>
+                      <Badge variant="outline" className="font-semibold uppercase">{selectedParent.status}</Badge>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label className="text-[10px] font-black uppercase opacity-50">Substrate</Label>
+                        <Label className="text-[10px] font-semibold uppercase opacity-50">Substrate</Label>
                         <p className="text-sm font-bold truncate">{selectedParent.paperType}</p>
                       </div>
                       <div>
-                        <Label className="text-[10px] font-black uppercase opacity-50">Mfr</Label>
+                        <Label className="text-[10px] font-semibold uppercase opacity-50">Mfr</Label>
                         <p className="text-sm font-bold truncate">{selectedParent.paperCompany}</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4 pt-2 border-t border-primary/10">
                       <div className="flex items-center gap-2">
                         <Ruler className="h-4 w-4 text-primary" />
-                        <span className="text-lg font-black">{selectedParent.widthMm}<small className="text-[10px] ml-1">MM</small></span>
+                        <span className="text-lg font-bold">{selectedParent.widthMm}<small className="text-[10px] ml-1">MM</small></span>
                       </div>
                       <div className="flex items-center gap-2">
                         <ArrowRightLeft className="h-4 w-4 text-primary" />
-                        <span className="text-lg font-black">{selectedParent.lengthMeters}<small className="text-[10px] ml-1">MTR</small></span>
+                        <span className="text-lg font-bold">{selectedParent.lengthMeters}<small className="text-[10px] ml-1">MTR</small></span>
                       </div>
                     </div>
                   </div>
@@ -367,7 +367,7 @@ function SlittingHubContent() {
               ) : (
                 <div className="py-12 text-center space-y-4 border-4 border-dashed rounded-3xl opacity-30">
                   <Package className="h-12 w-12 mx-auto" />
-                  <p className="text-[10px] font-black uppercase tracking-widest">No Roll Loaded</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest">No Roll Loaded</p>
                 </div>
               )}
             </CardContent>
@@ -375,23 +375,23 @@ function SlittingHubContent() {
 
           <Card className={cn("shadow-2xl border-none rounded-2xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-[10px] font-black uppercase tracking-widest opacity-70">
-                {calculation.mode === 'WIDTH' ? 'Width Slitting Analytics' : 'Length Split Analytics'}
+              <CardTitle className="text-base font-semibold opacity-90">
+                Slitting Conversion Summary
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6 py-4">
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-black uppercase opacity-60">Total Conversion</p>
-                  <p className="text-4xl font-black tracking-tighter">
+                  <p className="text-[10px] font-semibold uppercase opacity-60">Total Conversion</p>
+                  <p className="text-4xl font-bold tracking-tight">
                     {calculation.mode === 'WIDTH' ? calculation.usedWidth : (calculation as any).usedLength} 
-                    <small className="text-xs ml-1">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
+                    <small className="text-xs ml-1 font-normal">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
                   </p>
                 </div>
                 <div className="text-right space-y-1">
-                  <p className="text-[10px] font-black uppercase opacity-60">Stock Remainder</p>
-                  <p className={cn("text-2xl font-black tracking-tighter", calculation.remainder < 0 ? "text-rose-200" : "text-emerald-400")}>
-                    {calculation.remainder} <small className="text-xs">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
+                  <p className="text-[10px] font-semibold uppercase opacity-60">Stock Remainder</p>
+                  <p className={cn("text-2xl font-bold tracking-tight", calculation.remainder < 0 ? "text-rose-200" : "text-emerald-400")}>
+                    {calculation.remainder} <small className="text-xs font-normal">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
                   </p>
                 </div>
               </div>
@@ -399,8 +399,8 @@ function SlittingHubContent() {
               {!calculation.isValid && (
                 <div className="bg-white/10 p-3 rounded-xl flex items-center gap-3 animate-pulse">
                   <AlertTriangle className="h-5 w-5 text-rose-200" />
-                  <p className="text-[10px] font-black uppercase leading-tight">
-                    {calculation.mode === 'WIDTH' ? 'Exceeds parent width.' : 'Exceeds parent length.'} Reduce qty or dimension.
+                  <p className="text-[10px] font-semibold uppercase leading-tight">
+                    Dimension exceeds parent limits. Reduce qty or dimension.
                   </p>
                 </div>
               )}
@@ -409,7 +409,7 @@ function SlittingHubContent() {
               <Button 
                 onClick={handleExecuteSlitting} 
                 disabled={!selectedParent || !calculation.isValid || isProcessing || (calculation.remainder === selectedParent?.widthMm && calculation.mode === 'WIDTH') || (calculation.remainder === selectedParent?.lengthMeters && calculation.mode === 'LENGTH')} 
-                className={cn("w-full h-16 rounded-none font-black uppercase tracking-[0.25em] transition-all", calculation.isValid ? "bg-primary hover:bg-primary/90" : "bg-rose-700")}
+                className={cn("w-full h-16 rounded-none font-semibold uppercase tracking-widest transition-all", calculation.isValid ? "bg-primary hover:bg-primary/90" : "bg-rose-700")}
               >
                 {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : <Scissors className="mr-3 h-5 w-5" />}
                 Execute Run
@@ -422,12 +422,12 @@ function SlittingHubContent() {
           <Card className="shadow-xl border-none rounded-2xl overflow-hidden flex flex-col">
             <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between p-6">
               <div className="space-y-1">
-                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
-                  <Briefcase className="h-4 w-4 text-primary" /> Run Specification Table
+                <CardTitle className="text-base font-semibold flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-primary" /> Slitting Run Specification
                 </CardTitle>
-                <p className="text-[9px] font-black text-slate-400 uppercase">Define target widths, lengths, and job assignments for conversion.</p>
+                <p className="text-[10px] font-medium text-slate-400 uppercase">Define target widths, lengths, and job assignments for conversion.</p>
               </div>
-              <Button size="sm" variant="outline" onClick={addRun} className="h-9 px-4 font-black uppercase text-[10px] rounded-xl border-2">
+              <Button size="sm" variant="outline" onClick={addRun} className="h-9 px-4 font-semibold uppercase text-[10px] rounded-xl border-2">
                 <Plus className="h-4 w-4 mr-2" /> Add Run Row
               </Button>
             </CardHeader>
@@ -435,11 +435,11 @@ function SlittingHubContent() {
               <Table>
                 <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Job Details</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-center w-[120px]">Width (MM)</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-center w-[120px]">Length (MTR)</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-center w-[100px]">Qty</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-right w-[150px]">Total Conversion</TableHead>
+                    <TableHead className="font-semibold text-[10px] uppercase pl-8 py-4">Job Details</TableHead>
+                    <TableHead className="font-semibold text-[10px] uppercase text-center w-[120px]">Width (MM)</TableHead>
+                    <TableHead className="font-semibold text-[10px] uppercase text-center w-[120px]">Length (MTR)</TableHead>
+                    <TableHead className="font-semibold text-[10px] uppercase text-center w-[100px]">Qty</TableHead>
+                    <TableHead className="font-semibold text-[10px] uppercase text-right w-[150px]">Total Conversion</TableHead>
                     <TableHead className="w-20 pr-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -451,7 +451,7 @@ function SlittingHubContent() {
                           <div className="relative">
                             <Input 
                               placeholder="Job No (e.g. JOB-4501)" 
-                              className="h-10 font-black uppercase border-none bg-slate-100/50 rounded-xl text-xs pl-9" 
+                              className="h-10 font-semibold uppercase border-none bg-slate-100/50 rounded-xl text-xs pl-9" 
                               value={run.jobNo} 
                               onChange={e => updateRun(run.id, 'jobNo', e.target.value)}
                             />
@@ -461,7 +461,7 @@ function SlittingHubContent() {
                             <div className="relative">
                               <Input 
                                 placeholder="Job Name" 
-                                className="h-9 font-bold border-none bg-slate-100/30 rounded-xl text-[10px] pl-8" 
+                                className="h-9 font-medium border-none bg-slate-100/30 rounded-xl text-[10px] pl-8" 
                                 value={run.jobName} 
                                 onChange={e => updateRun(run.id, 'jobName', e.target.value)}
                               />
@@ -470,7 +470,7 @@ function SlittingHubContent() {
                             <div className="relative">
                               <Input 
                                 placeholder="Job Size" 
-                                className="h-9 font-bold border-none bg-slate-100/30 rounded-xl text-[10px] pl-8" 
+                                className="h-9 font-medium border-none bg-slate-100/30 rounded-xl text-[10px] pl-8" 
                                 value={run.jobSize} 
                                 onChange={e => updateRun(run.id, 'jobSize', e.target.value)}
                               />
@@ -483,7 +483,7 @@ function SlittingHubContent() {
                         <div className="flex items-center justify-center">
                           <Input 
                             type="number" 
-                            className="h-10 w-24 text-center font-black border-2 border-slate-200 rounded-xl" 
+                            className="h-10 w-24 text-center font-bold border-2 border-slate-200 rounded-xl" 
                             value={run.widthMm || ""} 
                             placeholder={selectedParent?.widthMm}
                             onChange={e => updateRun(run.id, 'widthMm', Number(e.target.value))}
@@ -494,7 +494,7 @@ function SlittingHubContent() {
                         <div className="flex items-center justify-center">
                           <Input 
                             type="number" 
-                            className="h-10 w-24 text-center font-black border-2 border-slate-200 rounded-xl" 
+                            className="h-10 w-24 text-center font-bold border-2 border-slate-200 rounded-xl" 
                             value={run.lengthMeters || ""} 
                             placeholder={selectedParent?.lengthMeters}
                             onChange={e => updateRun(run.id, 'lengthMeters', Number(e.target.value))}
@@ -505,14 +505,14 @@ function SlittingHubContent() {
                         <div className="flex items-center justify-center">
                           <Input 
                             type="number" 
-                            className="h-10 w-16 text-center font-black border-2 border-slate-200 rounded-xl" 
+                            className="h-10 w-16 text-center font-bold border-2 border-slate-200 rounded-xl" 
                             value={run.parts || ""} 
                             onChange={e => updateRun(run.id, 'parts', Number(e.target.value))}
                           />
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="text-sm font-black text-slate-400 group-hover:text-primary transition-colors">
+                        <span className="text-sm font-semibold text-slate-400 group-hover:text-primary transition-colors">
                           {calculation.mode === 'WIDTH' 
                             ? `${Number(run.widthMm || selectedParent?.widthMm) * Number(run.parts)} MM` 
                             : `${Number(run.lengthMeters || selectedParent?.lengthMeters) * Number(run.parts)} MTR`
@@ -533,32 +533,31 @@ function SlittingHubContent() {
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white border-2 rounded-xl flex items-center gap-3">
                   <History className="h-4 w-4 text-slate-400" />
-                  <span className="text-[10px] font-black uppercase text-slate-500">
-                    Operation: {calculation.mode === 'WIDTH' ? 'Width Slitting' : 'Length Split / Rewind'}
+                  <span className="text-[10px] font-semibold uppercase text-slate-500">
+                    Mode: {calculation.mode === 'WIDTH' ? 'Width Slitting' : 'Length Split / Rewind'}
                   </span>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <CheckCircle2 className={cn("h-5 w-5 transition-colors", calculation.isValid && selectedParent ? "text-emerald-500" : "text-slate-200")} />
-                <span className="text-[10px] font-black uppercase text-slate-400">Integrity Verified</span>
+                <span className="text-[10px] font-semibold uppercase text-slate-400">Integrity Verified</span>
               </div>
             </CardFooter>
           </Card>
 
-          {/* SLITTING VISUAL PREVIEW SECTION */}
           <Card className="shadow-xl border-none rounded-2xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-50 border-b py-6 px-8">
-              <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
-                <LayoutGrid className="h-4 w-4 text-primary" /> Slitting Visual Preview
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <LayoutGrid className="h-4 w-4 text-primary" /> Slitting Layout Preview
               </CardTitle>
-              <p className="text-[9px] font-black text-slate-400 uppercase">Live layout visualization of output rolls and stock remainders.</p>
+              <p className="text-[10px] font-medium text-slate-400 uppercase">Live layout visualization of output rolls and stock remainders.</p>
             </CardHeader>
             <CardContent className="p-8">
               <div className="flex flex-wrap gap-6 justify-start">
                 {previewParts.length === 0 ? (
                   <div className="py-12 text-center w-full border-4 border-dashed rounded-3xl opacity-20 flex flex-col items-center gap-3">
                     <LayoutGrid className="h-10 w-10" />
-                    <p className="text-[10px] font-black uppercase tracking-widest">Define runs to visualize layout</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-widest">Define runs to visualize layout</p>
                   </div>
                 ) : (
                   previewParts.map((part, i) => (
@@ -567,33 +566,29 @@ function SlittingHubContent() {
                       part.isRemainder ? "bg-emerald-50 border-emerald-200 text-emerald-700" : 
                       part.isJob ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-slate-50 border-slate-200 text-slate-600"
                     )}>
-                      {/* Name Label */}
-                      <div className="absolute top-3 left-4 font-black text-[11px] uppercase opacity-40">[{part.label}]</div>
+                      <div className="absolute top-3 left-4 font-bold text-[11px] uppercase opacity-40">[{part.label}]</div>
                       
-                      {/* Status Badges */}
-                      {part.isRemainder && <Badge className="absolute top-3 right-3 bg-emerald-500 text-[8px] h-4 px-1.5 font-black uppercase border-none">STOCK</Badge>}
-                      {part.isJob && <Badge className="absolute top-3 right-3 bg-blue-500 text-[8px] h-4 px-1.5 font-black uppercase border-none">JOB</Badge>}
+                      {part.isRemainder && <Badge className="absolute top-3 right-3 bg-emerald-500 text-[8px] h-4 px-1.5 font-semibold uppercase border-none">STOCK</Badge>}
+                      {part.isJob && <Badge className="absolute top-3 right-3 bg-blue-500 text-[8px] h-4 px-1.5 font-semibold uppercase border-none">JOB</Badge>}
                       
-                      {/* Dimensional Icons/Labels */}
                       <div className="flex flex-col items-center gap-3 mt-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-black opacity-40">↔</span>
-                          <span className="text-xl font-black tracking-tighter tabular-nums leading-none">
-                            {part.width}<small className="text-[9px] ml-0.5 font-bold uppercase opacity-60">MM</small>
+                          <span className="text-[12px] font-bold opacity-40">↔</span>
+                          <span className="text-xl font-bold tracking-tight tabular-nums leading-none">
+                            {part.width}<small className="text-[9px] ml-0.5 font-medium uppercase opacity-60">MM</small>
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-black opacity-40">↕</span>
-                          <span className="text-xl font-black tracking-tighter tabular-nums leading-none">
-                            {part.length}<small className="text-[9px] ml-0.5 font-bold uppercase opacity-60">MTR</small>
+                          <span className="text-[12px] font-bold opacity-40">↕</span>
+                          <span className="text-xl font-bold tracking-tight tabular-nums leading-none">
+                            {part.length}<small className="text-[9px] ml-0.5 font-medium uppercase opacity-60">MTR</small>
                           </span>
                         </div>
                       </div>
                       
-                      {/* Job Metadata Footer */}
                       {part.jobNo && (
                         <div className="mt-4 pt-3 border-t w-full text-center border-blue-100">
-                          <p className="text-[10px] font-black uppercase truncate leading-none opacity-80">{part.jobNo}</p>
+                          <p className="text-[10px] font-semibold uppercase truncate leading-none opacity-80">{part.jobNo}</p>
                         </div>
                       )}
                     </div>
