@@ -339,7 +339,6 @@ export default function PaperStockPage() {
       setEditingRoll(roll);
       setFormData({ ...formData, ...roll });
     } else {
-      // Intelligent Logic to find the suggested next Roll Number
       let nextRollNo = "RL-0001";
       if (rolls && rolls.length > 0) {
         let maxNum = -1;
@@ -347,7 +346,6 @@ export default function PaperStockPage() {
         
         rolls.forEach(r => {
           const rollStr = String(r.rollNo || "");
-          // Match prefix and number at end. Example: T-1044 -> prefix="T-", num=1044
           const match = rollStr.match(/^(.*?)(\d+)$/); 
           if (match) {
             const prefix = match[1];
@@ -357,7 +355,6 @@ export default function PaperStockPage() {
               bestPrefix = prefix;
             }
           } else {
-            // Fallback for codes that don't end in numbers
             const numMatch = rollStr.match(/\d+/);
             if (numMatch) {
               const num = parseInt(numMatch[0], 10);
@@ -403,17 +400,18 @@ export default function PaperStockPage() {
 
     try {
       if (editingRoll) {
-        // If the roll number changed, we migrate document ID
         if (editingRoll.id !== rollId) {
           await runTransaction(firestore, async (transaction) => {
             const oldRef = doc(firestore, 'paper_stock', editingRoll.id);
             const newRef = doc(firestore, 'paper_stock', rollId);
             
+            // EXECUTE ALL READS FIRST
             const checkSnap = await transaction.get(newRef);
             if (checkSnap.exists()) {
               throw new Error(`Roll No ${rollId} already exists in registry.`);
             }
 
+            // EXECUTE ALL WRITES AFTER
             transaction.delete(oldRef);
             transaction.set(newRef, { ...finalData, id: rollId, createdAt: editingRoll.createdAt || serverTimestamp() });
           });
@@ -423,21 +421,25 @@ export default function PaperStockPage() {
         setIsDialogOpen(false);
         setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
-        // Add new roll
         await runTransaction(firestore, async (transaction) => {
           const newDocRef = doc(firestore, 'paper_stock', rollId);
-          const checkSnap = await transaction.get(newDocRef);
+          const counterRef = doc(firestore, 'counters', 'paper_roll');
+          
+          // EXECUTE ALL READS FIRST
+          const [checkSnap, counterSnap] = await Promise.all([
+            transaction.get(newDocRef),
+            transaction.get(counterRef)
+          ]);
+
           if (checkSnap.exists()) {
             throw new Error(`Roll No ${rollId} already exists in registry.`);
           }
           
+          // EXECUTE ALL WRITES AFTER
           transaction.set(newDocRef, { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
           
-          // Atomic sync for counter if numeric
           const numericPart = parseInt(rollId.replace(/\D/g, ''));
           if (!isNaN(numericPart)) {
-            const counterRef = doc(firestore, 'counters', 'paper_roll');
-            const counterSnap = await transaction.get(counterRef);
             const currentCounter = counterSnap.exists() ? (counterSnap.data().current_number || 0) : 0;
             if (numericPart > currentCounter) {
               transaction.set(counterRef, { current_number: numericPart }, { merge: true });
@@ -750,6 +752,15 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
+      {/* SUGGESTION DATALISTS */}
+      <datalist id="paper-company-suggestions">{getUniqueOptions('paperCompany').map(o => <option key={o} value={o} />)}</datalist>
+      <datalist id="paper-type-suggestions">{getUniqueOptions('paperType').map(o => <option key={o} value={o} />)}</datalist>
+      <datalist id="job-no-suggestions">{getUniqueOptions('jobNo').map(o => <option key={o} value={o} />)}</datalist>
+      <datalist id="job-size-suggestions">{getUniqueOptions('jobSize').map(o => <option key={o} value={o} />)}</datalist>
+      <datalist id="job-name-suggestions">{getUniqueOptions('jobName').map(o => <option key={o} value={o} />)}</datalist>
+      <datalist id="lot-no-suggestions">{getUniqueOptions('lotNo').map(o => <option key={o} value={o} />)}</datalist>
+      <datalist id="company-roll-suggestions">{getUniqueOptions('companyRollNo').map(o => <option key={o} value={o} />)}</datalist>
+
       {/* VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-portal">
@@ -758,7 +769,7 @@ export default function PaperStockPage() {
           </DialogHeader>
           <div className="p-8 grid grid-cols-2 md:grid-cols-3 gap-8 bg-white industrial-scroll max-h-[70vh] overflow-y-auto">
             {Object.keys(FIELD_LABELS).map((key, idx) => (
-              <div key={idx} className="space-y-1 group text-center">
+              <div key={idx} className="space-y-1 group text-left">
                 <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest block transition-colors group-hover:text-primary">{FIELD_LABELS[key]}</Label>
                 <p className="text-sm font-black text-slate-800 tracking-tight">{viewingRoll?.[key] || '-'}</p>
               </div>
@@ -796,32 +807,80 @@ export default function PaperStockPage() {
             </DialogHeader>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white">
               <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Roll No (Editable)</Label>
-                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-11 font-black text-primary border-2 text-sm text-center" required />
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Roll No (Editable)</Label>
+                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-11 font-black text-primary border-2 text-sm text-left" required />
               </div>
               <div className="space-y-2">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Status</Label>
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="h-11 font-black border-2 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-11 font-black border-2 text-sm text-left"><SelectValue /></SelectTrigger>
                   <SelectContent className="shadow-2xl z-portal">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20"><Label className="text-[11px] uppercase font-black text-primary tracking-widest">SQM (Auto-calc)</Label><Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Weight (KG)</Label><Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Purchase Rate</Label><Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Date of Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Date of Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Job No</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Lot No / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-center" /></div>
-              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3"><Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium text-sm text-center" /></div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Paper Company</Label>
+                <Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Paper Type</Label>
+                <Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Width (MM)</Label>
+                <Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Length (MTR)</Label>
+                <Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20">
+                <Label className="text-[11px] uppercase font-black text-primary tracking-widest text-left block">SQM (Auto-calc)</Label>
+                <Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">GSM</Label>
+                <Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Weight (KG)</Label>
+                <Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Purchase Rate</Label>
+                <Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Date of Received</Label>
+                <Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Date of Used</Label>
+                <Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Job No</Label>
+                <Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Job Size</Label>
+                <Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Job Name</Label>
+                <Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Lot No / Batch No</Label>
+                <Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Company Roll No</Label>
+                <Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2 text-sm text-left" />
+              </div>
+              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3">
+                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest text-left block">Remarks</Label>
+                <Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium text-sm text-left" />
+              </div>
             </div>
             <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4">
               <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-[0.2em] bg-slate-800 shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">
