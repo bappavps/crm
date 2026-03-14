@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -37,14 +37,31 @@ import {
   MoreHorizontal,
   Calendar,
   CheckCircle2,
-  Info
+  Info,
+  QrCode,
+  Barcode as BarcodeIcon,
+  Hash,
+  Building2,
+  FileText,
+  Ruler,
+  ArrowRightLeft,
+  Layers,
+  Weight,
+  Scale,
+  CircleDollarSign,
+  Tag,
+  Maximize2,
+  MessageSquare,
+  X,
+  Camera
 } from "lucide-react"
 import { 
   Dialog, 
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter
+  DialogFooter,
+  DialogDescription
 } from "@/components/ui/dialog"
 import {
   Select,
@@ -77,6 +94,9 @@ import { cn } from "@/lib/utils"
 import { usePermissions } from "@/components/auth/permission-context"
 import { ActionModal, ModalType } from "@/components/action-modal"
 import * as XLSX from 'xlsx'
+import { QRCodeSVG } from 'qrcode.react'
+import Barcode from 'react-barcode'
+import { Html5QrcodeScanner } from "html5-qrcode"
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -145,6 +165,8 @@ export default function PaperStockPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isViewOpen, setIsViewOpen] = useState(false)
   const [isPrintOpen, setIsPrintOpen] = useState(false)
+  const [isScannerOpen, setIsScannerOpen] = useState(false)
+  
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [viewingRoll, setViewingRoll] = useState<any>(null)
   const [printingRoll, setPrintingRoll] = useState<any>(null)
@@ -154,94 +176,48 @@ export default function PaperStockPage() {
   const [rowsPerPage, setRowsPerPage] = useState(50) 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
+  const [highlightedId, setHighlightedId] = useState<string | null>(null)
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
-    rollNo: true,
-    status: true,
-    paperCompany: true,
-    paperType: true,
-    widthMm: true,
-    lengthMeters: true,
-    sqm: true,
-    gsm: true,
-    weightKg: true,
-    purchaseRate: true,
-    receivedDate: true,
-    dateOfUsed: true,
-    jobNo: true,
-    jobSize: true,
-    jobName: true,
-    lotNo: true,
-    companyRollNo: true,
-    remarks: true
+    rollNo: true, status: true, paperCompany: true, paperType: true, widthMm: true, lengthMeters: true,
+    sqm: true, gsm: true, weightKg: true, purchaseRate: true, receivedDate: true, dateOfUsed: true,
+    jobNo: true, jobSize: true, jobName: true, lotNo: true, companyRollNo: true, remarks: true
   })
 
   useEffect(() => { 
     setIsMounted(true);
-    setFormData(prev => ({ ...prev, receivedDate: new Date().toISOString().split('T')[0] }));
-    
     const saved = localStorage.getItem('paperStockVisibleColumns')
     if (saved) {
-      try {
-        setVisibleColumns(prev => ({ ...prev, ...JSON.parse(saved) }))
-      } catch (e) {
-        console.error("Failed to load column settings", e)
-      }
+      try { setVisibleColumns(prev => ({ ...prev, ...JSON.parse(saved) })) } catch (e) {}
     }
   }, [])
 
   useEffect(() => {
-    if (isMounted) {
-      localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
-    }
+    if (isMounted) localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
   }, [visibleColumns, isMounted])
 
-  const [modal, setModal] = useState<{
-    isOpen: boolean;
-    type: ModalType;
-    title: string;
-    description?: string;
-  }>({ isOpen: false, type: 'SUCCESS', title: '' });
+  // Scroll to highlighted row
+  useEffect(() => {
+    if (highlightedId && isMounted) {
+      const el = document.getElementById(`row-${highlightedId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => setHighlightedId(null), 5000); // Remove pulse after 5s
+      }
+    }
+  }, [highlightedId, isMounted]);
+
+  const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string; }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
   const [filters, setFilters] = useState<any>({
-    search: "",
-    paperCompany: [],
-    paperType: [],
-    status: [],
-    jobNo: [],
-    jobSize: [],
-    jobName: [],
-    lotNo: [],
-    companyRollNo: [],
-    widthMin: "", widthMax: "",
-    lengthMin: "", lengthMax: "",
-    sqmMin: "", sqmMax: "",
-    gsmMin: "", gsmMax: "",
-    weightMin: "", weightMax: "",
-    rateMin: "", rateMax: "",
-    receivedFrom: "", receivedTo: "",
-    usedFrom: "", usedTo: ""
+    search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
+    widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "",
+    rateMin: "", rateMax: "", receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
   })
 
   const [formData, setFormData] = useState({
-    rollNo: "", 
-    paperCompany: "",
-    paperType: "",
-    status: "Main",
-    widthMm: 0,
-    lengthMeters: 0,
-    sqm: 0,
-    gsm: 0,
-    weightKg: 0,
-    purchaseRate: 0,
-    receivedDate: "",
-    dateOfUsed: "",
-    jobNo: "",
-    jobSize: "",
-    jobName: "",
-    lotNo: "",
-    companyRollNo: "",
-    remarks: ""
+    rollNo: "", paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0,
+    purchaseRate: 0, receivedDate: "", dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", companyRollNo: "", remarks: ""
   })
 
   const registryQuery = useMemoFirebase(() => {
@@ -253,8 +229,7 @@ export default function PaperStockPage() {
 
   const getUniqueOptions = (key: string) => {
     if (!rolls) return [];
-    const values = rolls.map(r => r[key]).filter(v => v !== undefined && v !== null && v !== "");
-    return Array.from(new Set(values.map(String))).sort();
+    return Array.from(new Set(rolls.map(r => String(r[key] || "")).filter(v => v !== ""))).sort();
   }
 
   const calculatedSqm = useMemo(() => {
@@ -265,11 +240,8 @@ export default function PaperStockPage() {
 
   const requestSort = (key: string) => {
     let direction: SortDirection = 'asc';
-    if (sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    } else if (sortConfig.key === key && sortConfig.direction === 'desc') {
-      direction = null;
-    }
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    else if (sortConfig.key === key && sortConfig.direction === 'desc') direction = null;
     setSortConfig({ key, direction });
   }
 
@@ -280,62 +252,45 @@ export default function PaperStockPage() {
         const s = filters.search.toLowerCase();
         return Object.values(row).some(v => String(v || "").toLowerCase().includes(s));
       }
-
       const categories = ['paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo'];
       for (const cat of categories) {
         if (filters[cat]?.length > 0 && !filters[cat].includes(String(row[cat] || ""))) return false;
       }
-
       const numericRanges = [
-        { key: 'widthMm', min: 'widthMin', max: 'widthMax' },
-        { key: 'lengthMeters', min: 'lengthMin', max: 'lengthMax' },
-        { key: 'sqm', min: 'sqmMin', max: 'sqmMax' },
-        { key: 'gsm', min: 'gsmMin', max: 'gsmMax' },
-        { key: 'weightKg', min: 'weightMin', max: 'weightMax' },
-        { key: 'purchaseRate', min: 'rateMin', max: 'rateMax' }
+        { key: 'widthMm', min: 'widthMin', max: 'widthMax' }, { key: 'lengthMeters', min: 'lengthMin', max: 'lengthMax' },
+        { key: 'sqm', min: 'sqmMin', max: 'sqmMax' }, { key: 'gsm', min: 'gsmMin', max: 'gsmMax' },
+        { key: 'weightKg', min: 'weightMin', max: 'weightMax' }, { key: 'purchaseRate', min: 'rateMin', max: 'rateMax' }
       ];
       for (const r of numericRanges) {
         const val = Number(row[r.key] || 0);
         if (filters[r.min] && val < Number(filters[r.min])) return false;
         if (filters[r.max] && val > Number(filters[r.max])) return false;
       }
-
       if (filters.receivedFrom && (row.receivedDate || "") < filters.receivedFrom) return false;
       if (filters.receivedTo && (row.receivedDate || "") > filters.receivedTo) return false;
       if (filters.usedFrom && (row.dateOfUsed || "") < filters.usedFrom) return false;
       if (filters.usedTo && (row.dateOfUsed || "") > filters.usedTo) return false;
-
       return true;
     });
 
     if (sortConfig.key && sortConfig.direction) {
       result.sort((a, b) => {
         const key = sortConfig.key;
-        let valA = a[key];
-        let valB = b[key];
-
+        let valA = a[key]; let valB = b[key];
         if (['widthMm', 'lengthMeters', 'sqm', 'gsm', 'weightKg', 'purchaseRate'].includes(key)) {
-          valA = Number(valA || 0);
-          valB = Number(valB || 0);
+          valA = Number(valA || 0); valB = Number(valB || 0);
           return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
         }
-
-        valA = String(valA || "").toLowerCase();
-        valB = String(valB || "").toLowerCase();
-        
+        valA = String(valA || "").toLowerCase(); valB = String(valB || "").toLowerCase();
         if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
         if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
-
     return result;
   }, [rolls, filters, sortConfig]);
 
   const totalPages = Math.ceil(filteredRows.length / rowsPerPage);
-  const startRange = filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-  const endRange = Math.min(currentPage * rowsPerPage, filteredRows.length);
-
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * rowsPerPage;
     return filteredRows.slice(start, start + rowsPerPage);
@@ -348,44 +303,21 @@ export default function PaperStockPage() {
     } else {
       let nextRollNo = "RL-0001";
       if (rolls && rolls.length > 0) {
-        let maxNum = -1;
-        let bestPrefix = "RL-";
-        
+        let maxNum = -1; let bestPrefix = "RL-";
         rolls.forEach(r => {
-          const rollStr = String(r.rollNo || "");
-          const match = rollStr.match(/^(.*?)(\d+)$/); 
+          const match = String(r.rollNo || "").match(/^(.*?)(\d+)$/);
           if (match) {
-            const prefix = match[1];
             const num = parseInt(match[2], 10);
-            if (num > maxNum) {
-              maxNum = num;
-              bestPrefix = prefix;
-            }
-          } else {
-            const numMatch = rollStr.match(/\d+/);
-            if (numMatch) {
-              const num = parseInt(numMatch[0], 10);
-              if (num > maxNum) {
-                maxNum = num;
-                bestPrefix = rollStr.substring(0, rollStr.indexOf(numMatch[0]));
-              }
-            }
+            if (num > maxNum) { maxNum = num; bestPrefix = match[1]; }
           }
         });
-
-        if (maxNum !== -1) {
-          nextRollNo = `${bestPrefix}${(maxNum + 1).toString().padStart(4, '0')}`;
-        }
+        if (maxNum !== -1) nextRollNo = `${bestPrefix}${(maxNum + 1).toString().padStart(4, '0')}`;
       }
-
       setEditingRoll(null);
       setFormData({
-        rollNo: nextRollNo, 
-        paperCompany: "", paperType: "", status: "Main",
-        widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0, purchaseRate: 0,
-        receivedDate: new Date().toISOString().split('T')[0],
-        dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", 
-        companyRollNo: "", remarks: ""
+        rollNo: nextRollNo, paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
+        gsm: 0, weightKg: 0, purchaseRate: 0, receivedDate: new Date().toISOString().split('T')[0],
+        dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", companyRollNo: "", remarks: ""
       });
     }
     setIsDialogOpen(true);
@@ -395,226 +327,93 @@ export default function PaperStockPage() {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     setIsProcessing(true);
-    
-    const finalData = { 
-      ...formData, 
-      sqm: calculatedSqm,
-      updatedAt: serverTimestamp(),
-      updatedById: user.uid
-    };
-
+    const finalData = { ...formData, sqm: calculatedSqm, updatedAt: serverTimestamp(), updatedById: user.uid };
     const rollId = formData.rollNo.trim();
-
     try {
       if (editingRoll) {
         if (editingRoll.id !== rollId) {
           await runTransaction(firestore, async (transaction) => {
             const oldRef = doc(firestore, 'paper_stock', editingRoll.id);
             const newRef = doc(firestore, 'paper_stock', rollId);
-            
             const checkSnap = await transaction.get(newRef);
-            if (checkSnap.exists()) {
-              throw new Error(`Roll No ${rollId} already exists in registry.`);
-            }
-
+            if (checkSnap.exists()) throw new Error(`Roll No ${rollId} already exists.`);
             transaction.delete(oldRef);
             transaction.set(newRef, { ...finalData, id: rollId, createdAt: editingRoll.createdAt || serverTimestamp() });
           });
-        } else {
-          await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
-        }
-        setIsDialogOpen(false);
-        setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
+        } else await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
+        setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
         await runTransaction(firestore, async (transaction) => {
           const newDocRef = doc(firestore, 'paper_stock', rollId);
-          const counterRef = doc(firestore, 'counters', 'paper_roll');
-          
-          const [checkSnap, counterSnap] = await Promise.all([
-            transaction.get(newDocRef),
-            transaction.get(counterRef)
-          ]);
-
-          if (checkSnap.exists()) {
-            throw new Error(`Roll No ${rollId} already exists in registry.`);
-          }
-          
+          const checkSnap = await transaction.get(newDocRef);
+          if (checkSnap.exists()) throw new Error(`Roll No ${rollId} already exists.`);
           transaction.set(newDocRef, { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
-          
-          const numericPart = parseInt(rollId.replace(/\D/g, ''));
-          if (!isNaN(numericPart)) {
-            const currentCounter = counterSnap.exists() ? (counterSnap.data().current_number || 0) : 0;
-            if (numericPart > currentCounter) {
-              transaction.set(counterRef, { current_number: numericPart }, { merge: true });
-            }
-          }
         });
-        setIsDialogOpen(false);
-        setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
+        setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
       }
-    } catch (error: any) {
-      setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message });
-    } finally {
-      setIsProcessing(false);
-    }
+    } catch (error: any) { setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); }
+    finally { setIsProcessing(false); }
   };
 
-  const handleBulkDelete = async () => {
-    if (!firestore || selectedIds.size === 0) return;
-    if (!confirm(`Permanently delete ${selectedIds.size} selected rolls?`)) return;
-
-    setIsProcessing(true);
-    try {
-      const batch = writeBatch(firestore);
-      selectedIds.forEach(id => {
-        batch.delete(doc(firestore, 'paper_stock', id));
-      });
-      await batch.commit();
-      setSelectedIds(new Set());
-      setModal({ isOpen: true, type: 'SUCCESS', title: 'Bulk Deletion Complete', description: 'Selected rolls removed from registry.' });
-    } catch (error: any) {
-      setModal({ isOpen: true, type: 'ERROR', title: 'Deletion Failed', description: error.message });
-    } finally {
-      setIsProcessing(false);
-    }
+  const startScanner = () => {
+    setIsScannerOpen(true);
+    setTimeout(() => {
+      const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
+      scanner.render((decodedText) => {
+        try {
+          const data = JSON.parse(decodedText);
+          const rollId = data.roll || decodedText;
+          const match = rolls?.find(r => r.rollNo === rollId);
+          if (match) {
+            setHighlightedId(match.id);
+            setViewingRoll(match);
+            setIsViewOpen(true);
+            scanner.clear();
+            setIsScannerOpen(false);
+          } else {
+            alert("Roll not found in registry: " + rollId);
+          }
+        } catch (e) {
+          // Fallback if not JSON
+          const match = rolls?.find(r => r.rollNo === decodedText);
+          if (match) {
+            setHighlightedId(match.id);
+            setViewingRoll(match);
+            setIsViewOpen(true);
+            scanner.clear();
+            setIsScannerOpen(false);
+          }
+        }
+      }, (error) => {});
+    }, 500);
   };
-
-  const exportStock = () => {
-    if (filteredRows.length === 0) return;
-    const exportData = filteredRows.map((r) => ({
-      "ROLL NO": r.rollNo || "",
-      "STATUS": r.status || "Stock",
-      "PAPER COMPANY": r.paperCompany || "",
-      "PAPER TYPE": r.paperType || "",
-      "WIDTH (MM)": r.widthMm || 0,
-      "LENGTH (MTR)": r.lengthMeters || 0,
-      "SQM": r.sqm || 0,
-      "GSM": r.gsm || 0,
-      "WEIGHT (KG)": r.weightKg || 0,
-      "PURCHASE RATE": r.purchaseRate || 0,
-      "DATE OF RECEIVED": r.receivedDate || "",
-      "DATE OF USED": r.dateOfUsed || "-",
-      "JOB NO": r.jobNo || "-",
-      "JOB SIZE": r.jobSize || "-",
-      "JOB NAME": r.jobName || "-",
-      "LOT NO / BATCH NO": r.lotNo || "",
-      "COMPANY ROLL NO": r.companyRollNo || "",
-      "REMARKS": r.remarks || "-"
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Stock Registry");
-    XLSX.writeFile(wb, `Shree_Label_Technical_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
-    toast({ title: "Export Ready", description: `Registry snapshot with ${exportData.length} records generated.` });
-  }
 
   const MultiSelectFilter = ({ label, field, options }: { label: string, field: string, options: any[] }) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className={cn(
-          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest",
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest transition-all hover:bg-slate-50",
           filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary shadow-sm"
         )}>
           {label}
-          {filters[field]?.length > 0 && <Badge variant="secondary" className="h-4 px-1.5 text-[9px] bg-primary text-white font-black">{filters[field].length}</Badge>}
+          {filters[field]?.length > 0 && <Badge className="h-4 px-1.5 text-[9px] bg-primary text-white">{filters[field].length}</Badge>}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 max-h-[400px] overflow-y-auto z-portal p-2 shadow-2xl">
+      <DropdownMenuContent align="start" className="w-64 max-h-[400px] overflow-y-auto p-2 shadow-2xl z-[100]">
         <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 pb-2">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
           <DropdownMenuCheckboxItem 
-            key={opt} 
-            checked={filters[field]?.includes(String(opt))} 
+            key={opt} checked={filters[field]?.includes(String(opt))} 
             onCheckedChange={() => {
               const current = filters[field] || [];
               const next = current.includes(String(opt)) ? current.filter((v: any) => v !== String(opt)) : [...current, String(opt)];
-              setFilters({ ...filters, [field]: next });
-              setCurrentPage(1);
+              setFilters({ ...filters, [field]: next }); setCurrentPage(1);
             }} 
             className="text-xs font-bold py-2"
-          >
-            {String(opt)}
-          </DropdownMenuCheckboxItem>
+          >{String(opt)}</DropdownMenuCheckboxItem>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
-  const RangeFilter = ({ label, fieldPrefix, unit }: { label: string, fieldPrefix: string, unit?: string }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={cn(
-          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest",
-          (filters[`${fieldPrefix}Min`] || filters[`${fieldPrefix}Max`]) && "border-primary bg-primary/5 text-primary shadow-sm"
-        )}>
-          {label}
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 p-4 shadow-2xl z-portal space-y-4">
-        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50">{label} {unit && `(${unit})`}</DropdownMenuLabel>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label className="text-[9px] font-black uppercase opacity-50">Min</Label>
-            <Input 
-              type="number" 
-              placeholder="0" 
-              className="h-8 text-xs font-bold" 
-              value={filters[`${fieldPrefix}Min`]} 
-              onChange={e => setFilters({...filters, [`${fieldPrefix}Min`]: e.target.value})}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[9px] font-black uppercase opacity-50">Max</Label>
-            <Input 
-              type="number" 
-              placeholder="9999" 
-              className="h-8 text-xs font-bold" 
-              value={filters[`${fieldPrefix}Max`]} 
-              onChange={e => setFilters({...filters, [`${fieldPrefix}Max`]: e.target.value})}
-            />
-          </div>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
-  const DateFilter = ({ label, fromField, toField }: { label: string, fromField: string, toField: string }) => (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={cn(
-          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest",
-          (filters[fromField] || filters[toField]) && "border-primary bg-primary/5 text-primary shadow-sm"
-        )}>
-          {label}
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 p-4 shadow-2xl z-portal space-y-4">
-        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50">{label}</DropdownMenuLabel>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label className="text-[9px] font-black uppercase opacity-50">From Date</Label>
-            <Input 
-              type="date" 
-              className="h-8 text-xs font-bold" 
-              value={filters[fromField]} 
-              onChange={e => setFilters({...filters, [fromField]: e.target.value})}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[9px] font-black uppercase opacity-50">To Date</Label>
-            <Input 
-              type="date" 
-              className="h-8 text-xs font-bold" 
-              value={filters[toField]} 
-              onChange={e => setFilters({...filters, [toField]: e.target.value})}
-            />
-          </div>
-        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -623,90 +422,56 @@ export default function PaperStockPage() {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
     return (
-      <TableHead 
-        className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30] text-center", 
-          isActive && "bg-slate-200", 
-          className
-        )} 
-        onClick={() => requestSort(field)} 
-      >
+      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30] text-center", isActive && "bg-slate-200", className)} onClick={() => requestSort(field)}>
         <div className="flex items-center justify-center gap-1.5 px-2">
           <span className="font-black text-[11px] uppercase text-slate-700 tracking-tighter">{label}</span>
-          {isActive ? (
-            sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
-          ) : (
-            <ArrowUpDown className="h-2.5 w-2.5 opacity-30" />
-          )}
+          {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />) : <ArrowUpDown className="h-2.5 w-2.5 opacity-30" />}
         </div>
       </TableHead>
     );
   };
 
-  const visibleColumnCount = Object.values(visibleColumns).filter(Boolean).length;
-  const totalColumnCount = COLUMN_KEYS.length;
-
   if (!isMounted) return null;
 
   return (
-    <div className="flex flex-col h-full space-y-3 font-sans animate-in fade-in duration-500">
+    <div className="flex flex-col h-full space-y-4 font-sans animate-in fade-in duration-500 pb-20">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="bg-white p-4 rounded-xl border shadow-sm space-y-4 px-6 shrink-0 border-slate-200">
+      <div className="bg-white p-6 rounded-2xl border shadow-sm space-y-6 shrink-0 border-slate-200">
         <div className="flex items-center gap-6">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input 
-              placeholder="Search Paper Stock Details..." 
-              className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-bold" 
-              value={filters.search} 
-              onChange={e => setFilters({ ...filters, search: e.target.value })} 
-            />
+            <Input placeholder="Search Roll ID, Company, Job..." className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-bold rounded-xl" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
           </div>
           <div className="ml-auto flex items-center gap-3">
+            <Button variant="outline" size="sm" onClick={startScanner} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50">
+              <QrCode className="h-4 w-4" /> Scan Roll QR
+            </Button>
             {selectedIds.size > 0 && (
-              <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest shadow-lg animate-in slide-in-from-right-2">
+              <Button variant="destructive" size="sm" onClick={() => { if(confirm(`Delete ${selectedIds.size}?`)) { const batch = writeBatch(firestore!); selectedIds.forEach(id => batch.delete(doc(firestore!, 'paper_stock', id))); batch.commit(); setSelectedIds(new Set()); }}} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg">
                 <Trash2 className="h-4 w-4" /> Delete {selectedIds.size} Selected
               </Button>
             )}
-
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2">
-                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide ({visibleColumnCount}/{totalColumnCount})
+                <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
+                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide ({Object.values(visibleColumns).filter(Boolean).length}/18)
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-portal">
-                <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2 tracking-widest">Select Columns</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[100] rounded-xl border-none">
+                <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2">Toggle Visibility</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <div className="max-h-[400px] overflow-y-auto industrial-scroll">
                   {COLUMN_KEYS.map(col => (
-                    <DropdownMenuCheckboxItem 
-                      key={col.id} 
-                      checked={visibleColumns[col.id]} 
-                      onCheckedChange={v => setVisibleColumns({...visibleColumns, [col.id]: v})}
-                      className="text-xs font-bold py-2"
-                    >
-                      {col.label}
-                    </DropdownMenuCheckboxItem>
+                    <DropdownMenuCheckboxItem key={col.id} checked={visibleColumns[col.id]} onCheckedChange={v => setVisibleColumns({...visibleColumns, [col.id]: v})} className="text-xs font-bold py-2">{col.label}</DropdownMenuCheckboxItem>
                   ))}
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <Button variant="outline" size="sm" onClick={exportStock} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-all">
+            <Button variant="outline" size="sm" onClick={() => { const ws = XLSX.utils.json_to_sheet(filteredRows.map(r => Object.fromEntries(Object.entries(r).filter(([k]) => !k.startsWith('_'))))); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stock"); XLSX.writeFile(wb, "Stock_Export.xlsx"); }} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl hover:bg-emerald-50 text-emerald-700">
               <FileDown className="h-4 w-4" /> Export Stock
             </Button>
-
-            <Button variant="ghost" size="sm" onClick={() => {
-              setFilters({
-                search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
-                widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
-                receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-              });
-              setSortConfig({ key: 'rollNo', direction: 'desc' });
-              setCurrentPage(1);
-            }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
+            <Button variant="ghost" size="sm" onClick={() => { setFilters({ search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [], widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "", receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: "" }); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
           </div>
         </div>
         
@@ -715,72 +480,38 @@ export default function PaperStockPage() {
           <MultiSelectFilter label="COMPANY" field="paperCompany" options={getUniqueOptions('paperCompany')} />
           <MultiSelectFilter label="TYPE" field="paperType" options={getUniqueOptions('paperType')} />
           <MultiSelectFilter label="JOB ID" field="jobNo" options={getUniqueOptions('jobNo')} />
-          <MultiSelectFilter label="JOB NAME" field="jobName" options={getUniqueOptions('jobName')} />
           <MultiSelectFilter label="LOT NO" field="lotNo" options={getUniqueOptions('lotNo')} />
-          
           <div className="h-6 w-px bg-slate-200 mx-2" />
-          
-          <RangeFilter label="WIDTH" fieldPrefix="width" unit="MM" />
-          <RangeFilter label="GSM" fieldPrefix="gsm" />
-          <RangeFilter label="SQM" fieldPrefix="sqm" />
-          <DateFilter label="DATE RECEIVED" fromField="receivedFrom" toField="receivedTo" />
-          
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-10 w-10 border border-slate-200 bg-white">
-                <MoreHorizontal className="h-4 w-4 text-slate-400" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 p-2 shadow-2xl z-portal">
-              <DropdownMenuLabel className="text-[10px] font-black uppercase opacity-50">Extended Technical Filters</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <div className="p-2 space-y-4">
-                <RangeFilter label="LENGTH" fieldPrefix="length" unit="MTR" />
-                <RangeFilter label="WEIGHT" fieldPrefix="weight" unit="KG" />
-                <RangeFilter label="RATE" fieldPrefix="rate" unit="₹" />
-                <DateFilter label="DATE USED" fromField="usedFrom" toField="usedTo" />
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* STATUS DISPLAY BOARD / LEGEND */}
-        <div className="flex flex-wrap items-center gap-4 py-2 border-t border-slate-100 mt-2">
-          <span className="text-[9px] font-black uppercase text-slate-400 tracking-[0.15em] flex items-center gap-1.5">
-            <Info className="h-3 w-3" /> Status Display Board:
-          </span>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 group">
+            <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Status Board:</span>
             {STATUS_OPTIONS.map(opt => (
-              <div key={opt.value} className="flex items-center gap-1.5 group">
-                <div className={cn("w-2.5 h-2.5 rounded-sm shadow-sm ring-1 ring-black/5", opt.color)} />
-                <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight group-hover:text-primary transition-colors cursor-default">{opt.label}</span>
-              </div>
+              <div key={opt.value} className="flex items-center gap-1.5"><div className={cn("w-2.5 h-2.5 rounded-sm shadow-sm", opt.color)} /><span className="text-[10px] font-bold text-slate-600 uppercase">{opt.label}</span></div>
             ))}
           </div>
         </div>
       </div>
 
-      <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-xl bg-white">
-        <div className="bg-slate-800 text-white p-3 px-6 flex items-center justify-between shrink-0">
-          <h2 className="font-black text-xs uppercase tracking-[0.2em] flex items-center gap-3">
+      <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-2xl bg-white border-none">
+        <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
+          <h2 className="font-black text-xs uppercase tracking-[0.25em] flex items-center gap-3">
             <LayoutGrid className="h-5 w-5 text-primary" /> Paper Stock Details
           </h2>
-          <Button variant="ghost" size="sm" className="h-9 px-4 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest" onClick={() => handleOpenDialog()}>
+          <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}>
             <Plus className="h-4 w-4 mr-2" /> Add Roll
           </Button>
         </div>
 
-        <div className="w-full h-[600px] overflow-scroll relative border-t industrial-scroll table-container">
+        <div className="w-full h-[600px] overflow-scroll relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
-              <TableRow className="h-10">
+              <TableRow className="h-12">
                 <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
                   <div className="flex items-center justify-center h-full">
                     <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                   </div>
                 </TableHead>
-                <TableHead className="w-[50px] text-center font-bold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]" />
+                <TableHead className="w-[60px] text-center font-bold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
+                <SortableHeader label="Roll No" field="rollNo" className="w-[120px] border-r sticky top-0 left-[100px] bg-slate-100 z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]" />
                 <SortableHeader label="Status" field="status" className="w-[120px]" />
                 <SortableHeader label="Paper Company" field="paperCompany" />
                 <SortableHeader label="Paper Type" field="paperType" />
@@ -790,15 +521,14 @@ export default function PaperStockPage() {
                 <SortableHeader label="GSM" field="gsm" />
                 <SortableHeader label="Weight (KG)" field="weightKg" />
                 <SortableHeader label="Purchase Rate" field="purchaseRate" />
-                <SortableHeader label="Date of Received" field="receivedDate" />
-                <SortableHeader label="Date of Used" field="dateOfUsed" />
+                <SortableHeader label="Date Received" field="receivedDate" />
+                <SortableHeader label="Date Used" field="dateOfUsed" />
                 <SortableHeader label="Job No" field="jobNo" />
                 <SortableHeader label="Job Size" field="jobSize" />
                 <SortableHeader label="Job Name" field="jobName" />
-                <SortableHeader label="Lot No / Batch No" field="lotNo" />
-                <SortableHeader label="Company Roll No" field="companyRollNo" />
+                <SortableHeader label="Lot No" field="lotNo" />
                 <SortableHeader label="Remarks" field="remarks" />
-                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[180px] p-0">Action</TableHead>
+                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[200px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -806,45 +536,37 @@ export default function PaperStockPage() {
                 <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
                 const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-white" };
-                const rowBg = statusInfo.rowBg;
-                
+                const isHighlighted = highlightedId === j.id;
                 return (
-                  <TableRow key={j.id} className={cn("h-10 group hover:brightness-95 transition-all text-center", rowBg)}>
-                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowBg)}>
-                      <div className="flex items-center justify-center h-full">
-                        <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
-                      </div>
+                  <TableRow id={`row-${j.id}`} key={j.id} className={cn("h-12 group transition-all text-center", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")}>
+                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
+                      <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
-                    <TableCell className={cn("text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowBg)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", rowBg)}>{j.rollNo}</TableCell>
-                    <TableCell className="text-center border-r border-b p-0">
-                      <div className="flex items-center justify-center">
-                        <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-black text-white uppercase tracking-tighter shadow-sm", statusInfo.color)}>{j.status || "Stock"}</span>
-                      </div>
-                    </TableCell>
-                    {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3 truncate max-w-[150px] text-center">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-[13px] font-bold border-r border-b px-3 truncate max-w-[150px] text-center">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-center text-[13px] border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['purchaseRate'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">₹{j.purchaseRate || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[13px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
-                    {visibleColumns['dateOfUsed'] && <TableCell className="text-center text-[13px] font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobSize'] && <TableCell className="text-center text-[13px] border-r border-b px-2">{j.jobSize || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-bold border-r border-b truncate max-w-[150px] px-2 text-center">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[13px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
-                    {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[13px] border-r border-b px-2">{j.companyRollNo || '-'}</TableCell>}
-                    {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic text-center truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[180px] p-0", rowBg)}>
+                    <TableCell className={cn("text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{j.rollNo}</TableCell>
+                    <TableCell className="border-r border-b"><Badge className={cn("text-[10px] font-black text-white", statusInfo.color)}>{j.status}</Badge></TableCell>
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[13px] font-bold border-r border-b px-3">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-[13px] border-r border-b font-black text-primary font-mono">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.gsm}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['purchaseRate'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">₹{j.purchaseRate || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-[13px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['dateOfUsed'] && <TableCell className="text-[13px] font-bold border-r border-b px-2">{j.dateOfUsed || '-'}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-black text-slate-700">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobSize'] && <TableCell className="text-[13px] border-r border-b">{j.jobSize || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-bold border-r border-b truncate max-w-[150px]">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px]">{j.remarks || '-'}</TableCell>}
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[200px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="View Details" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Edit Roll" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Slitting" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Print Tag" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" title="Delete Roll" onClick={() => { if(confirm('Permanently delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-orange-500 hover:bg-orange-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm transition-transform active:scale-95" onClick={() => { if(confirm('Delete?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -854,29 +576,283 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
+        <div className="bg-slate-50 p-4 border-t flex items-center justify-between shrink-0 px-8 rounded-b-2xl">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-8 w-[110px] bg-white text-[12px] font-black uppercase">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="z-portal">
+              <SelectTrigger className="h-9 w-[120px] bg-white text-[12px] font-black uppercase rounded-xl border-none shadow-sm"><SelectValue /></SelectTrigger>
+              <SelectContent className="z-[100] border-none shadow-2xl rounded-xl">
                 {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
               </SelectContent>
             </Select>
-            <span className="text-[12px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
+            <span className="text-[12px] font-black text-muted-foreground uppercase tracking-widest">Showing {filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredRows.length)} of {filteredRows.length} Rolls</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-8 px-4 text-[12px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button>
-            <div className="flex items-center gap-1">
-              <span className="text-[12px] font-black bg-white border-2 border-slate-200 h-8 w-12 flex items-center justify-center rounded-lg shadow-inner">{currentPage}</span>
-              <span className="text-[12px] font-black text-slate-400 mx-1">/</span>
-              <span className="text-[12px] font-black text-slate-500">{totalPages || 1}</span>
-            </div>
-            <Button variant="outline" size="sm" className="h-8 px-4 text-[12px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button>
+          <div className="flex items-center gap-3">
+            <Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-black uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button>
+            <span className="text-[12px] font-black bg-white border-2 border-slate-200 h-9 w-12 flex items-center justify-center rounded-xl shadow-inner">{currentPage}</span>
+            <Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-black uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button>
           </div>
         </div>
       </Card>
+
+      {/* TECHNICAL PROFILE MODAL (PART 1) */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100] animate-in zoom-in-95 duration-200">
+          <DialogHeader className="p-8 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-white/5">
+            <div className="space-y-1">
+              <DialogTitle className="uppercase font-black text-xl flex items-center gap-3 tracking-tighter">
+                <Package className="h-6 w-6 text-primary" /> Technical Profile
+              </DialogTitle>
+              <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest">Roll ID: {viewingRoll?.rollNo}</DialogDescription>
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-5 w-5" /></Button>
+          </DialogHeader>
+          
+          <div className="p-10 bg-slate-50 space-y-8 max-h-[75vh] overflow-y-auto industrial-scroll">
+            {/* Section 1: Basic Details */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                <Info className="h-3 w-3" /> Section 1 — Basic Details
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <ProfileField icon={Hash} label="Roll No" value={viewingRoll?.rollNo} />
+                <div className="space-y-1">
+                  <Label className="text-[10px] uppercase font-black text-slate-400">Status</Label>
+                  <div className="flex">
+                    <Badge className={cn("font-black uppercase text-[10px] px-3", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color)}>
+                      {viewingRoll?.status}
+                    </Badge>
+                  </div>
+                </div>
+                <ProfileField icon={Building2} label="Paper Company" value={viewingRoll?.paperCompany} />
+                <ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} />
+              </div>
+            </div>
+
+            <Separator className="bg-slate-200" />
+
+            {/* Section 2: Size Details */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                <Ruler className="h-3 w-3" /> Section 2 — Size Details
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <ProfileField icon={Ruler} label="Width (mm)" value={viewingRoll?.widthMm} highlight />
+                <ProfileField icon={ArrowRightLeft} label="Length (mtr)" value={viewingRoll?.lengthMeters} highlight />
+                <ProfileField icon={Layers} label="SQM" value={viewingRoll?.sqm} highlight />
+                <ProfileField icon={Weight} label="GSM" value={viewingRoll?.gsm} />
+                <ProfileField icon={Scale} label="Weight (kg)" value={viewingRoll?.weightKg} />
+              </div>
+            </div>
+
+            <Separator className="bg-slate-200" />
+
+            {/* Section 3: Purchase Info */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                <CircleDollarSign className="h-3 w-3" /> Section 3 — Purchase Info
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <ProfileField icon={CircleDollarSign} label="Purchase Rate" value={`₹${viewingRoll?.purchaseRate}`} />
+                <ProfileField icon={Calendar} label="Date Received" value={viewingRoll?.receivedDate} />
+                <ProfileField icon={History} label="Date Used" value={viewingRoll?.dateOfUsed || "—"} />
+              </div>
+            </div>
+
+            <Separator className="bg-slate-200" />
+
+            {/* Section 4: Job Details */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                <Tag className="h-3 w-3" /> Section 4 — Job Details
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <ProfileField icon={Hash} label="Job No" value={viewingRoll?.jobNo || "—"} />
+                <ProfileField icon={Tag} label="Job Name" value={viewingRoll?.jobName || "—"} />
+                <ProfileField icon={Maximize2} label="Job Size" value={viewingRoll?.jobSize || "—"} />
+              </div>
+            </div>
+
+            <Separator className="bg-slate-200" />
+
+            {/* Section 5: Additional Info */}
+            <div className="space-y-4">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                <Package className="h-3 w-3" /> Section 5 — Additional Info
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <ProfileField icon={BarcodeIcon} label="Lot / Batch No" value={viewingRoll?.lotNo || "—"} />
+                <ProfileField icon={Package} label="Company Roll No" value={viewingRoll?.companyRollNo || "—"} />
+                <div className="md:col-span-2 space-y-1">
+                  <Label className="text-[10px] uppercase font-black text-slate-400 flex items-center gap-1.5"><MessageSquare className="h-3 w-3" /> Remarks</Label>
+                  <p className="text-sm font-bold text-slate-700 bg-white p-4 rounded-xl border border-slate-200 italic">{viewingRoll?.remarks || "No additional technical flags recorded."}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="p-8 bg-white border-t flex flex-row gap-4 items-center justify-end">
+            <Button variant="outline" onClick={() => setIsViewOpen(false)} className="h-12 px-8 font-black uppercase text-[10px] tracking-widest rounded-xl border-2">Close</Button>
+            <Button variant="outline" onClick={() => { handleOpenDialog(viewingRoll); setIsViewOpen(false); }} className="h-12 px-8 font-black uppercase text-[10px] tracking-widest rounded-xl border-2 hover:bg-sky-50 text-sky-700">Edit Roll</Button>
+            <Button onClick={() => { setPrintingRoll(viewingRoll); setIsPrintOpen(true); }} className="h-12 px-10 font-black uppercase text-[10px] tracking-widest rounded-xl shadow-xl bg-slate-900 text-white">Execute Thermal Print</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* THERMAL PRINT MODAL (PART 2 & 6) */}
+      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
+        <DialogContent className="sm:max-w-[500px] p-0 border-none shadow-3xl rounded-3xl z-[150] overflow-hidden">
+          <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
+            <h3 className="text-xs font-black uppercase tracking-widest">Thermal Print Preview (150x100mm)</h3>
+            <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-4 w-4" /></Button>
+          </div>
+          
+          <div className="p-8 bg-slate-100 flex justify-center">
+            {/* The Actual Label Layout */}
+            <div id="thermal-label" className="bg-white border-4 border-black p-6 w-[150mm] h-[100mm] shadow-2xl flex flex-col text-black font-sans box-border overflow-hidden">
+              <div className="text-center border-b-2 border-black pb-2 mb-4 shrink-0">
+                <h1 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h1>
+              </div>
+              
+              <div className="flex-1 flex flex-col justify-between">
+                <div className="text-center space-y-1">
+                  <p className="text-[10px] font-bold uppercase opacity-70">Item Name</p>
+                  <p className="text-lg font-black uppercase tracking-tight">{printingRoll?.paperType}</p>
+                </div>
+
+                <div className="text-center py-2 bg-black/5 rounded-lg border-2 border-black/10">
+                  <p className="text-[10px] font-black uppercase opacity-60">TECHNICAL REEL ID</p>
+                  <p className="text-5xl font-black tracking-tighter leading-none">{printingRoll?.rollNo}</p>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 py-4">
+                  <div className="p-2 border-2 border-black rounded flex items-center justify-center bg-white">
+                    {printingRoll && (
+                      <QRCodeSVG 
+                        value={JSON.stringify({
+                          roll: printingRoll.rollNo,
+                          company: printingRoll.paperCompany,
+                          width: printingRoll.widthMm,
+                          gsm: printingRoll.gsm,
+                          length: printingRoll.lengthMeters
+                        })} 
+                        size={80}
+                        level="H"
+                      />
+                    )}
+                  </div>
+                  <div className="flex-1 flex flex-col items-center">
+                    {printingRoll && (
+                      <Barcode 
+                        value={printingRoll.rollNo} 
+                        width={1.5} 
+                        height={50} 
+                        fontSize={10} 
+                        margin={0} 
+                        format="CODE128"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-8 gap-y-1 text-sm border-t-2 border-black pt-3">
+                  <div className="flex justify-between">
+                    <span className="font-bold uppercase text-[10px]">Width:</span>
+                    <span className="font-black">{printingRoll?.widthMm} mm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold uppercase text-[10px]">Company:</span>
+                    <span className="font-black uppercase">{printingRoll?.paperCompany}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold uppercase text-[10px]">Length:</span>
+                    <span className="font-black">{printingRoll?.lengthMeters} mtr</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold uppercase text-[10px]">Received:</span>
+                    <span className="font-black">{printingRoll?.receivedDate}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold uppercase text-[10px]">GSM:</span>
+                    <span className="font-black">{printingRoll?.gsm}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold uppercase text-[10px]">Weight:</span>
+                    <span className="font-black">{printingRoll?.weightKg} kg</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="p-8 bg-white border-t">
+            <Button onClick={() => window.print()} className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black uppercase tracking-[0.2em] shadow-2xl">
+              <Printer className="h-5 w-5 mr-3" /> Finalize Thermal Print
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* QR SCANNER DIALOG (PART 4) */}
+      <Dialog open={isScannerOpen} onOpenChange={(open) => { setIsScannerOpen(open); if(!open) Html5QrcodeScanner.prototype.clear; }}>
+        <DialogContent className="sm:max-w-[450px] p-0 border-none shadow-3xl rounded-3xl z-[200] overflow-hidden">
+          <DialogHeader className="p-6 bg-indigo-600 text-white flex flex-row items-center justify-between border-none">
+            <div className="space-y-1">
+              <DialogTitle className="uppercase font-black text-sm flex items-center gap-2 tracking-widest"><Camera className="h-4 w-4" /> Scanner Hub</DialogTitle>
+              <DialogDescription className="text-white/70 text-[10px] font-bold">Point camera at roll QR or Barcode</DialogDescription>
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => setIsScannerOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-4 w-4" /></Button>
+          </DialogHeader>
+          <div className="p-0 bg-black min-h-[350px]">
+            <div id="reader" className="w-full"></div>
+          </div>
+          <div className="p-6 bg-white text-center">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Hardware acceleration active • 10 FPS</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ADD/EDIT DIALOG */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-3xl shadow-3xl z-[100] animate-in slide-in-from-bottom-4">
+          <form onSubmit={handleSave}>
+            <DialogHeader className="p-8 bg-slate-900 text-white">
+              <DialogTitle className="uppercase font-black text-xl tracking-widest flex items-center gap-3">
+                {editingRoll ? <Pencil className="h-6 w-6 text-sky-400" /> : <Plus className="h-6 w-6 text-primary" />}
+                {editingRoll ? `Edit Registry: ${editingRoll.rollNo}` : 'New Master Roll Registration'}
+              </DialogTitle>
+              <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest pt-1">Populate all 18 technical parameters for pharma-grade tracking.</DialogDescription>
+            </DialogHeader>
+            <div className="p-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-white">
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Roll ID (Primary Key)</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-12 font-black text-primary border-2 rounded-xl text-sm" required /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Stock Status</Label><Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
+                <SelectTrigger className="h-12 font-black border-2 rounded-xl text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent className="shadow-2xl rounded-xl border-none">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
+              </Select></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Mfr / Company</Label><Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Substrate / Type</Label><Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Width (mm)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Length (mtr)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 bg-primary/5 p-4 rounded-2xl border-2 border-primary/20"><Label className="text-[11px] uppercase font-black text-primary">SQM (Auto-calc)</Label><Input value={calculatedSqm} readOnly className="h-12 bg-white font-black text-2xl text-primary border-none shadow-inner rounded-xl" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Weight (kg)</Label><Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Rate (₹)</Label><Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Date Received</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Job Name</Label><Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Job Size</Label><Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Lot No</Label><Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2"><Label className="text-[11px] uppercase font-black text-slate-500">Company Roll No</Label><Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 md:col-span-2 lg:col-span-3"><Label className="text-[11px] uppercase font-black text-slate-500">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[100px] border-2 rounded-2xl font-medium text-sm" placeholder="Any quality issues or technical flags..." /></div>
+            </div>
+            <DialogFooter className="p-8 bg-slate-50 border-t">
+              <Button type="submit" disabled={isProcessing} className="w-full h-16 uppercase font-black tracking-[0.25em] bg-slate-900 text-white rounded-2xl shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">
+                {isProcessing ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : editingRoll ? 'Update Technical Record' : 'Commit to Registry'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <datalist id="paper-company-suggestions">{getUniqueOptions('paperCompany').map(o => <option key={o} value={o} />)}</datalist>
       <datalist id="paper-type-suggestions">{getUniqueOptions('paperType').map(o => <option key={o} value={o} />)}</datalist>
@@ -886,139 +862,40 @@ export default function PaperStockPage() {
       <datalist id="lot-no-suggestions">{getUniqueOptions('lotNo').map(o => <option key={o} value={o} />)}</datalist>
       <datalist id="company-roll-suggestions">{getUniqueOptions('companyRollNo').map(o => <option key={o} value={o} />)}</datalist>
 
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-portal">
-          <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
-            <DialogTitle className="uppercase font-black text-sm flex items-center gap-3 tracking-widest"><Package className="h-5 w-5 text-primary" /> Technical Profile: {viewingRoll?.rollNo}</DialogTitle>
-          </DialogHeader>
-          <div className="p-8 grid grid-cols-2 md:grid-cols-3 gap-8 bg-white industrial-scroll max-h-[70vh] overflow-y-auto">
-            {Object.keys(FIELD_LABELS).map((key, idx) => (
-              <div key={idx} className="space-y-1 group text-left">
-                <Label className="text-[10px] uppercase font-black text-slate-400 tracking-widest block transition-colors group-hover:text-primary">{FIELD_LABELS[key]}</Label>
-                <p className="text-sm font-black text-slate-800 tracking-tight">{viewingRoll?.[key] || '-'}</p>
-              </div>
-            ))}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* PRINT STYLE FOR THERMAL LABEL */}
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden; }
+          #thermal-label, #thermal-label * { visibility: visible; }
+          #thermal-label {
+            position: absolute;
+            left: 0;
+            top: 0;
+            margin: 0;
+            width: 150mm;
+            height: 100mm;
+            border: 4px solid black !important;
+            box-shadow: none !important;
+          }
+          @page { size: 150mm 100mm; margin: 0; }
+        }
+      `}</style>
+    </div>
+  );
+}
 
-      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[450px] p-8 z-portal">
-          <div className="p-8 border-8 border-black text-center space-y-6 rounded-lg bg-white shadow-2xl">
-            <h2 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h2>
-            <div className="border-y-4 border-black py-4 bg-black/5">
-              <p className="text-[10px] font-black uppercase mb-1">TECHNICAL REEL ID</p>
-              <p className="text-5xl font-black tracking-tighter">{printingRoll?.rollNo}</p>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="text-left"><p className="text-[9px] font-black uppercase opacity-50">WIDTH</p><p className="text-lg font-black">{printingRoll?.widthMm} MM</p></div>
-              <div className="text-right"><p className="text-[9px] font-black uppercase opacity-50">LENGTH</p><p className="text-lg font-black">{printingRoll?.lengthMeters} MTR</p></div>
-            </div>
-          </div>
-          <DialogFooter className="mt-6"><Button onClick={() => window.print()} className="w-full h-12 font-black uppercase tracking-widest bg-slate-900 shadow-xl"><Printer className="h-5 w-5 mr-3" /> Execute Thermal Print</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-portal">
-          <form onSubmit={handleSave}>
-            <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
-              <DialogTitle className="uppercase font-black text-sm tracking-widest">
-                {editingRoll ? `Update Registry: ${formData.rollNo}` : 'Add Roll to Master Registry'}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-white">
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Roll No (Editable)</Label>
-                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-11 font-black text-primary border-2 text-sm" required />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Status</Label>
-                <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="h-11 font-black border-2 text-sm"><SelectValue /></SelectTrigger>
-                  <SelectContent className="shadow-2xl z-portal">
-                    {STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}
-                    <DropdownMenuSeparator />
-                    <div className="p-2 space-y-2">
-                      <Label className="text-[9px] uppercase font-black opacity-50">Custom Status Overide</Label>
-                      <Input placeholder="Enter other stage..." className="h-8 text-xs" onBlur={(e) => { if(e.target.value) setFormData({...formData, status: e.target.value}) }} />
-                    </div>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Paper Company</Label>
-                <Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Paper Type</Label>
-                <Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Width (MM)</Label>
-                <Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Length (MTR)</Label>
-                <Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20 text-left">
-                <Label className="text-[11px] uppercase font-black text-primary tracking-widest block">SQM (Auto-calc)</Label>
-                <Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">GSM</Label>
-                <Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Weight (KG)</Label>
-                <Input type="number" step="0.01" value={formData.weightKg || ""} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Purchase Rate</Label>
-                <Input type="number" step="0.01" value={formData.purchaseRate || ""} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Date of Received</Label>
-                <Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Date of Used</Label>
-                <Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Job No</Label>
-                <Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Job Size</Label>
-                <Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Job Name</Label>
-                <Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Lot No / Batch No</Label>
-                <Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Company Roll No</Label>
-                <Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 font-bold border-2 text-sm" />
-              </div>
-              <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-3 text-left">
-                <Label className="text-[11px] uppercase font-black text-slate-500 tracking-widest block">Remarks</Label>
-                <Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[80px] border-2 font-medium text-sm" />
-              </div>
-            </div>
-            <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4">
-              <Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-[0.2em] bg-slate-800 shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">
-                {isProcessing ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : editingRoll ? 'Update Roll Profile' : 'Commit Registry Entry'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: any, label: string, value: any, highlight?: boolean }) {
+  return (
+    <div className="space-y-1.5 transition-all group">
+      <Label className="text-[10px] uppercase font-black text-slate-400 flex items-center gap-1.5 transition-colors group-hover:text-primary">
+        <Icon className="h-3 w-3" /> {label}
+      </Label>
+      <p className={cn(
+        "text-sm font-black tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm",
+        highlight ? "text-primary text-base border-primary/20 bg-primary/5" : "text-slate-800"
+      )}>
+        {value || "—"}
+      </p>
     </div>
   );
 }
