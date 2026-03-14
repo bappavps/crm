@@ -39,6 +39,7 @@ interface SlitRun {
   jobName: string;
   jobSize: string;
   widthMm: number;
+  lengthMeters: number;
   parts: number;
 }
 
@@ -57,7 +58,7 @@ function SlittingHubContent() {
   const [searchQuery, setSearchQuery] = useState(initialRollNo || "")
   const [selectedParent, setSelectedParent] = useState<any>(null)
   const [slitRuns, setSlitRuns] = useState<SlitRun[]>([
-    { id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, parts: 1 }
+    { id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, lengthMeters: 0, parts: 1 }
   ])
 
   const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string }>({ 
@@ -75,6 +76,8 @@ function SlittingHubContent() {
   useEffect(() => {
     if (initialRollData && initialRollData.length > 0) {
       setSelectedParent(initialRollData[0]);
+      // Update length default for initial row
+      setSlitRuns(prev => prev.map(r => ({ ...r, lengthMeters: initialRollData[0].lengthMeters })));
     }
   }, [initialRollData]);
 
@@ -95,6 +98,8 @@ function SlittingHubContent() {
           setSelectedParent(null);
         } else {
           setSelectedParent(data);
+          // Auto-fill length for convenience
+          setSlitRuns(prev => prev.map(r => ({ ...r, lengthMeters: data.lengthMeters })));
         }
       }
     } catch (e) {
@@ -105,7 +110,15 @@ function SlittingHubContent() {
   }
 
   const addRun = () => {
-    setSlitRuns([...slitRuns, { id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, parts: 1 }]);
+    setSlitRuns([...slitRuns, { 
+      id: crypto.randomUUID(), 
+      jobNo: "", 
+      jobName: "", 
+      jobSize: "", 
+      widthMm: selectedParent?.widthMm || 0, 
+      lengthMeters: selectedParent?.lengthMeters || 0, 
+      parts: 1 
+    }]);
   }
 
   const removeRun = (id: string) => {
@@ -117,10 +130,22 @@ function SlittingHubContent() {
   }
 
   const calculation = useMemo(() => {
-    if (!selectedParent) return { usedWidth: 0, remainder: 0, isValid: true };
-    const usedWidth = slitRuns.reduce((acc, r) => acc + (Number(r.widthMm) * Number(r.parts)), 0);
-    const remainder = Number(selectedParent.widthMm) - usedWidth;
-    return { usedWidth, remainder, isValid: remainder >= 0 };
+    if (!selectedParent) return { usedWidth: 0, remainder: 0, isValid: true, mode: 'WIDTH' };
+    
+    // Determine mode: If any run width is less than parent AND length is full, it's Width Slitting.
+    // If width is full AND length is less, it's Length Splitting.
+    const hasLengthSplit = slitRuns.some(r => Number(r.lengthMeters) > 0 && Number(r.lengthMeters) < Number(selectedParent.lengthMeters));
+    const mode = hasLengthSplit ? 'LENGTH' : 'WIDTH';
+
+    if (mode === 'WIDTH') {
+      const usedWidth = slitRuns.reduce((acc, r) => acc + (Number(r.widthMm) * Number(r.parts)), 0);
+      const remainder = Number(selectedParent.widthMm) - usedWidth;
+      return { usedWidth, remainder, isValid: remainder >= 0, mode: 'WIDTH' };
+    } else {
+      const usedLength = slitRuns.reduce((acc, r) => acc + (Number(r.lengthMeters) * Number(r.parts)), 0);
+      const remainder = Number(selectedParent.lengthMeters) - usedLength;
+      return { usedLength, remainder, isValid: remainder >= 0, mode: 'LENGTH' };
+    }
   }, [selectedParent, slitRuns]);
 
   const handleExecuteSlitting = async () => {
@@ -145,18 +170,21 @@ function SlittingHubContent() {
             const childRef = doc(firestore, 'paper_stock', childId);
             
             const childStatus = run.jobNo ? "Job Assign" : "Slitting";
+            const finalWidth = calculation.mode === 'WIDTH' ? Number(run.widthMm) : Number(selectedParent.widthMm);
+            const finalLength = calculation.mode === 'LENGTH' ? Number(run.lengthMeters) : Number(selectedParent.lengthMeters);
 
             transaction.set(childRef, {
               ...selectedParent,
               id: childId,
               rollNo: childId,
-              widthMm: Number(run.widthMm),
+              widthMm: finalWidth,
+              lengthMeters: finalLength,
               status: childStatus,
               jobNo: run.jobNo || "",
               jobName: run.jobName || "",
               jobSize: run.jobSize || "",
               parentRollNo: selectedParent.rollNo,
-              sqm: Number(((Number(run.widthMm) / 1000) * Number(selectedParent.lengthMeters)).toFixed(2)),
+              sqm: Number(((finalWidth / 1000) * finalLength).toFixed(2)),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               createdById: user.uid
@@ -171,17 +199,21 @@ function SlittingHubContent() {
           const remainderId = `${selectedParent.rollNo}-${suffix}`;
           const remainderRef = doc(firestore, 'paper_stock', remainderId);
           
+          const remWidth = calculation.mode === 'WIDTH' ? calculation.remainder : Number(selectedParent.widthMm);
+          const remLength = calculation.mode === 'LENGTH' ? calculation.remainder : Number(selectedParent.lengthMeters);
+
           transaction.set(remainderRef, {
             ...selectedParent,
             id: remainderId,
             rollNo: remainderId,
-            widthMm: calculation.remainder,
+            widthMm: remWidth,
+            lengthMeters: remLength,
             status: "Stock", 
             jobNo: "",
             jobName: "",
             jobSize: "",
             parentRollNo: selectedParent.rollNo,
-            sqm: Number(((calculation.remainder / 1000) * Number(selectedParent.lengthMeters)).toFixed(2)),
+            sqm: Number(((remWidth / 1000) * remLength).toFixed(2)),
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
             createdById: user.uid,
@@ -193,11 +225,11 @@ function SlittingHubContent() {
       setModal({ 
         isOpen: true, 
         type: 'SUCCESS', 
-        title: 'Slitting Complete', 
+        title: 'Transaction Complete', 
         description: `Successfully converted ${selectedParent.rollNo} into technical child units.` 
       });
       setSelectedParent(null);
-      setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, parts: 1 }]);
+      setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, lengthMeters: 0, parts: 1 }]);
       setSearchQuery("");
     } catch (e: any) {
       setModal({ isOpen: true, type: 'ERROR', title: 'Transaction Failed', description: e.message });
@@ -215,7 +247,7 @@ function SlittingHubContent() {
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Industrial Slitting Hub</h2>
-          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Precision width conversion and job allocation engine.</p>
+          <p className="text-muted-foreground text-[10px] font-black uppercase tracking-widest">Precision width conversion and length split engine.</p>
         </div>
         <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-black text-[10px] uppercase">
           <ArrowLeft className="mr-2 h-3 w-3" /> Back to Registry
@@ -284,35 +316,44 @@ function SlittingHubContent() {
 
           <Card className={cn("shadow-2xl border-none rounded-2xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
             <CardHeader className="pb-2">
-              <CardTitle className="text-[10px] font-black uppercase tracking-widest opacity-70">Slitting Analytics</CardTitle>
+              <CardTitle className="text-[10px] font-black uppercase tracking-widest opacity-70">
+                {calculation.mode === 'WIDTH' ? 'Width Slitting Analytics' : 'Length Split Analytics'}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6 py-4">
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
                   <p className="text-[10px] font-black uppercase opacity-60">Total Conversion</p>
-                  <p className="text-4xl font-black tracking-tighter">{calculation.usedWidth} <small className="text-xs">MM</small></p>
+                  <p className="text-4xl font-black tracking-tighter">
+                    {calculation.mode === 'WIDTH' ? calculation.usedWidth : (calculation as any).usedLength} 
+                    <small className="text-xs ml-1">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
+                  </p>
                 </div>
                 <div className="text-right space-y-1">
                   <p className="text-[10px] font-black uppercase opacity-60">Stock Remainder</p>
-                  <p className={cn("text-2xl font-black tracking-tighter", calculation.remainder < 0 ? "text-rose-200" : "text-emerald-400")}>{calculation.remainder} <small className="text-xs">MM</small></p>
+                  <p className={cn("text-2xl font-black tracking-tighter", calculation.remainder < 0 ? "text-rose-200" : "text-emerald-400")}>
+                    {calculation.remainder} <small className="text-xs">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
+                  </p>
                 </div>
               </div>
               
               {!calculation.isValid && (
                 <div className="bg-white/10 p-3 rounded-xl flex items-center gap-3 animate-pulse">
                   <AlertTriangle className="h-5 w-5 text-rose-200" />
-                  <p className="text-[10px] font-black uppercase leading-tight">Conversion exceeds parent width. Reduce parts or width.</p>
+                  <p className="text-[10px] font-black uppercase leading-tight">
+                    {calculation.mode === 'WIDTH' ? 'Exceeds parent width.' : 'Exceeds parent length.'} Reduce qty or dimension.
+                  </p>
                 </div>
               )}
             </CardContent>
             <CardFooter className="p-0 border-t border-white/10">
               <Button 
                 onClick={handleExecuteSlitting} 
-                disabled={!selectedParent || !calculation.isValid || isProcessing || calculation.usedWidth === 0} 
+                disabled={!selectedParent || !calculation.isValid || isProcessing || calculation.remainder === selectedParent?.widthMm || calculation.remainder === selectedParent?.lengthMeters} 
                 className={cn("w-full h-16 rounded-none font-black uppercase tracking-[0.25em] transition-all", calculation.isValid ? "bg-primary hover:bg-primary/90" : "bg-rose-700")}
               >
                 {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : <Scissors className="mr-3 h-5 w-5" />}
-                Execute Slit Run
+                Execute Run
               </Button>
             </CardFooter>
           </Card>
@@ -325,20 +366,21 @@ function SlittingHubContent() {
                 <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
                   <Briefcase className="h-4 w-4 text-primary" /> Run Specification Table
                 </CardTitle>
-                <p className="text-[9px] font-black text-slate-400 uppercase">Define target widths, job assignments, and technical details for conversion.</p>
+                <p className="text-[9px] font-black text-slate-400 uppercase">Define target widths, lengths, and job assignments for conversion.</p>
               </div>
               <Button size="sm" variant="outline" onClick={addRun} className="h-9 px-4 font-black uppercase text-[10px] rounded-xl border-2">
-                <Plus className="h-4 w-4 mr-2" /> Add Part
+                <Plus className="h-4 w-4 mr-2" /> Add Run Row
               </Button>
             </CardHeader>
             <CardContent className="p-0 flex-1 overflow-auto industrial-scroll">
               <Table>
                 <TableHeader className="bg-slate-50/50 sticky top-0 z-10">
                   <TableRow>
-                    <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Job Assignment Details</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-center w-[150px]">Part Width (MM)</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-center w-[120px]">Qty (Parts)</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-right w-[150px]">Total Width</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Job Details</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-center w-[120px]">Width (MM)</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-center w-[120px]">Length (MTR)</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-center w-[100px]">Qty</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-right w-[150px]">Total Conversion</TableHead>
                     <TableHead className="w-20 pr-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -384,7 +426,19 @@ function SlittingHubContent() {
                             type="number" 
                             className="h-10 w-24 text-center font-black border-2 border-slate-200 rounded-xl" 
                             value={run.widthMm || ""} 
+                            placeholder={selectedParent?.widthMm}
                             onChange={e => updateRun(run.id, 'widthMm', Number(e.target.value))}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-center">
+                          <Input 
+                            type="number" 
+                            className="h-10 w-24 text-center font-black border-2 border-slate-200 rounded-xl" 
+                            value={run.lengthMeters || ""} 
+                            placeholder={selectedParent?.lengthMeters}
+                            onChange={e => updateRun(run.id, 'lengthMeters', Number(e.target.value))}
                           />
                         </div>
                       </TableCell>
@@ -400,7 +454,10 @@ function SlittingHubContent() {
                       </TableCell>
                       <TableCell className="text-right">
                         <span className="text-sm font-black text-slate-400 group-hover:text-primary transition-colors">
-                          {Number(run.widthMm) * Number(run.parts)} MM
+                          {calculation.mode === 'WIDTH' 
+                            ? `${Number(run.widthMm || selectedParent?.widthMm) * Number(run.parts)} MM` 
+                            : `${Number(run.lengthMeters || selectedParent?.lengthMeters) * Number(run.parts)} MTR`
+                          }
                         </span>
                       </TableCell>
                       <TableCell className="pr-8 text-right">
@@ -417,7 +474,9 @@ function SlittingHubContent() {
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white border-2 rounded-xl flex items-center gap-3">
                   <History className="h-4 w-4 text-slate-400" />
-                  <span className="text-[10px] font-black uppercase text-slate-500">Naming logic: Continuous Dash (-) Sequence (-A, -B, -C...)</span>
+                  <span className="text-[10px] font-black uppercase text-slate-500">
+                    Operation: {calculation.mode === 'WIDTH' ? 'Width Slitting' : 'Length Split / Rewind'}
+                  </span>
                 </div>
               </div>
               <div className="flex items-center gap-3">
