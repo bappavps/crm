@@ -149,13 +149,17 @@ export default function PaperStockPage() {
   // Sync scroll positions
   const handleTopScroll = () => {
     if (topScrollRef.current && tableContainerRef.current) {
-      tableContainerRef.current.scrollLeft = topScrollRef.current.scrollLeft
+      if (tableContainerRef.current.scrollLeft !== topScrollRef.current.scrollLeft) {
+        tableContainerRef.current.scrollLeft = topScrollRef.current.scrollLeft
+      }
     }
   }
 
   const handleTableScroll = () => {
     if (topScrollRef.current && tableContainerRef.current) {
-      topScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft
+      if (topScrollRef.current.scrollLeft !== tableContainerRef.current.scrollLeft) {
+        topScrollRef.current.scrollLeft = tableContainerRef.current.scrollLeft
+      }
     }
   }
 
@@ -730,20 +734,20 @@ export default function PaperStockPage() {
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl h-[calc(100vh-16rem)]">
-        {/* TOP DUMMY SCROLLBAR (ALWAYS VISIBLE) */}
+        {/* TOP DUMMY SCROLLBAR (SYNCHRONIZED) */}
         <div 
           ref={topScrollRef} 
           onScroll={handleTopScroll}
-          className="overflow-x-scroll h-4 shrink-0 bg-slate-50 border-b custom-grid-container"
+          className="overflow-x-scroll h-4 shrink-0 bg-slate-100 border-b custom-grid-container z-50"
         >
           <div className="h-full" style={{ width: '3200px' }} />
         </div>
 
-        {/* MAIN TABLE CONTAINER (FIXED HEADER & ALWAYS VISIBLE SCROLLBARS) */}
+        {/* MAIN TABLE CONTAINER (SYNCHRONIZED) */}
         <div 
           ref={tableContainerRef} 
           onScroll={handleTableScroll}
-          className="flex-1 overflow-x-scroll overflow-y-scroll custom-grid-container"
+          className="flex-1 overflow-x-scroll overflow-y-scroll custom-grid-container relative"
         >
           <Table className="border-separate border-spacing-0 min-w-[3200px]">
             <TableHeader className="sticky top-0 z-40 bg-slate-50 border-b shadow-sm">
@@ -786,14 +790,14 @@ export default function PaperStockPage() {
               ) : paginatedRows.map((j, i) => {
                 const rowColorClass = getStatusRowColor(j.status);
                 return (
-                  <TableRow key={j.id} className={cn("transition-all border-b h-8 group", rowColorClass, selectedIds.has(j.id) && "brightness-90")}>
-                    <TableCell className={cn("text-center border-r sticky left-0 z-20 transition-all group-hover:brightness-95 p-0", rowColorClass)}>
+                  <TableRow key={j.id} className={cn("transition-all border-b h-8 group", rowColorClass, selectedIds.has(j.id) && "brightness-95")}>
+                    <TableCell className={cn("text-center border-r sticky left-0 z-20 transition-all group-hover:brightness-90 p-0", rowColorClass)}>
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
-                    <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-95 p-0", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("text-center font-bold text-[11px] text-slate-400 border-r sticky left-[50px] z-20 transition-all group-hover:brightness-90 p-0", rowColorClass)}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
                     
                     {visibleColumns['rollNo'] && (
-                      <TableCell className={cn("font-black text-[12px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-95 p-0", rowColorClass)}>{j.rollNo}</TableCell>
+                      <TableCell className={cn("font-black text-[12px] text-primary border-r text-center font-mono sticky left-[110px] z-20 transition-all group-hover:brightness-90 p-0", rowColorClass)}>{j.rollNo}</TableCell>
                     )}
                     
                     {visibleColumns['status'] && (
@@ -821,7 +825,7 @@ export default function PaperStockPage() {
                     {visibleColumns['companyRollNo'] && <TableCell className="text-center text-[12px] border-r font-mono px-2">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[12px] border-r text-center truncate max-w-[200px] italic text-slate-400 px-2">{j.remarks || '-'}</TableCell>}
                     
-                    <TableCell className={cn("text-center sticky right-0 z-20 border-l px-1 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-95 p-0", rowColorClass)}>
+                    <TableCell className={cn("text-center sticky right-0 z-20 border-l px-1 shadow-[-4px_0_10px_rgba(0,0,0,0.05)] w-[220px] transition-all group-hover:brightness-90 p-0", rowColorClass)}>
                       <TooltipProvider>
                         <div className="flex items-center justify-center gap-1.5 h-8">
                           <Tooltip>
@@ -878,6 +882,7 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
+        {/* BOTTOM SYNCHRONIZED SCROLLBAR (NATIVE) */}
         <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
