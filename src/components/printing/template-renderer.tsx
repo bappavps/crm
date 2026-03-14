@@ -37,6 +37,10 @@ const FONT_FAMILIES = [
   { id: 'lato', value: "'Lato', sans-serif" },
   { id: 'poppins', value: "'Poppins', sans-serif" },
   { id: 'merriweather', value: "'Merriweather', serif" },
+  { id: 'opensans', value: "'Open Sans', sans-serif" },
+  { id: 'raleway', value: "'Raleway', sans-serif" },
+  { id: 'ubuntu', value: "'Ubuntu', sans-serif" },
+  { id: 'lora', value: "'Lora', serif" },
   { id: 'mono', value: "ui-monospace, SFMono-Regular, monospace" },
   { id: 'cursive', value: "cursive" },
   { id: 'narrow', value: "Arial Narrow, sans-serif" },
@@ -74,9 +78,21 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
     switch (el.type) {
       case 'text':
       case 'title':
-        return <div style={style}>{replacePlaceholders(el.content || "")}</div>;
+        return (
+          <div style={{ ...style, textAlign: el.style.textAlign }}>
+            <span style={{ fontFamily: 'inherit', width: '100%', display: 'block' }}>
+              {replacePlaceholders(el.content || "")}
+            </span>
+          </div>
+        );
       case 'field':
-        return <div style={style}>{replacePlaceholders(el.placeholder || "")}</div>;
+        return (
+          <div style={{ ...style, textAlign: el.style.textAlign }}>
+            <span style={{ fontFamily: 'inherit', width: '100%', display: 'block' }}>
+              {replacePlaceholders(el.placeholder || "")}
+            </span>
+          </div>
+        );
       case 'barcode':
         const barcodeVal = replacePlaceholders(el.placeholder || "");
         return (

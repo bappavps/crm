@@ -60,8 +60,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V3.1)
- * Professional Design Engine with Guidelines, TSC Print Optimization, and Fixed Uploads.
+ * PRINT TEMPLATE STUDIO (V3.3)
+ * Professional Design Engine with Robust Font Inheritance and Multi-Container Alignment Fix.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -117,6 +117,10 @@ const FONT_FAMILIES = [
   { id: 'lato', name: 'Lato', value: "'Lato', sans-serif" },
   { id: 'poppins', name: 'Poppins', value: "'Poppins', sans-serif" },
   { id: 'merriweather', name: 'Merriweather', value: "'Merriweather', serif" },
+  { id: 'opensans', name: 'Open Sans', value: "'Open Sans', sans-serif" },
+  { id: 'raleway', name: 'Raleway', value: "'Raleway', sans-serif" },
+  { id: 'ubuntu', name: 'Ubuntu', value: "'Ubuntu', sans-serif" },
+  { id: 'lora', name: 'Lora', value: "'Lora', serif" },
   { id: 'mono', name: 'Monospace', value: "ui-monospace, SFMono-Regular, monospace" },
   { id: 'cursive', name: 'Script', value: "cursive" },
   { id: 'narrow', name: 'Arial Narrow', value: "Arial Narrow, sans-serif" },
@@ -854,9 +858,9 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
     switch (element.type) {
       case 'text': 
       case 'title':
-        return <span style={{ textAlign: element.style.textAlign }}>{element.content}</span>;
+        return <span style={{ textAlign: element.style.textAlign, width: '100%', display: 'block', fontFamily: 'inherit' }}>{element.content}</span>;
       case 'field': 
-        return <span className="text-primary bg-primary/5 rounded px-1 border border-primary/20 italic">{element.placeholder}</span>;
+        return <span className="text-primary bg-primary/5 rounded px-1 border border-primary/20 italic" style={{ textAlign: element.style.textAlign, width: '100%', display: 'block', fontFamily: 'inherit' }}>{element.placeholder}</span>;
       case 'barcode': 
         return (
           <div className="pointer-events-none origin-left flex items-center justify-center w-full h-full" style={{ transform: `scale(${Math.min(1, element.width / 150)})` }}>
@@ -905,6 +909,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       <div 
         className="w-full h-full flex items-center overflow-hidden"
         style={{
+          fontFamily: 'inherit',
           justifyContent: element.style.textAlign === 'center' ? 'center' : element.style.textAlign === 'right' ? 'flex-end' : 'flex-start',
         }}
       >
