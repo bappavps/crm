@@ -89,6 +89,7 @@ import {
   runTransaction,
   deleteDoc,
   updateDoc,
+  setDoc,
   writeBatch
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
@@ -100,11 +101,11 @@ import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 const STATUS_OPTIONS = [
-  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
-  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50" },
-  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50" },
-  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50" },
-  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50" },
+  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-100" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-100" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-100" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-100" },
+  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-100" },
 ];
 
 const COLUMN_KEYS = [
@@ -156,6 +157,7 @@ export default function PaperStockPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
+  const [isCustomStatus, setIsCustomStatus] = useState(false)
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
     rollNo: true, status: true, paperCompany: true, paperType: true, widthMm: true, lengthMeters: true,
@@ -264,6 +266,7 @@ export default function PaperStockPage() {
     if (roll) {
       setEditingRoll(roll);
       setFormData({ ...formData, ...roll });
+      setIsCustomStatus(!STATUS_OPTIONS.some(o => o.value === roll.status));
     } else {
       let nextRollNo = "T-1001";
       if (rolls && rolls.length > 0) {
@@ -278,6 +281,7 @@ export default function PaperStockPage() {
         if (maxNum !== -1) nextRollNo = `${bestPrefix}${(maxNum + 1).toString()}`;
       }
       setEditingRoll(null);
+      setIsCustomStatus(false);
       setFormData({
         rollNo: nextRollNo, paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
         gsm: 0, weightKg: 0, purchaseRate: 0, receivedDate: new Date().toISOString().split('T')[0],
@@ -291,10 +295,19 @@ export default function PaperStockPage() {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     setIsProcessing(true);
-    const finalData = { ...formData, sqm: calculatedSqm, updatedAt: serverTimestamp(), updatedById: user.uid };
+    
     const rollId = formData.rollNo.trim();
+    const finalData = { 
+      ...formData, 
+      rollNo: rollId,
+      sqm: calculatedSqm, 
+      updatedAt: serverTimestamp(), 
+      updatedById: user.uid 
+    };
+
     try {
       if (editingRoll) {
+        // If ID changed, we need a transaction to delete old and create new
         if (editingRoll.id !== rollId) {
           await runTransaction(firestore, async (transaction) => {
             const oldRef = doc(firestore, 'paper_stock', editingRoll.id);
@@ -304,19 +317,28 @@ export default function PaperStockPage() {
             transaction.delete(oldRef);
             transaction.set(newRef, { ...finalData, id: rollId, createdAt: editingRoll.createdAt || serverTimestamp() });
           });
-        } else await updateDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData);
-        setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
+        } else {
+          // Standard update for existing ID
+          await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true });
+        }
+        setIsDialogOpen(false); 
+        setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
       } else {
+        // New roll registration
         await runTransaction(firestore, async (transaction) => {
           const newDocRef = doc(firestore, 'paper_stock', rollId);
           const checkSnap = await transaction.get(newDocRef);
           if (checkSnap.exists()) throw new Error(`Roll No ${rollId} already exists.`);
           transaction.set(newDocRef, { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
         });
-        setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
+        setIsDialogOpen(false); 
+        setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
       }
-    } catch (error: any) { setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); }
-    finally { setIsProcessing(false); }
+    } catch (error: any) { 
+      setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); 
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   const startScanner = () => {
@@ -402,7 +424,7 @@ export default function PaperStockPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
-                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide ({Object.values(visibleColumns).filter(Boolean).length}/18)
+                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column Toggle ({Object.values(visibleColumns).filter(Boolean).length}/18)
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[100] rounded-xl border-none">
@@ -415,11 +437,32 @@ export default function PaperStockPage() {
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="outline" size="sm" onClick={() => { const ws = XLSX.utils.json_to_sheet(filteredRows.map(r => {
-              const row: any = {};
-              COLUMN_KEYS.forEach(col => row[col.label] = r[col.id]);
-              return row;
-            })); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Stock"); XLSX.writeFile(wb, "Stock_Export.xlsx"); }} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl hover:bg-emerald-50 text-emerald-700">
+            <Button variant="outline" size="sm" onClick={() => { 
+              const formatted = filteredRows.map(r => ({
+                "RELL NO": r.rollNo,
+                "PAPER COMPANY": r.paperCompany,
+                "PAPER TYPE": r.paperType,
+                "WIDTH (MM)": r.widthMm,
+                "LENGTH (MTR)": r.lengthMeters,
+                "SQM": r.sqm,
+                "GSM": r.gsm,
+                "WEIGHT(KG)": r.weightKg,
+                "Purchase Rate": r.purchaseRate,
+                "DATE OF RECEIVED": r.receivedDate,
+                "DATE OF USE": r.dateOfUsed || "",
+                "Job no": r.jobNo || "",
+                "SIZE": r.jobSize || "",
+                "PRODUCT NAME": r.jobName || "",
+                "Lot no/BATCH NO": r.lotNo || "",
+                "Company Rell no": r.companyRollNo || "",
+                "STATUS": r.status,
+                "REMARKS": r.remarks || ""
+              }));
+              const ws = XLSX.utils.json_to_sheet(formatted);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, "Master Stock");
+              XLSX.writeFile(wb, `Shree_Label_Stock_${new Date().toISOString().split('T')[0]}.xlsx`);
+            }} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl hover:bg-emerald-50 text-emerald-700">
               <FileDown className="h-4 w-4" /> Export Stock
             </Button>
             <Button variant="ghost" size="sm" onClick={() => { setFilters({ search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [] }); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
@@ -486,7 +529,7 @@ export default function PaperStockPage() {
               {itemsLoading ? (
                 <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
-                const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-white" };
+                const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-slate-50" };
                 const isHighlighted = highlightedId === j.id;
                 return (
                   <TableRow 
@@ -500,7 +543,9 @@ export default function PaperStockPage() {
                     </TableCell>
                     <TableCell className={cn("text-center font-black text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
                     <TableCell className={cn("font-black text-[13px] text-primary border-r border-b text-center font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{j.rollNo}</TableCell>
-                    <TableCell className="border-r border-b"><Badge className={cn("text-[10px] font-black text-white", statusInfo.color)}>{j.status}</Badge></TableCell>
+                    <TableCell className="border-r border-b text-center">
+                      <Badge className={cn("text-[10px] font-black text-white px-2", statusInfo.color)}>{j.status}</Badge>
+                    </TableCell>
                     {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-bold border-r border-b uppercase px-3">{j.paperCompany}</TableCell>}
                     {visibleColumns['paperType'] && <TableCell className="text-[13px] font-bold border-r border-b px-3">{j.paperType}</TableCell>}
                     {visibleColumns['widthMm'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold">{j.widthMm}</TableCell>}
@@ -563,17 +608,17 @@ export default function PaperStockPage() {
             <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10 rounded-full"><X className="h-5 w-5" /></Button>
           </DialogHeader>
           
-          <div className="p-10 bg-slate-50 space-y-8 max-h-[75vh] overflow-y-auto industrial-scroll">
+          <div className="p-10 bg-slate-50 space-y-8 max-h-[75vh] overflow-y-auto industrial-scroll text-left">
             <div className="space-y-4">
               <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
                 <Info className="h-3 w-3" /> Section 1 — Basic Details
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <ProfileField icon={Hash} label="Roll No" value={viewingRoll?.rollNo} />
-                <div className="space-y-1">
+                <div className="space-y-1 text-left">
                   <Label className="text-[10px] uppercase font-black text-slate-400">Status</Label>
                   <div className="flex">
-                    <Badge className={cn("font-black uppercase text-[10px] px-3", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color)}>
+                    <Badge className={cn("font-black uppercase text-[10px] px-3", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>
                       {viewingRoll?.status}
                     </Badge>
                   </div>
@@ -773,11 +818,36 @@ export default function PaperStockPage() {
               <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest pt-1 text-left">Populate all 18 technical parameters for pharma-grade tracking.</DialogDescription>
             </DialogHeader>
             <div className="p-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 bg-white text-left">
-              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Roll ID (Primary Key)</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-12 font-black text-primary border-2 rounded-xl text-sm" required /></div>
-              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Stock Status</Label><Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                <SelectTrigger className="h-12 font-black border-2 rounded-xl text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent className="shadow-2xl rounded-xl border-none">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
-              </Select></div>
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500">Roll ID (Primary Key)</Label>
+                <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} className="h-12 font-black text-primary border-2 rounded-xl text-sm" required />
+              </div>
+              
+              <div className="space-y-2 text-left">
+                <Label className="text-[11px] uppercase font-black text-slate-500">Stock Status</Label>
+                {isCustomStatus ? (
+                  <div className="flex gap-2">
+                    <Input 
+                      placeholder="Enter Custom Status..." 
+                      className="h-12 font-bold border-primary rounded-xl text-sm flex-1"
+                      value={formData.status}
+                      onChange={e => setFormData({...formData, status: e.target.value})}
+                      autoFocus
+                    />
+                    <Button variant="ghost" type="button" onClick={() => { setIsCustomStatus(false); setFormData({...formData, status: "Main"}); }} className="h-12 w-12 text-muted-foreground"><X className="h-4 w-4" /></Button>
+                  </div>
+                ) : (
+                  <Select value={formData.status} onValueChange={v => { if(v === "CUSTOM") setIsCustomStatus(true); else setFormData({...formData, status: v}); }}>
+                    <SelectTrigger className="h-12 font-black border-2 rounded-xl text-sm"><SelectValue /></SelectTrigger>
+                    <SelectContent className="shadow-2xl rounded-xl border-none">
+                      {STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}
+                      <DropdownMenuSeparator />
+                      <SelectItem value="CUSTOM" className="font-bold text-primary italic">+ Add Custom Stage</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Mfr / Company</Label><Input value={formData.paperCompany} list="paper-company-suggestions" onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Substrate / Type</Label><Input value={formData.paperType} list="paper-type-suggestions" onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Width (mm)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-12 font-mono font-bold border-2 rounded-xl text-sm" /></div>
@@ -814,20 +884,25 @@ export default function PaperStockPage() {
 
       <style jsx global>{`
         @media print {
-          body * { visibility: hidden; }
-          #thermal-label, #thermal-label * { visibility: visible; }
+          body * { visibility: hidden !important; }
+          #thermal-label, #thermal-label * { visibility: visible !important; }
           #thermal-label {
-            position: absolute;
-            left: 0;
-            top: 0;
-            margin: 0;
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            margin: 0 !important;
             width: 150mm !important;
             height: 100mm !important;
             border: 4px solid black !important;
             box-shadow: none !important;
             box-sizing: border-box !important;
+            background: white !important;
+            z-index: 9999 !important;
           }
-          @page { size: 150mm 100mm; margin: 0; }
+          @page { 
+            size: 150mm 100mm; 
+            margin: 0 !important; 
+          }
         }
       `}</style>
     </div>
@@ -836,16 +911,16 @@ export default function PaperStockPage() {
 
 function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: any, label: string, value: any, highlight?: boolean }) {
   return (
-    <div className="space-y-1.5 transition-all group">
+    <div className="space-y-1.5 transition-all group text-left">
       <Label className="text-[10px] uppercase font-black text-slate-400 flex items-center gap-1.5 transition-colors group-hover:text-primary">
         <Icon className="h-3 w-3" /> {label}
       </Label>
-      <p className={cn(
+      <div className={cn(
         "text-sm font-black tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm",
         highlight ? "text-primary text-base border-primary/20 bg-primary/5" : "text-slate-800"
       )}>
         {value || "—"}
-      </p>
+      </div>
     </div>
   );
 }
