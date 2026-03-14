@@ -13,6 +13,7 @@ interface TemplateElement {
   y: number;
   width: number;
   height: number;
+  rotate: number;
   content?: string;
   placeholder?: string;
   style: any;
@@ -28,6 +29,19 @@ interface TemplateRendererProps {
 
 const MM_TO_PX = 3.78;
 
+const FONT_FAMILIES = [
+  { id: 'inter', value: 'var(--font-inter), sans-serif' },
+  { id: 'roboto', value: 'Roboto, sans-serif' },
+  { id: 'playfair', value: 'Playfair Display, serif' },
+  { id: 'montserrat', value: 'Montserrat, sans-serif' },
+  { id: 'oswald', value: 'Oswald, sans-serif' },
+  { id: 'lato', value: 'Lato, sans-serif' },
+  { id: 'poppins', value: 'Poppins, sans-serif' },
+  { id: 'merriweather', value: 'Merriweather, serif' },
+  { id: 'mono', value: 'ui-monospace, SFMono-Regular, monospace' },
+  { id: 'narrow', value: 'Arial Narrow, sans-serif' },
+];
+
 export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scale = 1 }: TemplateRendererProps) {
   const replacePlaceholders = (text: string) => {
     if (!text) return "";
@@ -38,6 +52,8 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
     return result;
   };
 
+  const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
+
   const renderElement = (el: TemplateElement) => {
     const style = {
       ...el.style,
@@ -45,12 +61,13 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
       top: `${el.y}px`,
       width: `${el.width}px`,
       height: `${el.height}px`,
+      transform: `rotate(${el.rotate || 0}deg)`,
       fontSize: `${el.style.fontSize}px`,
+      fontFamily: getFontFamilyValue(el.style.fontFamily),
       position: 'absolute' as const,
       display: 'flex',
       alignItems: 'center',
       justifyContent: el.style.textAlign === 'center' ? 'center' : el.style.textAlign === 'right' ? 'flex-end' : 'flex-start',
-      whiteSpace: 'nowrap' as const,
       overflow: 'hidden'
     };
 
@@ -86,6 +103,12 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
         return <div style={{ ...style, height: '2px', backgroundColor: 'black' }} />;
       case 'rectangle':
         return <div style={{ ...style, border: '2px solid black' }} />;
+      case 'circle':
+        return <div style={{ ...style, border: '2px solid black', borderRadius: '100%' }} />;
+      case 'image':
+        return el.content ? (
+          <img src={el.content} style={style} className="object-contain" alt="Rendered" />
+        ) : null;
       default:
         return null;
     }
