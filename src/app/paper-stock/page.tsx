@@ -32,7 +32,9 @@ import {
   ArrowUpDown,
   History,
   FileSpreadsheet,
-  AlertTriangle
+  AlertTriangle,
+  MoreHorizontal,
+  Calendar
 } from "lucide-react"
 import { 
   Dialog, 
@@ -82,6 +84,8 @@ const STATUS_OPTIONS = [
 ];
 
 const COLUMN_KEYS = [
+  { id: 'rollNo', label: 'Roll No' },
+  { id: 'status', label: 'Status' },
   { id: 'paperCompany', label: 'Paper Company' },
   { id: 'paperType', label: 'Paper Type' },
   { id: 'widthMm', label: 'Width (MM)' },
@@ -405,13 +409,11 @@ export default function PaperStockPage() {
             const oldRef = doc(firestore, 'paper_stock', editingRoll.id);
             const newRef = doc(firestore, 'paper_stock', rollId);
             
-            // EXECUTE ALL READS FIRST
             const checkSnap = await transaction.get(newRef);
             if (checkSnap.exists()) {
               throw new Error(`Roll No ${rollId} already exists in registry.`);
             }
 
-            // EXECUTE ALL WRITES AFTER
             transaction.delete(oldRef);
             transaction.set(newRef, { ...finalData, id: rollId, createdAt: editingRoll.createdAt || serverTimestamp() });
           });
@@ -425,7 +427,6 @@ export default function PaperStockPage() {
           const newDocRef = doc(firestore, 'paper_stock', rollId);
           const counterRef = doc(firestore, 'counters', 'paper_roll');
           
-          // EXECUTE ALL READS FIRST
           const [checkSnap, counterSnap] = await Promise.all([
             transaction.get(newDocRef),
             transaction.get(counterRef)
@@ -435,7 +436,6 @@ export default function PaperStockPage() {
             throw new Error(`Roll No ${rollId} already exists in registry.`);
           }
           
-          // EXECUTE ALL WRITES AFTER
           transaction.set(newDocRef, { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
           
           const numericPart = parseInt(rollId.replace(/\D/g, ''));
@@ -510,16 +510,16 @@ export default function PaperStockPage() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className={cn(
-          "h-8 px-2 text-[10px] gap-1 font-black uppercase border-slate-200 bg-white tracking-widest",
-          filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary"
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest",
+          filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary shadow-sm"
         )}>
           {label}
-          {filters[field]?.length > 0 && <Badge variant="secondary" className="h-3 px-1 text-[8px] bg-primary text-white">{filters[field].length}</Badge>}
+          {filters[field]?.length > 0 && <Badge variant="secondary" className="h-4 px-1.5 text-[9px] bg-primary text-white font-black">{filters[field].length}</Badge>}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto z-portal">
-        <DropdownMenuLabel className="text-[10px] uppercase font-black">{label}</DropdownMenuLabel>
+      <DropdownMenuContent align="start" className="w-64 max-h-[400px] overflow-y-auto z-portal p-2 shadow-2xl">
+        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 pb-2">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
           <DropdownMenuCheckboxItem 
@@ -531,11 +531,87 @@ export default function PaperStockPage() {
               setFilters({ ...filters, [field]: next });
               setCurrentPage(1);
             }} 
-            className="text-xs font-bold"
+            className="text-xs font-bold py-2"
           >
             {String(opt)}
           </DropdownMenuCheckboxItem>
         ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const RangeFilter = ({ label, fieldPrefix, unit }: { label: string, fieldPrefix: string, unit?: string }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className={cn(
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest",
+          (filters[`${fieldPrefix}Min`] || filters[`${fieldPrefix}Max`]) && "border-primary bg-primary/5 text-primary shadow-sm"
+        )}>
+          {label}
+          <ChevronDown className="h-3 w-3 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64 p-4 shadow-2xl z-portal space-y-4">
+        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50">{label} {unit && `(${unit})`}</DropdownMenuLabel>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">Min</Label>
+            <Input 
+              type="number" 
+              placeholder="0" 
+              className="h-8 text-xs font-bold" 
+              value={filters[`${fieldPrefix}Min`]} 
+              onChange={e => setFilters({...filters, [`${fieldPrefix}Min`]: e.target.value})}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">Max</Label>
+            <Input 
+              type="number" 
+              placeholder="9999" 
+              className="h-8 text-xs font-bold" 
+              value={filters[`${fieldPrefix}Max`]} 
+              onChange={e => setFilters({...filters, [`${fieldPrefix}Max`]: e.target.value})}
+            />
+          </div>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const DateFilter = ({ label, fromField, toField }: { label: string, fromField: string, toField: string }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className={cn(
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest",
+          (filters[fromField] || filters[toField]) && "border-primary bg-primary/5 text-primary shadow-sm"
+        )}>
+          {label}
+          <ChevronDown className="h-3 w-3 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64 p-4 shadow-2xl z-portal space-y-4">
+        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50">{label}</DropdownMenuLabel>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">From Date</Label>
+            <Input 
+              type="date" 
+              className="h-8 text-xs font-bold" 
+              value={filters[fromField]} 
+              onChange={e => setFilters({...filters, [fromField]: e.target.value})}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">To Date</Label>
+            <Input 
+              type="date" 
+              className="h-8 text-xs font-bold" 
+              value={filters[toField]} 
+              onChange={e => setFilters({...filters, [toField]: e.target.value})}
+            />
+          </div>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -564,13 +640,16 @@ export default function PaperStockPage() {
     );
   };
 
+  const visibleColumnCount = Object.values(visibleColumns).filter(Boolean).length;
+  const totalColumnCount = COLUMN_KEYS.length;
+
   if (!isMounted) return null;
 
   return (
     <div className="flex flex-col h-full space-y-3 font-sans animate-in fade-in duration-500">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="bg-white p-3 rounded-xl border shadow-sm space-y-3 px-6 shrink-0 border-slate-200">
+      <div className="bg-white p-4 rounded-xl border shadow-sm space-y-4 px-6 shrink-0 border-slate-200">
         <div className="flex items-center gap-6">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -591,7 +670,7 @@ export default function PaperStockPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2">
-                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide
+                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column show and hide ({visibleColumnCount}/{totalColumnCount})
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-portal">
@@ -613,25 +692,49 @@ export default function PaperStockPage() {
             </DropdownMenu>
 
             <Button variant="outline" size="sm" onClick={exportStock} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-all">
-              <FileDown className="h-4 w-4" /> Export XLSX
+              <FileDown className="h-4 w-4" /> Export Stock
             </Button>
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
               search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
               widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-            })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
+            })} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 pb-1">
-          <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
-          <MultiSelectFilter label="Mfr" field="paperCompany" options={getUniqueOptions('paperCompany')} />
-          <MultiSelectFilter label="Substrate" field="paperType" options={getUniqueOptions('paperType')} />
-          <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
-          <MultiSelectFilter label="Job Name" field="jobName" options={getUniqueOptions('jobName')} />
-          <MultiSelectFilter label="Job Size" field="jobSize" options={getUniqueOptions('jobSize')} />
-          <MultiSelectFilter label="Lot No" field="lotNo" options={getUniqueOptions('lotNo')} />
-          <MultiSelectFilter label="Company Roll" field="companyRollNo" options={getUniqueOptions('companyRollNo')} />
+        
+        <div className="flex flex-wrap items-center gap-3 pb-1 overflow-x-auto no-scrollbar">
+          <MultiSelectFilter label="STATUS" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
+          <MultiSelectFilter label="COMPANY" field="paperCompany" options={getUniqueOptions('paperCompany')} />
+          <MultiSelectFilter label="TYPE" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="JOB ID" field="jobNo" options={getUniqueOptions('jobNo')} />
+          <MultiSelectFilter label="JOB NAME" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="LOT NO" field="lotNo" options={getUniqueOptions('lotNo')} />
+          
+          <div className="h-6 w-px bg-slate-200 mx-2" />
+          
+          <RangeFilter label="WIDTH" fieldPrefix="width" unit="MM" />
+          <RangeFilter label="GSM" fieldPrefix="gsm" />
+          <RangeFilter label="SQM" fieldPrefix="sqm" />
+          <DateFilter label="DATE RECEIVED" fromField="receivedFrom" toField="receivedTo" />
+          
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-10 w-10 border border-slate-200 bg-white">
+                <MoreHorizontal className="h-4 w-4 text-slate-400" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64 p-2 shadow-2xl z-portal">
+              <DropdownMenuLabel className="text-[10px] font-black uppercase opacity-50">Extended Technical Filters</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <div className="p-2 space-y-4">
+                <RangeFilter label="LENGTH" fieldPrefix="length" unit="MTR" />
+                <RangeFilter label="WEIGHT" fieldPrefix="weight" unit="KG" />
+                <RangeFilter label="RATE" fieldPrefix="rate" unit="₹" />
+                <DateFilter label="DATE USED" fromField="usedFrom" toField="usedTo" />
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -752,7 +855,6 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* SUGGESTION DATALISTS */}
       <datalist id="paper-company-suggestions">{getUniqueOptions('paperCompany').map(o => <option key={o} value={o} />)}</datalist>
       <datalist id="paper-type-suggestions">{getUniqueOptions('paperType').map(o => <option key={o} value={o} />)}</datalist>
       <datalist id="job-no-suggestions">{getUniqueOptions('jobNo').map(o => <option key={o} value={o} />)}</datalist>
@@ -761,7 +863,6 @@ export default function PaperStockPage() {
       <datalist id="lot-no-suggestions">{getUniqueOptions('lotNo').map(o => <option key={o} value={o} />)}</datalist>
       <datalist id="company-roll-suggestions">{getUniqueOptions('companyRollNo').map(o => <option key={o} value={o} />)}</datalist>
 
-      {/* VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl z-portal">
           <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
@@ -778,7 +879,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* PRINT DIALOG */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[450px] p-8 z-portal">
           <div className="p-8 border-8 border-black text-center space-y-6 rounded-lg bg-white shadow-2xl">
@@ -796,7 +896,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ADD/EDIT DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[850px] max-h-[95vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl z-portal">
           <form onSubmit={handleSave}>
