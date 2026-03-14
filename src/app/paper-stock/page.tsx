@@ -390,7 +390,7 @@ export default function PaperStockPage() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className={cn(
-          "h-8 px-2 text-[10px] gap-1 font-bold uppercase border-slate-200 bg-white",
+          "h-8 px-2 text-[10px] gap-1 font-black uppercase border-slate-200 bg-white tracking-widest",
           filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary"
         )}>
           {label}
@@ -399,7 +399,7 @@ export default function PaperStockPage() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56 max-h-[300px] overflow-y-auto">
-        <DropdownMenuLabel className="text-[10px] uppercase font-bold">{label}</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-[10px] uppercase font-black">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
           <DropdownMenuCheckboxItem 
@@ -411,7 +411,7 @@ export default function PaperStockPage() {
               setFilters({ ...filters, [field]: next });
               setCurrentPage(1);
             }} 
-            className="text-xs"
+            className="text-xs font-bold"
           >
             {String(opt)}
           </DropdownMenuCheckboxItem>
@@ -426,16 +426,16 @@ export default function PaperStockPage() {
     return (
       <TableHead 
         className={cn(
-          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[50]", 
+          "cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[100]", 
           isActive && "bg-slate-200", 
           className
         )} 
         onClick={() => requestSort(field)} 
       >
-        <div className="flex items-center justify-center gap-1 px-2">
-          <span className="font-bold text-[10px] uppercase text-slate-700">{label}</span>
+        <div className="flex items-center justify-center gap-1.5 px-2">
+          <span className="font-black text-[10px] uppercase text-slate-700 tracking-tighter">{label}</span>
           {isActive ? (
-            sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+            sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
           ) : (
             <ArrowUpDown className="h-2.5 w-2.5 opacity-30" />
           )}
@@ -447,37 +447,37 @@ export default function PaperStockPage() {
   if (!isMounted) return null;
 
   return (
-    <div className="flex flex-col h-full space-y-2 font-sans">
+    <div className="flex flex-col h-full space-y-3 font-sans animate-in fade-in duration-500">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="bg-white p-2 rounded-lg border shadow-sm space-y-2 px-4 shrink-0 border-slate-200">
-        <div className="flex items-center gap-4">
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+      <div className="bg-white p-3 rounded-xl border shadow-sm space-y-3 px-6 shrink-0 border-slate-200">
+        <div className="flex items-center gap-6">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input 
-              placeholder="Search registry..." 
-              className="pl-8 h-8 text-xs bg-slate-50 border-slate-200" 
+              placeholder="Search master registry..." 
+              className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-bold" 
               value={filters.search} 
               onChange={e => setFilters({ ...filters, search: e.target.value })} 
             />
           </div>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-8 px-2 gap-1 font-bold uppercase text-[10px]">
-                  <ColumnsIcon className="h-3.5 w-3.5" /> Columns
+                <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2">
+                  <ColumnsIcon className="h-4 w-4 text-primary" /> Display Settings
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 p-2">
-                <DropdownMenuLabel className="text-[10px] uppercase">Display Controls</DropdownMenuLabel>
+              <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl">
+                <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 mb-2 tracking-widest">Toggle Columns</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <div className="max-h-[400px] overflow-y-auto">
+                <div className="max-h-[400px] overflow-y-auto industrial-scroll">
                   {COLUMN_KEYS.map(col => (
                     <DropdownMenuCheckboxItem 
                       key={col.id} 
                       checked={visibleColumns[col.id]} 
                       onCheckedChange={v => setVisibleColumns({...visibleColumns, [col.id]: v})}
-                      className="text-xs"
+                      className="text-xs font-bold py-2"
                     >
                       {col.label}
                     </DropdownMenuCheckboxItem>
@@ -486,100 +486,105 @@ export default function PaperStockPage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button variant="outline" size="sm" onClick={exportStock} className="h-8 px-2 gap-1 font-bold uppercase text-[10px]">
-              <FileDown className="h-3.5 w-3.5" /> Export
+            <Button variant="outline" size="sm" onClick={exportStock} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 transition-all">
+              <FileDown className="h-4 w-4" /> Download XLSX
             </Button>
 
             <Button variant="ghost" size="sm" onClick={() => setFilters({
               search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
               location: [], shade: [], gsm: [], bf: [], widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "", rateMin: "", rateMax: "",
               receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-            })} className="text-[10px] font-bold uppercase text-destructive"><FilterX className="h-3.5 w-3.5 mr-1" /> Reset</Button>
+            })} className="text-[10px] font-black uppercase text-destructive tracking-widest"><FilterX className="h-4 w-4 mr-1.5" /> Reset</Button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5 pb-1">
+        <div className="flex flex-wrap gap-2 pb-1">
           <MultiSelectFilter label="Status" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
-          <MultiSelectFilter label="Company" field="paperCompany" options={getUniqueOptions('paperCompany')} />
-          <MultiSelectFilter label="Material" field="paperType" options={getUniqueOptions('paperType')} />
-          <MultiSelectFilter label="Job No" field="jobNo" options={getUniqueOptions('jobNo')} />
+          <MultiSelectFilter label="Mfr" field="paperCompany" options={getUniqueOptions('paperCompany')} />
+          <MultiSelectFilter label="Substrate" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="Job #" field="jobNo" options={getUniqueOptions('jobNo')} />
           <MultiSelectFilter label="GSM" field="gsm" options={getUniqueOptions('gsm')} />
           <MultiSelectFilter label="BF" field="bf" options={getUniqueOptions('bf')} />
           <MultiSelectFilter label="Shade" field="shade" options={getUniqueOptions('shade')} />
-          <MultiSelectFilter label="Location" field="location" options={getUniqueOptions('location')} />
+          <MultiSelectFilter label="Loc" field="location" options={getUniqueOptions('location')} />
         </div>
       </div>
 
-      <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-lg bg-white">
-        <div className="bg-slate-800 text-white p-2 px-4 flex items-center justify-between shrink-0">
-          <h2 className="font-bold text-xs uppercase tracking-wider flex items-center gap-2"><LayoutGrid className="h-4 w-4" /> Technical Stock Registry (Grid View)</h2>
-          <Button variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/20" onClick={() => handleOpenDialog()}><Plus className="h-4 w-4" /></Button>
+      <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-xl bg-white">
+        <div className="bg-slate-800 text-white p-3 px-6 flex items-center justify-between shrink-0">
+          <h2 className="font-black text-xs uppercase tracking-[0.2em] flex items-center gap-3">
+            <LayoutGrid className="h-5 w-5 text-primary" /> Technical Data Grid
+          </h2>
+          <Button variant="ghost" size="sm" className="h-9 px-4 text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest" onClick={() => handleOpenDialog()}>
+            <Plus className="h-4 w-4 mr-2" /> New Technical Intake
+          </Button>
         </div>
 
         <div className="w-full h-[600px] overflow-scroll relative industrial-scroll table-container">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
-            <TableHeader className="sticky top-0 z-[100] bg-white">
+            <TableHeader className="z-50">
               <TableRow className="h-10">
                 <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[110] p-0 shadow-[1px_0_0_#e2e8f0]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
                 </TableHead>
                 <TableHead className="w-[50px] text-center font-bold text-[10px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[110] p-0 shadow-[1px_0_0_#e2e8f0]">Sl No</TableHead>
                 <SortableHeader label="Roll No" field="rollNo" className="w-[110px] border-r sticky top-0 left-[90px] bg-slate-100 z-[110] shadow-[1px_0_0_#e2e8f0]" />
-                <SortableHeader label="Status" field="status" className="w-[120px] border-r" />
-                <SortableHeader label="Paper Company" field="paperCompany" className="border-r" />
-                <SortableHeader label="Paper Type" field="paperType" className="border-r" />
-                <SortableHeader label="Width (MM)" field="widthMm" className="border-r" />
-                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r" />
-                <SortableHeader label="SQM" field="sqm" className="border-r" />
-                <SortableHeader label="GSM" field="gsm" className="border-r" />
-                <SortableHeader label="BF" field="bf" className="border-r" />
-                <SortableHeader label="Shade" field="shade" className="border-r" />
-                <SortableHeader label="Location" field="location" className="border-r" />
-                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r" />
-                <SortableHeader label="Received Date" field="receivedDate" className="border-r" />
-                <SortableHeader label="Job No" field="jobNo" className="border-r" />
-                <SortableHeader label="Job Name" field="jobName" className="border-r" />
-                <SortableHeader label="Lot No" field="lotNo" className="border-r" />
+                <SortableHeader label="Status" field="status" className="w-[120px] border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Paper Company" field="paperCompany" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Paper Type" field="paperType" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Width (MM)" field="widthMm" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Length (MTR)" field="lengthMeters" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="SQM" field="sqm" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="GSM" field="gsm" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="BF" field="bf" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Shade" field="shade" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Location" field="location" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Weight (KG)" field="weightKg" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Received Date" field="receivedDate" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Job No" field="jobNo" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Job Name" field="jobName" className="border-r sticky top-0 bg-slate-100 z-[100]" />
+                <SortableHeader label="Lot No" field="lotNo" className="border-r sticky top-0 bg-slate-100 z-[100]" />
                 <TableHead className="text-center font-bold text-[10px] uppercase sticky top-0 right-0 bg-slate-100 z-[110] border-l border-b shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {itemsLoading ? (
-                <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-8 w-8" /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={25} className="text-center py-20"><Loader2 className="animate-spin mx-auto text-primary h-10 w-10" /></TableCell></TableRow>
               ) : paginatedRows.map((j, i) => {
                 const statusColor = STATUS_OPTIONS.find(o => o.value === j.status)?.color || "bg-slate-500";
+                const rowBg = STATUS_OPTIONS.find(o => o.value === j.status)?.rowBg || "bg-white";
                 return (
-                  <TableRow key={j.id} className="h-8 group even:bg-slate-50/50">
-                    <TableCell className="text-center border-r border-b sticky left-0 z-20 bg-white group-hover:bg-slate-100 shadow-[1px_0_0_#e2e8f0] p-0">
+                  <TableRow key={j.id} className={cn("h-9 group hover:brightness-95 transition-all", rowBg)}>
+                    <TableCell className="text-center border-r border-b sticky left-0 z-20 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
-                    <TableCell className="text-center font-medium text-[11px] text-slate-400 border-r border-b sticky left-[40px] z-20 bg-white group-hover:bg-slate-100 shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className="font-bold text-[11px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-20 bg-white group-hover:bg-slate-100 shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
+                    <TableCell className="text-center font-black text-[10px] text-slate-400 border-r border-b sticky left-[40px] z-20 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className="font-black text-[11px] text-primary border-r border-b text-center font-mono sticky left-[90px] z-20 bg-inherit shadow-[1px_0_0_#e2e8f0] p-0">{j.rollNo}</TableCell>
                     <TableCell className="text-center border-r border-b p-0">
                       <div className="flex items-center justify-center">
-                        <span className={cn("px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase", statusColor)}>{j.status || "Available"}</span>
+                        <span className={cn("px-2.5 py-0.5 rounded-full text-[8px] font-black text-white uppercase tracking-tighter shadow-sm", statusColor)}>{j.status || "Available"}</span>
                       </div>
                     </TableCell>
-                    {visibleColumns['paperCompany'] && <TableCell className="text-[11px] border-r border-b uppercase px-2 truncate max-w-[150px]">{j.paperCompany}</TableCell>}
-                    {visibleColumns['paperType'] && <TableCell className="text-[11px] border-r border-b px-2 truncate max-w-[150px]">{j.paperType}</TableCell>}
-                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[11px] border-r border-b font-mono font-medium px-2">{j.widthMm}</TableCell>}
-                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[11px] border-r border-b font-mono font-medium px-2">{j.lengthMeters}</TableCell>}
-                    {visibleColumns['sqm'] && <TableCell className="text-center text-[11px] border-r border-b font-bold text-primary font-mono px-2">{j.sqm}</TableCell>}
-                    {visibleColumns['gsm'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.gsm}</TableCell>}
-                    {visibleColumns['bf'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.bf || '-'}</TableCell>}
-                    {visibleColumns['shade'] && <TableCell className="text-center text-[11px] border-r border-b px-2">{j.shade || '-'}</TableCell>}
-                    {visibleColumns['location'] && <TableCell className="text-center text-[11px] border-r border-b font-semibold px-2 text-blue-600">{j.location || '-'}</TableCell>}
-                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.weightKg || 0}</TableCell>}
-                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[11px] border-r border-b px-2">{j.receivedDate}</TableCell>}
-                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[11px] border-r border-b font-mono font-bold px-2">{j.jobNo || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-[11px] border-r border-b truncate max-w-[150px] px-2">{j.jobName || '-'}</TableCell>}
-                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[11px] border-r border-b font-mono px-2">{j.lotNo || '-'}</TableCell>}
-                    <TableCell className="text-center border-b sticky right-0 z-20 bg-white group-hover:bg-slate-100 border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
-                      <div className="flex items-center justify-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-500" onClick={() => handleOpenDialog(j)}><Pencil className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-500" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => { if(confirm('Delete?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    {visibleColumns['paperCompany'] && <TableCell className="text-[10px] font-bold border-r border-b uppercase px-3 truncate max-w-[150px]">{j.paperCompany}</TableCell>}
+                    {visibleColumns['paperType'] && <TableCell className="text-[10px] font-bold border-r border-b px-3 truncate max-w-[150px]">{j.paperType}</TableCell>}
+                    {visibleColumns['widthMm'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.widthMm}</TableCell>}
+                    {visibleColumns['lengthMeters'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lengthMeters}</TableCell>}
+                    {visibleColumns['sqm'] && <TableCell className="text-center text-[10px] border-r border-b font-black text-primary font-mono px-2">{j.sqm}</TableCell>}
+                    {visibleColumns['gsm'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.gsm}</TableCell>}
+                    {visibleColumns['bf'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.bf || '-'}</TableCell>}
+                    {visibleColumns['shade'] && <TableCell className="text-center text-[10px] border-r border-b font-bold px-2">{j.shade || '-'}</TableCell>}
+                    {visibleColumns['location'] && <TableCell className="text-center text-[10px] border-r border-b font-black px-2 text-blue-600">{j.location || '-'}</TableCell>}
+                    {visibleColumns['weightKg'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.weightKg || 0}</TableCell>}
+                    {visibleColumns['receivedDate'] && <TableCell className="text-center text-[10px] font-bold border-r border-b px-2">{j.receivedDate}</TableCell>}
+                    {visibleColumns['jobNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-black text-slate-700 px-2">{j.jobNo || '-'}</TableCell>}
+                    {visibleColumns['jobName'] && <TableCell className="text-[10px] font-bold border-r border-b truncate max-w-[150px] px-2">{j.jobName || '-'}</TableCell>}
+                    {visibleColumns['lotNo'] && <TableCell className="text-center text-[10px] border-r border-b font-mono font-bold px-2">{j.lotNo || '-'}</TableCell>}
+                    <TableCell className="text-center border-b sticky right-0 z-20 bg-inherit border-l shadow-[-1px_0_0_#e2e8f0] w-[180px] p-0">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-500 hover:text-primary transition-colors" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-500 hover:bg-blue-50" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-orange-500 hover:bg-orange-50" onClick={() => router.push(`/inventory/slitting?rollId=${j.id}`)}><Scissors className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-700 hover:bg-slate-100" onClick={() => { setPrintingRoll(j); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => { if(confirm('Delete roll?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -589,44 +594,51 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        <div className="bg-slate-50 p-2 border-t flex items-center justify-between shrink-0 px-4 rounded-b-lg">
-          <div className="flex items-center gap-3">
+        <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
+          <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-7 w-[90px] bg-white text-[10px] font-bold">
+              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
             </Select>
-            <span className="text-[10px] font-bold text-slate-500 uppercase">Showing {startRange}–{endRange} of {filteredRows.length}</span>
+            <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-7 px-2 text-[10px] font-bold uppercase" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-3 w-3 mr-1" /> Prev</Button>
-            <span className="text-[10px] font-bold bg-white border border-slate-200 h-7 px-3 flex items-center justify-center rounded">{currentPage} / {totalPages || 1}</span>
-            <Button variant="outline" size="sm" className="h-7 px-2 text-[10px] font-bold uppercase" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-3 w-3 ml-1" /></Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="h-8 px-4 text-[10px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button>
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] font-black bg-white border-2 border-slate-200 h-8 w-12 flex items-center justify-center rounded-lg shadow-inner">{currentPage}</span>
+              <span className="text-[10px] font-black text-slate-400 mx-1">/</span>
+              <span className="text-[10px] font-black text-slate-500">{totalPages || 1}</span>
+            </div>
+            <Button variant="outline" size="sm" className="h-8 px-4 text-[10px] font-black uppercase tracking-widest border-2" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button>
           </div>
         </div>
       </Card>
 
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[600px] p-0 border-none shadow-3xl">
-          <DialogHeader className="p-4 bg-slate-800 text-white rounded-t-lg">
-            <DialogTitle className="uppercase font-bold text-sm flex items-center gap-2"><Package className="h-4 w-4" /> Roll Info: {viewingRoll?.rollNo}</DialogTitle>
+        <DialogContent className="sm:max-w-[650px] p-0 border-none shadow-3xl overflow-hidden rounded-2xl">
+          <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
+            <DialogTitle className="uppercase font-black text-sm flex items-center gap-3 tracking-widest"><Package className="h-5 w-5 text-primary" /> Technical Profile: {viewingRoll?.rollNo}</DialogTitle>
           </DialogHeader>
-          <div className="p-6 grid grid-cols-2 md:grid-cols-3 gap-4 bg-white">
+          <div className="p-8 grid grid-cols-2 md:grid-cols-3 gap-8 bg-white industrial-scroll max-h-[70vh] overflow-y-auto">
             {[
-              { label: "Company", value: viewingRoll?.paperCompany },
-              { label: "Material", value: viewingRoll?.paperType },
+              { label: "Mfr Company", value: viewingRoll?.paperCompany },
+              { label: "Material Specification", value: viewingRoll?.paperType },
               { label: "Width (MM)", value: viewingRoll?.widthMm },
               { label: "Length (MTR)", value: viewingRoll?.lengthMeters },
-              { label: "SQM", value: viewingRoll?.sqm },
-              { label: "GSM", value: viewingRoll?.gsm },
-              { label: "Location", value: viewingRoll?.location || '-' },
-              { label: "BF", value: viewingRoll?.bf || '-' },
-              { label: "Shade", value: viewingRoll?.shade || '-' }
+              { label: "Net SQM", value: viewingRoll?.sqm },
+              { label: "GSM Value", value: viewingRoll?.gsm },
+              { label: "Storage Location", value: viewingRoll?.location || '-' },
+              { label: "Bursting Factor (BF)", value: viewingRoll?.bf || '-' },
+              { label: "Shade Code", value: viewingRoll?.shade || '-' },
+              { label: "Weight (KG)", value: viewingRoll?.weightKg || 0 },
+              { label: "Registry Date", value: viewingRoll?.receivedDate },
+              { label: "Last Allocation", value: viewingRoll?.jobNo || '-' }
             ].map((item, idx) => (
-              <div key={idx} className="space-y-0.5">
-                <Label className="text-[9px] uppercase font-bold text-slate-400">{item.label}</Label>
-                <p className="text-xs font-bold text-slate-800">{item.value}</p>
+              <div key={idx} className="space-y-1 group">
+                <Label className="text-[9px] uppercase font-black text-slate-400 tracking-widest block transition-colors group-hover:text-primary">{item.label}</Label>
+                <p className="text-xs font-black text-slate-800 tracking-tight">{item.value}</p>
               </div>
             ))}
           </div>
@@ -634,45 +646,49 @@ export default function PaperStockPage() {
       </Dialog>
 
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <div className="p-6 border-4 border-black text-center space-y-4">
-            <h2 className="text-xl font-black uppercase">SHREE LABEL</h2>
-            <div className="border-y-2 border-black py-2">
-              <p className="text-3xl font-black">{printingRoll?.rollNo}</p>
+        <DialogContent className="sm:max-w-[450px] p-8">
+          <div className="p-8 border-8 border-black text-center space-y-6 rounded-lg bg-white shadow-2xl">
+            <h2 className="text-2xl font-black uppercase tracking-tighter">SHREE LABEL CREATION</h2>
+            <div className="border-y-4 border-black py-4 bg-black/5">
+              <p className="text-[10px] font-black uppercase mb-1">TECHNICAL REEL ID</p>
+              <p className="text-5xl font-black tracking-tighter">{printingRoll?.rollNo}</p>
             </div>
-            <p className="text-sm font-bold">{printingRoll?.widthMm}mm x {printingRoll?.lengthMeters}m</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="text-left"><p className="text-[9px] font-black uppercase opacity-50">WIDTH</p><p className="text-lg font-black">{printingRoll?.widthMm} MM</p></div>
+              <div className="text-right"><p className="text-[9px] font-black uppercase opacity-50">LENGTH</p><p className="text-lg font-black">{printingRoll?.lengthMeters} MTR</p></div>
+            </div>
           </div>
-          <DialogFooter><Button onClick={() => window.print()} className="w-full">Print Tag</Button></DialogFooter>
+          <DialogFooter className="mt-6"><Button onClick={() => window.print()} className="w-full h-12 font-black uppercase tracking-widest bg-slate-900 shadow-xl"><Printer className="h-5 w-5 mr-3" /> Execute Thermal Print</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto p-0">
+        <DialogContent className="sm:max-w-[850px] max-h-[90vh] overflow-y-auto p-0 border-none rounded-2xl shadow-3xl">
           <form onSubmit={handleSave}>
-            <DialogHeader className="p-4 bg-slate-800 text-white rounded-t-lg">
-              <DialogTitle className="uppercase font-bold text-sm">{editingRoll ? `Update: ${formData.rollNo}` : 'New Roll Intake'}</DialogTitle>
+            <DialogHeader className="p-6 bg-slate-800 text-white flex flex-row items-center justify-between">
+              <DialogTitle className="uppercase font-black text-sm tracking-widest">{editingRoll ? `Update Registry: ${formData.rollNo}` : 'Direct Technical Stock Intake'}</DialogTitle>
             </DialogHeader>
-            <div className="p-6 grid grid-cols-2 gap-4 bg-white">
-              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Status</Label>
+            <div className="p-8 grid grid-cols-2 gap-8 bg-white">
+              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Inventory Status</Label>
                 <Select value={formData.status} onValueChange={v => setFormData({...formData, status: v})}>
-                  <SelectTrigger className="h-9 font-bold"><SelectValue /></SelectTrigger>
-                  <SelectContent>{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+                  <SelectTrigger className="h-11 font-black border-2"><SelectValue /></SelectTrigger>
+                  <SelectContent className="shadow-2xl">{STATUS_OPTIONS.map(o => <SelectItem key={o.value} value={o.value} className="font-bold">{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Paper Company</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-9" /></div>
-              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Paper Type</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-9" /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-9" /></div>
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-9" /></div>
+              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Paper Company (Mfr)</Label><Input value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 font-bold border-2" /></div>
+              <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Material Type (Substrate)</Label><Input value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 font-bold border-2" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Width (MM)</Label><Input type="number" step="0.01" value={formData.widthMm || ""} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Length (MTR)</Label><Input type="number" step="0.01" value={formData.lengthMeters || ""} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
               </div>
-              <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-primary">SQM (Auto)</Label><Input value={calculatedSqm} readOnly className="h-9 bg-slate-50 font-bold" /></div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-9" /></div>
-                <div className="space-y-1"><Label className="text-[10px] uppercase font-bold text-slate-500">Location</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-9" /></div>
+              <div className="space-y-2 bg-primary/5 p-4 rounded-xl border-2 border-primary/20"><Label className="text-[10px] uppercase font-black text-primary tracking-widest">Automated SQM Calculation</Label><Input value={calculatedSqm} readOnly className="h-11 bg-white font-black text-xl text-primary border-none shadow-inner" /></div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">GSM</Label><Input type="number" value={formData.gsm || ""} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} required className="h-11 font-mono font-bold border-2" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Warehouse Location</Label><Input value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} className="h-11 font-bold border-2" /></div>
               </div>
-              <div className="space-y-1 col-span-2"><Label className="text-[10px] uppercase font-bold text-slate-500">Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[60px]" /></div>
+              <div className="space-y-2 col-span-2"><Label className="text-[10px] uppercase font-black text-slate-500 tracking-widest">Technical Remarks / Batch Notes</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[100px] border-2 font-medium" /></div>
             </div>
-            <DialogFooter className="p-4 bg-slate-50 border-t"><Button type="submit" disabled={isProcessing} className="w-full h-10 uppercase font-bold bg-slate-800">{isProcessing ? <Loader2 className="animate-spin mr-2" /> : 'Commit Entry'}</Button></DialogFooter>
+            <DialogFooter className="p-6 bg-slate-50 border-t flex gap-4"><Button type="submit" disabled={isProcessing} className="w-full h-14 uppercase font-black tracking-[0.2em] bg-slate-800 shadow-2xl hover:scale-[1.01] active:scale-[0.99] transition-all">{isProcessing ? <Loader2 className="animate-spin mr-3 h-6 w-6" /> : 'Commit Transaction'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
