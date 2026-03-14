@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo, useRef } from "react"
@@ -572,9 +571,9 @@ export default function PaperStockPage() {
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col border-none shadow-2xl bg-white rounded-b-2xl">
-        <div className="flex-1 overflow-x-scroll overflow-y-scroll max-h-[600px] relative border-t industrial-scroll table-container">
+        <div className="w-full h-[600px] overflow-auto relative border-t industrial-scroll table-container">
           <Table className="border-separate border-spacing-0 min-w-[2800px]">
-            <TableHeader className="sticky top-0 z-50">
+            <TableHeader className="sticky top-0 z-[100] bg-white">
               <TableRow className="h-9 bg-white">
                 <TableHead className="w-[50px] text-center border-r border-b sticky top-0 left-0 bg-white z-[65] p-0 shadow-[2px_2px_5px_rgba(0,0,0,0.05)]">
                   <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
@@ -645,7 +644,7 @@ export default function PaperStockPage() {
         <div className="bg-slate-50 p-2.5 border-t flex items-center justify-between shrink-0 px-6">
           <div className="flex items-center gap-4">
             <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-8 w-[100px] bg-white text-[10px] font-black uppercase"><SelectValue /></Trigger>
               <SelectContent>{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
             </Select>
             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Showing {startRange}–{endRange} of {filteredRows.length} Rolls</span>
