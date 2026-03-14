@@ -54,7 +54,8 @@ import {
   Maximize2,
   MessageSquare,
   X,
-  Camera
+  Camera,
+  CalendarDays
 } from "lucide-react"
 import { 
   Dialog, 
@@ -102,11 +103,11 @@ import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 const STATUS_OPTIONS = [
-  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-100" },
-  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-100" },
-  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-100" },
-  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-100" },
-  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-100" },
+  { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
+  { value: "Stock", label: "Stock", color: "bg-emerald-600", rowBg: "bg-emerald-50" },
+  { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50" },
+  { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50" },
+  { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50" },
 ];
 
 const COLUMN_KEYS = [
@@ -120,12 +121,12 @@ const COLUMN_KEYS = [
   { id: 'gsm', label: 'GSM' },
   { id: 'weightKg', label: 'Weight (KG)' },
   { id: 'purchaseRate', label: 'Purchase Rate' },
-  { id: 'receivedDate', label: 'Date of Received' },
-  { id: 'dateOfUsed', label: 'Date of Used' },
+  { id: 'receivedDate', label: 'Date Received' },
+  { id: 'dateOfUsed', label: 'Date Used' },
   { id: 'jobNo', label: 'Job No' },
   { id: 'jobSize', label: 'Job Size' },
   { id: 'jobName', label: 'Job Name' },
-  { id: 'lotNo', label: 'Lot No / Batch No' },
+  { id: 'lotNo', label: 'Lot / Batch No' },
   { id: 'companyRollNo', label: 'Company Roll No' },
   { id: 'remarks', label: 'Remarks' },
 ];
@@ -160,11 +161,13 @@ export default function PaperStockPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [isCustomStatus, setIsCustomStatus] = useState(false)
 
-  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
+  const defaultVisibleColumns = {
     rollNo: true, status: true, paperCompany: true, paperType: true, widthMm: true, lengthMeters: true,
     sqm: true, gsm: true, weightKg: true, purchaseRate: true, receivedDate: true, dateOfUsed: true,
     jobNo: true, jobSize: true, jobName: true, lotNo: true, companyRollNo: true, remarks: true
-  })
+  }
+
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(defaultVisibleColumns)
 
   useEffect(() => { 
     setIsMounted(true);
@@ -190,11 +193,14 @@ export default function PaperStockPage() {
 
   const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string; }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
-  const [filters, setFilters] = useState<any>({
-    search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
+  const initialFilters = {
+    search: "",
+    rollNo: [], paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [],
     widthMin: "", widthMax: "", lengthMin: "", lengthMax: "", sqmMin: "", sqmMax: "", gsmMin: "", gsmMax: "", weightMin: "", weightMax: "",
     rateMin: "", rateMax: "", receivedFrom: "", receivedTo: "", usedFrom: "", usedTo: ""
-  })
+  }
+
+  const [filters, setFilters] = useState<any>(initialFilters)
 
   const [formData, setFormData] = useState({
     rollNo: "", paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0,
@@ -229,14 +235,50 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     let result = rolls.filter(row => {
+      // 1. GLOBAL SEARCH - Works across all table data
       if (filters.search) {
         const s = filters.search.toLowerCase();
-        return Object.values(row).some(v => String(v || "").toLowerCase().includes(s));
+        const matchesGlobal = Object.entries(row).some(([key, val]) => {
+          // Skip internal firebase keys
+          if (['id', 'updatedAt', 'createdAt', 'createdById', 'updatedById'].includes(key)) return false;
+          return String(val || "").toLowerCase().includes(s);
+        });
+        if (!matchesGlobal) return false;
       }
-      const categories = ['paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo'];
+
+      // 2. CATEGORICAL FILTERS (Multi-select)
+      const categories = ['rollNo', 'paperCompany', 'paperType', 'status', 'jobNo', 'jobSize', 'jobName', 'lotNo', 'companyRollNo'];
       for (const cat of categories) {
         if (filters[cat]?.length > 0 && !filters[cat].includes(String(row[cat] || ""))) return false;
       }
+
+      // 3. NUMERIC RANGE FILTERS
+      const numericRanges = [
+        { field: 'widthMm', min: 'widthMin', max: 'widthMax' },
+        { field: 'lengthMeters', min: 'lengthMin', max: 'lengthMax' },
+        { field: 'sqm', min: 'sqmMin', max: 'sqmMax' },
+        { field: 'gsm', min: 'gsmMin', max: 'gsmMax' },
+        { field: 'weightKg', min: 'weightMin', max: 'weightMax' },
+        { field: 'purchaseRate', min: 'rateMin', max: 'rateMax' },
+      ];
+      for (const range of numericRanges) {
+        const val = Number(row[range.field] || 0);
+        const min = filters[range.min] ? Number(filters[range.min]) : -Infinity;
+        const max = filters[range.max] ? Number(filters[range.max]) : Infinity;
+        if (val < min || val > max) return false;
+      }
+
+      // 4. DATE RANGE FILTERS
+      const dateRanges = [
+        { field: 'receivedDate', from: 'receivedFrom', to: 'receivedTo' },
+        { field: 'dateOfUsed', from: 'usedFrom', to: 'usedTo' },
+      ];
+      for (const range of dateRanges) {
+        const val = row[range.field];
+        if (filters[range.from] && (!val || val < filters[range.from])) return false;
+        if (filters[range.to] && (!val || val > filters[range.to])) return false;
+      }
+
       return true;
     });
 
@@ -361,7 +403,7 @@ export default function PaperStockPage() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="outline" size="sm" className={cn(
-          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest transition-all hover:bg-slate-50",
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest transition-all hover:bg-slate-50 shrink-0",
           filters[field]?.length > 0 && "border-primary bg-primary/5 text-primary shadow-sm"
         )}>
           {label}
@@ -369,7 +411,7 @@ export default function PaperStockPage() {
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64 max-h-[400px] overflow-y-auto p-2 shadow-2xl z-[100]">
+      <DropdownMenuContent align="start" className="w-64 max-h-[400px] overflow-y-auto p-2 shadow-2xl z-[100] rounded-xl border-none">
         <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 pb-2">{label}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {options.map(opt => (
@@ -387,6 +429,62 @@ export default function PaperStockPage() {
     </DropdownMenu>
   );
 
+  const RangeFilter = ({ label, minField, maxField, icon: Icon }: { label: string, minField: string, maxField: string, icon: any }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className={cn(
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest transition-all hover:bg-slate-50 shrink-0",
+          (filters[minField] || filters[maxField]) && "border-primary bg-primary/5 text-primary shadow-sm"
+        )}>
+          <Icon className="h-3 w-3" /> {label}
+          <ChevronDown className="h-3 w-3 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64 p-4 shadow-2xl z-[100] rounded-xl border-none space-y-4">
+        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 p-0">{label} Range</DropdownMenuLabel>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">Min</Label>
+            <Input type="number" value={filters[minField]} onChange={e => setFilters({...filters, [minField]: e.target.value})} className="h-8 text-xs font-bold" placeholder="0" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">Max</Label>
+            <Input type="number" value={filters[maxField]} onChange={e => setFilters({...filters, [maxField]: e.target.value})} className="h-8 text-xs font-bold" placeholder="∞" />
+          </div>
+        </div>
+        <Button variant="secondary" size="sm" className="w-full text-[10px] font-black uppercase" onClick={() => setFilters({...filters, [minField]: "", [maxField]: ""})}>Clear Range</Button>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const DateFilter = ({ label, fromField, toField }: { label: string, fromField: string, toField: string }) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className={cn(
+          "h-10 px-4 text-[11px] gap-2 font-black uppercase border-slate-200 bg-white tracking-widest transition-all hover:bg-slate-50 shrink-0",
+          (filters[fromField] || filters[toField]) && "border-primary bg-primary/5 text-primary shadow-sm"
+        )}>
+          <CalendarDays className="h-3 w-3" /> {label}
+          <ChevronDown className="h-3 w-3 opacity-50" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64 p-4 shadow-2xl z-[100] rounded-xl border-none space-y-4">
+        <DropdownMenuLabel className="text-[10px] uppercase font-black opacity-50 p-0">{label} Period</DropdownMenuLabel>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">From</Label>
+            <Input type="date" value={filters[fromField]} onChange={e => setFilters({...filters, [fromField]: e.target.value})} className="h-8 text-[10px] font-bold" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[9px] font-black uppercase opacity-50">To</Label>
+            <Input type="date" value={filters[toField]} onChange={e => setFilters({...filters, [toField]: e.target.value})} className="h-8 text-[10px] font-bold" />
+          </div>
+        </div>
+        <Button variant="secondary" size="sm" className="w-full text-[10px] font-black uppercase" onClick={() => setFilters({...filters, [fromField]: "", [toField]: ""})}>Clear Date</Button>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   const SortableHeader = ({ label, field, className = "" }: { label: string, field: string, className?: string }) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
@@ -400,6 +498,14 @@ export default function PaperStockPage() {
     );
   };
 
+  const handleResetAll = () => {
+    setFilters(initialFilters);
+    setVisibleColumns(defaultVisibleColumns);
+    setSortConfig({ key: 'rollNo', direction: 'desc' });
+    setCurrentPage(1);
+    toast({ title: "Filters Reset", description: "All search parameters and column toggles have been restored." });
+  }
+
   return (
     <div className="flex flex-col h-full space-y-4 font-sans animate-in fade-in duration-500 pb-20">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
@@ -408,7 +514,7 @@ export default function PaperStockPage() {
         <div className="flex items-center gap-6">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <Input placeholder="Search Roll ID, Company, Job..." className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-bold rounded-xl" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
+            <Input placeholder="Global search across all 18 fields..." className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-black rounded-xl" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
           </div>
           <div className="ml-auto flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={startScanner} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-indigo-200 text-indigo-700 hover:bg-indigo-50">
@@ -422,7 +528,7 @@ export default function PaperStockPage() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
-                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column Toggle ({Object.values(visibleColumns).filter(Boolean).length}/18)
+                  <ColumnsIcon className="h-4 w-4 text-primary" /> Column Visibility ({Object.values(visibleColumns).filter(Boolean).length}/18)
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64 p-3 shadow-2xl z-[100] rounded-xl border-none">
@@ -437,24 +543,24 @@ export default function PaperStockPage() {
             </DropdownMenu>
             <Button variant="outline" size="sm" onClick={() => { 
               const formatted = filteredRows.map(r => ({
-                "RELL NO": r.rollNo,
-                "PAPER COMPANY": r.paperCompany,
-                "PAPER TYPE": r.paperType,
-                "WIDTH (MM)": r.widthMm,
-                "LENGTH (MTR)": r.lengthMeters,
+                "Roll No": r.rollNo,
+                "Paper Company": r.paperCompany,
+                "Paper Type": r.paperType,
+                "Width (MM)": r.widthMm,
+                "Length (MTR)": r.lengthMeters,
                 "SQM": r.sqm,
                 "GSM": r.gsm,
-                "WEIGHT(KG)": r.weightKg,
+                "Weight (KG)": r.weightKg,
                 "Purchase Rate": r.purchaseRate,
-                "DATE OF RECEIVED": r.receivedDate,
-                "DATE OF USE": r.dateOfUsed || "",
-                "Job no": r.jobNo || "",
-                "SIZE": r.jobSize || "",
-                "PRODUCT NAME": r.jobName || "",
-                "Lot no/BATCH NO": r.lotNo || "",
-                "Company Rell no": r.companyRollNo || "",
-                "STATUS": r.status,
-                "REMARKS": r.remarks || ""
+                "Date Received": r.receivedDate,
+                "Date Used": r.dateOfUsed || "",
+                "Job No": r.jobNo || "",
+                "Job Size": r.jobSize || "",
+                "Job Name": r.jobName || "",
+                "Lot / Batch No": r.lotNo || "",
+                "Company Roll No": r.companyRollNo || "",
+                "Status": r.status,
+                "Remarks": r.remarks || ""
               }));
               const ws = XLSX.utils.json_to_sheet(formatted);
               const wb = XLSX.utils.book_new();
@@ -463,30 +569,48 @@ export default function PaperStockPage() {
             }} className="h-10 px-4 gap-2 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl hover:bg-emerald-50 text-emerald-700">
               <FileDown className="h-4 w-4" /> Export Stock
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => { setFilters({ search: "", paperCompany: [], paperType: [], status: [], jobNo: [], jobSize: [], jobName: [], lotNo: [], companyRollNo: [] }); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); }} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
+            <Button variant="ghost" size="sm" onClick={handleResetAll} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4"><FilterX className="h-4 w-4 mr-1.5" /> Reset All</Button>
           </div>
         </div>
         
-        <div className="flex flex-wrap items-center gap-3 pb-1 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-3 pb-1 overflow-x-auto no-scrollbar">
           <MultiSelectFilter label="STATUS" field="status" options={STATUS_OPTIONS.map(o => o.value)} />
+          <MultiSelectFilter label="ROLL ID" field="rollNo" options={getUniqueOptions('rollNo')} />
           <MultiSelectFilter label="COMPANY" field="paperCompany" options={getUniqueOptions('paperCompany')} />
-          <MultiSelectFilter label="TYPE" field="paperType" options={getUniqueOptions('paperType')} />
+          <MultiSelectFilter label="SUBSTRATE" field="paperType" options={getUniqueOptions('paperType')} />
           <MultiSelectFilter label="JOB ID" field="jobNo" options={getUniqueOptions('jobNo')} />
           <MultiSelectFilter label="LOT NO" field="lotNo" options={getUniqueOptions('lotNo')} />
-          <div className="h-6 w-px bg-slate-200 mx-2" />
-          <div className="flex items-center gap-2 group">
-            <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Status Board:</span>
-            {STATUS_OPTIONS.map(opt => (
-              <div key={opt.value} className="flex items-center gap-1.5"><div className={cn("w-2.5 h-2.5 rounded-sm shadow-sm", opt.color)} /><span className="text-[10px] font-bold text-slate-600 uppercase">{opt.label}</span></div>
-            ))}
-          </div>
+          <MultiSelectFilter label="JOB NAME" field="jobName" options={getUniqueOptions('jobName')} />
+          <MultiSelectFilter label="JOB SIZE" field="jobSize" options={getUniqueOptions('jobSize')} />
+          <MultiSelectFilter label="MFR ROLL" field="companyRollNo" options={getUniqueOptions('companyRollNo')} />
+          
+          <Separator orientation="vertical" className="h-6 mx-2" />
+          
+          <RangeFilter label="WIDTH" minField="widthMin" maxField="widthMax" icon={Ruler} />
+          <RangeFilter label="GSM" minField="gsmMin" maxField="gsmMax" icon={Weight} />
+          <RangeFilter label="LENGTH" minField="lengthMin" maxField="lengthMax" icon={ArrowRightLeft} />
+          <RangeFilter label="SQM" minField="sqmMin" maxField="sqmMax" icon={Layers} />
+          <RangeFilter label="WEIGHT" minField="weightMin" maxField="weightMax" icon={Scale} />
+          <RangeFilter label="RATE" minField="rateMin" maxField="rateMax" icon={CircleDollarSign} />
+          
+          <Separator orientation="vertical" className="h-6 mx-2" />
+          
+          <DateFilter label="RECEIVED" fromField="receivedFrom" toField="receivedTo" />
+          <DateFilter label="USED" fromField="usedFrom" toField="usedTo" />
+        </div>
+
+        <div className="flex items-center gap-4 border-t pt-4">
+          <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Status Legend:</span>
+          {STATUS_OPTIONS.map(opt => (
+            <div key={opt.value} className="flex items-center gap-1.5"><div className={cn("w-2.5 h-2.5 rounded-sm shadow-sm", opt.color)} /><span className="text-[10px] font-bold text-slate-600 uppercase">{opt.label}</span></div>
+          ))}
         </div>
       </div>
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-2xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
           <h2 className="font-black text-xs uppercase tracking-[0.25em] flex items-center gap-3">
-            <LayoutGrid className="h-5 w-5 text-primary" /> Paper Stock Details
+            <LayoutGrid className="h-5 w-5 text-primary" /> Technical Paper Stock Details
           </h2>
           <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}>
             <Plus className="h-4 w-4 mr-2" /> Add Roll
@@ -518,9 +642,10 @@ export default function PaperStockPage() {
                 <SortableHeader label="Job No" field="jobNo" />
                 <SortableHeader label="Job Size" field="jobSize" />
                 <SortableHeader label="Job Name" field="jobName" />
-                <SortableHeader label="Lot No" field="lotNo" />
+                <SortableHeader label="Lot / Batch No" field="lotNo" />
+                <SortableHeader label="Company Roll No" field="companyRollNo" />
                 <SortableHeader label="Remarks" field="remarks" />
-                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[200px] p-0">Action</TableHead>
+                <TableHead className="text-center font-bold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[240px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -558,8 +683,9 @@ export default function PaperStockPage() {
                     {visibleColumns['jobSize'] && <TableCell className="text-[13px] border-r border-b text-center">{j.jobSize || '-'}</TableCell>}
                     {visibleColumns['jobName'] && <TableCell className="text-[13px] font-bold border-r border-b truncate max-w-[150px] text-center">{j.jobName || '-'}</TableCell>}
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-bold text-center">{j.lotNo || '-'}</TableCell>}
+                    {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-bold">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[200px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
                         <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(j); }}><Pencil className="h-4 w-4" /></Button>
@@ -598,10 +724,10 @@ export default function PaperStockPage() {
         <DialogContent className="sm:max-w-[850px] p-0 border-none shadow-3xl overflow-hidden rounded-3xl z-[100] [&>button]:text-white [&>button]:opacity-100">
           <DialogHeader className="p-8 bg-slate-900 text-white flex flex-row items-center justify-between border-b border-white/5">
             <div className="space-y-1">
-              <DialogTitle className="uppercase font-black text-xl flex items-center gap-3 tracking-tighter">
+              <DialogTitle className="uppercase font-black text-xl flex items-center gap-3 tracking-tighter text-left">
                 <Package className="h-6 w-6 text-primary" /> Technical Profile
               </DialogTitle>
-              <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest">Roll ID: {viewingRoll?.rollNo}</DialogDescription>
+              <DialogDescription className="text-slate-400 text-xs font-bold uppercase tracking-widest text-left">Roll ID: {viewingRoll?.rollNo}</DialogDescription>
             </div>
           </DialogHeader>
           
@@ -788,8 +914,8 @@ export default function PaperStockPage() {
         <DialogContent className="sm:max-w-[450px] p-0 border-none shadow-3xl rounded-3xl z-[200] overflow-hidden [&>button]:text-white [&>button]:opacity-100">
           <DialogHeader className="p-6 bg-indigo-600 text-white flex flex-row items-center justify-between border-none">
             <div className="space-y-1">
-              <DialogTitle className="uppercase font-black text-sm flex items-center gap-2 tracking-widest"><Camera className="h-4 w-4" /> Scanner Hub</DialogTitle>
-              <DialogDescription className="text-white/70 text-[10px] font-bold">Point camera at roll QR or Barcode</DialogDescription>
+              <DialogTitle className="uppercase font-black text-sm flex items-center gap-2 tracking-widest text-left"><Camera className="h-4 w-4" /> Scanner Hub</DialogTitle>
+              <DialogDescription className="text-white/70 text-[10px] font-bold text-left">Point camera at roll QR or Barcode</DialogDescription>
             </div>
           </DialogHeader>
           <div className="p-0 bg-black min-h-[350px]">
@@ -856,7 +982,7 @@ export default function PaperStockPage() {
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Job No</Label><Input value={formData.jobNo} list="job-no-suggestions" onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Job Name</Label><Input value={formData.jobName} list="job-name-suggestions" onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Job Size</Label><Input value={formData.jobSize} list="job-size-suggestions" onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
-              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Lot No</Label><Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
+              <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Lot / Batch No</Label><Input value={formData.lotNo} list="lot-no-suggestions" onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
               <div className="space-y-2 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Company Roll No</Label><Input value={formData.companyRollNo} list="company-roll-suggestions" onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-12 font-bold border-2 rounded-xl text-sm" /></div>
               <div className="space-y-2 md:col-span-2 lg:col-span-3 text-left"><Label className="text-[11px] uppercase font-black text-slate-500">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="min-h-[100px] border-2 rounded-2xl font-medium text-sm" placeholder="Any quality issues or technical flags..." /></div>
             </div>
