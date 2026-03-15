@@ -20,10 +20,12 @@ import {
   Timer,
   FileText,
   Save,
-  ArrowRight
+  ArrowRight,
+  Package,
+  ArrowUpDown
 } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, query, where, updateDoc, serverTimestamp } from "firebase/firestore"
+import { collection, doc, query, where, updateDoc, serverTimestamp, writeBatch, getDocs } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
@@ -44,11 +46,16 @@ export default function JumboOperatorPage() {
   // Data Subscriptions
   const jobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    // Show PENDING and RUNNING jobs
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
   }, [firestore]);
 
+  const rollsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'paper_stock');
+  }, [firestore]);
+
   const { data: jobs, isLoading } = useCollection(jobsQuery);
+  const { data: allRolls } = useCollection(rollsQuery);
 
   const handleStartJob = async (job: any) => {
     if (!firestore) return;
@@ -69,18 +76,39 @@ export default function JumboOperatorPage() {
   const handleCompleteJob = async () => {
     if (!firestore || !activeJob || isProcessing) return;
     setIsProcessing(true);
+    
     try {
-      await updateDoc(doc(firestore, 'jumbo_job_cards', activeJob.id), {
+      const batch = writeBatch(firestore);
+      
+      // 1. Update Job Card
+      batch.update(doc(firestore, 'jumbo_job_cards', activeJob.id), {
         status: 'COMPLETED',
         endTime: new Date().toISOString(),
         notes: formData.notes,
         actualEndTime: formData.endTime
       });
+
+      // 2. Update status of JOB rolls only
+      const jobRollCodes = activeJob.child_rolls || [];
+      const jobRollDocs = allRolls?.filter(r => jobRollCodes.includes(r.rollNo)) || [];
+      
+      jobRollDocs.forEach(roll => {
+        const isJobDest = !!roll.jobNo;
+        if (isJobDest) {
+          batch.update(doc(firestore, 'paper_stock', roll.id), {
+            status: "Ready for Printing",
+            updatedAt: serverTimestamp()
+          });
+        }
+      });
+
+      await batch.commit();
+      
       setActiveJob(null);
       setFormData({ startTime: "", endTime: "", notes: "" });
-      toast({ title: "Run Completed", description: "Job card moved to production history." });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Error Submitting Output" });
+      toast({ title: "Run Completed", description: "JOB rolls moved to printing queue. STOCK rolls preserved." });
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Completion Error", description: e.message });
     } finally {
       setIsProcessing(false);
     }
@@ -99,54 +127,52 @@ export default function JumboOperatorPage() {
       </div>
 
       {!activeJob ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="md:col-span-2 border-none shadow-xl rounded-3xl overflow-hidden">
-            <CardHeader className="bg-slate-900 text-white p-6">
-              <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
-                <Scissors className="h-5 w-5 text-primary" /> Assigned Work Queue
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="divide-y">
-                {isLoading ? (
-                  <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
-                ) : jobs?.length === 0 ? (
-                  <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
-                    <History className="h-12 w-12" />
-                    <p className="font-black uppercase text-[10px] tracking-widest">Queue is clear. No active slitting jobs.</p>
-                  </div>
-                ) : jobs?.map((j) => (
-                  <div key={j.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-all group">
-                    <div className="flex items-center gap-6">
-                      <div className="h-14 w-14 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-primary/10 group-hover:text-primary transition-all">
-                        <FileText className="h-6 w-6" />
-                      </div>
-                      <div className="space-y-1">
-                        <p className="font-black text-primary uppercase tracking-tighter text-lg">{j.job_card_no}</p>
-                        <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase">
-                          <span>Parent: {j.parent_roll}</span>
-                          <span>Machine: {j.machine}</span>
-                          <span>Rolls: {j.child_rolls?.length || 0}</span>
-                        </div>
+        <Card className="border-none shadow-xl rounded-3xl overflow-hidden">
+          <CardHeader className="bg-slate-900 text-white p-6">
+            <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
+              <Scissors className="h-5 w-5 text-primary" /> Assigned Work Queue
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y">
+              {isLoading ? (
+                <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
+              ) : jobs?.length === 0 ? (
+                <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
+                  <History className="h-12 w-12" />
+                  <p className="font-black uppercase text-[10px] tracking-widest">Queue is clear. No active slitting jobs.</p>
+                </div>
+              ) : jobs?.map((j) => (
+                <div key={j.id} className="p-6 flex items-center justify-between hover:bg-slate-50 transition-all group">
+                  <div className="flex items-center gap-6">
+                    <div className="h-14 w-14 bg-slate-100 rounded-2xl flex items-center justify-center font-black text-slate-400 group-hover:bg-primary/10 group-hover:text-primary transition-all">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-black text-primary uppercase tracking-tighter text-lg">{j.job_card_no}</p>
+                      <div className="flex gap-4 text-[10px] font-bold text-slate-400 uppercase">
+                        <span>Parent: {j.parent_roll}</span>
+                        <span>Operator: {j.operator}</span>
+                        <span>Total Units: {j.child_rolls?.length || 0}</span>
                       </div>
                     </div>
-                    <div className="flex gap-3">
-                      {j.status === 'RUNNING' ? (
-                        <Button onClick={() => setActiveJob(j)} className="bg-blue-600 hover:bg-blue-700 h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">
-                          Resume Run <ArrowRight className="ml-2 h-4 w-4" />
-                        </Button>
-                      ) : (
-                        <Button onClick={() => handleStartJob(j)} disabled={isProcessing} className="bg-primary hover:bg-primary/90 h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">
-                          <Play className="mr-2 h-4 w-4" /> Start Slitting
-                        </Button>
-                      )}
-                    </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  <div className="flex gap-3">
+                    {j.status === 'RUNNING' ? (
+                      <Button onClick={() => setActiveJob(j)} className="bg-blue-600 hover:bg-blue-700 h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">
+                        Resume Run <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    ) : (
+                      <Button onClick={() => handleStartJob(j)} disabled={isProcessing} className="bg-primary hover:bg-primary/90 h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg">
+                        <Play className="mr-2 h-4 w-4" /> Start Slitting
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : (
         <Card className="border-none shadow-2xl rounded-3xl overflow-hidden animate-in zoom-in-95 duration-300">
           <CardHeader className="bg-blue-600 text-white p-8">
@@ -192,14 +218,26 @@ export default function JumboOperatorPage() {
                     />
                   </div>
                 </div>
+                
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase">Output Remarks / Wastage Notes</Label>
-                  <Textarea 
-                    placeholder="Describe any run issues or substrate observations..."
-                    className="min-h-[150px] rounded-2xl border-2 bg-white font-medium p-4"
-                    value={formData.notes}
-                    onChange={e => setFormData({...formData, notes: e.target.value})}
-                  />
+                  <Label className="text-[10px] font-black uppercase">Production Output Verification</Label>
+                  <div className="bg-white border-2 rounded-2xl p-4 max-h-[250px] overflow-y-auto industrial-scroll space-y-2">
+                    {activeJob.child_rolls?.map((code: string) => {
+                      const roll = allRolls?.find(r => r.rollNo === code);
+                      const isJobDest = !!roll?.jobNo;
+                      return (
+                        <div key={code} className="p-3 border rounded-xl flex items-center justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-black">{code}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">{roll?.widthMm}mm x {roll?.lengthMeters}m</span>
+                          </div>
+                          <Badge className={isJobDest ? "bg-blue-500" : "bg-emerald-500"}>
+                            {isJobDest ? 'JOB' : 'STOCK'}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -209,12 +247,12 @@ export default function JumboOperatorPage() {
                 </h3>
                 <div className="space-y-4">
                   {[
-                    "Confirm blade alignment for all widths",
-                    "Verify core tension settings",
-                    "Check parent roll unwinding direction",
-                    "Print thermal labels for all output rolls"
+                    "Confirm all slitted widths match job specs",
+                    "Verify core tension for all child rolls",
+                    "Affix technical thermal labels to each roll",
+                    "Check for substrate defects during rewind"
                   ].map((task, i) => (
-                    <div key={i} className="p-4 bg-white rounded-2xl border-2 border-slate-100 flex items-center gap-4 hover:border-primary/20 transition-all">
+                    <div key={i} className="p-4 bg-white rounded-2xl border-2 border-slate-100 flex items-center gap-4">
                       <div className="h-6 w-6 rounded-lg border-2 border-slate-200 flex items-center justify-center bg-slate-50">
                         <CheckCircle2 className="h-4 w-4 text-slate-300" />
                       </div>
@@ -223,30 +261,35 @@ export default function JumboOperatorPage() {
                   ))}
                 </div>
                 
-                <div className="p-6 bg-amber-50 border-2 border-amber-100 rounded-3xl space-y-2">
-                  <p className="text-[9px] font-black text-amber-700 uppercase flex items-center gap-2">
-                    <AlertTriangle className="h-3 w-3" /> Safety Protocol
-                  </p>
-                  <p className="text-[11px] font-medium text-amber-800 leading-relaxed">
-                    Ensure all guard rails are locked before increasing machine speed beyond 40m/min.
-                  </p>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase">Wastage & Run Notes</Label>
+                  <Textarea 
+                    placeholder="Describe any technical issues or substrate variations..."
+                    className="min-h-[100px] rounded-2xl border-2 bg-white font-medium p-4"
+                    value={formData.notes}
+                    onChange={e => setFormData({...formData, notes: e.target.value})}
+                  />
                 </div>
               </div>
             </div>
           </CardContent>
           <CardFooter className="p-8 bg-white border-t flex gap-4">
-            <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-[11px] tracking-widest border-2">Report Downtime</Button>
+            <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-[11px] tracking-widest border-2" onClick={() => setActiveJob(null)}>Suspend Run</Button>
             <Button 
               onClick={handleCompleteJob} 
               disabled={isProcessing}
-              className="flex-[2] h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-[11px] tracking-widest shadow-xl shadow-emerald-500/20"
+              className="flex-[2] h-14 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase text-[11px] tracking-widest shadow-xl"
             >
               {isProcessing ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <CheckCircle2 className="h-5 w-5 mr-2" />}
-              Finalize Run & move to printing
+              Complete Shift & Release to Printing
             </Button>
           </CardFooter>
         </Card>
       )}
     </div>
   )
+}
+
+function Timer({ className }: { className?: string }) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>;
 }

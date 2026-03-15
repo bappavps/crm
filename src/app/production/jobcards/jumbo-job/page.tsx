@@ -1,7 +1,8 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -23,7 +24,10 @@ import {
   User,
   Factory,
   QrCode,
-  ArrowRight
+  ArrowRight,
+  X,
+  Package,
+  ArrowLeft
 } from "lucide-react"
 import { 
   Dialog, 
@@ -46,10 +50,13 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { QRCodeSVG } from 'qrcode.react'
 
-export default function JumboJobCardPage() {
+function JumboJobCardContent() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const urlParentRoll = searchParams.get('parentRoll')
   
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [isViewOpen, setIsViewOpen] = useState(false)
@@ -102,26 +109,53 @@ export default function JumboJobCardPage() {
     return allRolls?.filter(r => r.rollNo.startsWith(formData.parent_roll + '-') && r.rollNo !== formData.parent_roll) || [];
   }, [allRolls, formData.parent_roll]);
 
+  // Handle URL pre-fill
+  useEffect(() => {
+    if (urlParentRoll && allRolls) {
+      const match = allRolls.find(r => r.rollNo === urlParentRoll);
+      if (match) {
+        const children = allRolls.filter(r => r.rollNo.startsWith(urlParentRoll + '-')).map(r => r.rollNo);
+        setFormData({
+          job_card_no: `JJC-${urlParentRoll}-${Date.now().toString().slice(-4)}`,
+          parent_roll: urlParentRoll,
+          machine: "",
+          operator: "",
+          child_rolls: children
+        });
+        setIsCreateOpen(true);
+      }
+    }
+  }, [urlParentRoll, allRolls]);
+
+  // Auto-select all children when parent changes
+  useEffect(() => {
+    if (formData.parent_roll && allRolls) {
+      const children = allRolls.filter(r => r.rollNo.startsWith(formData.parent_roll + '-')).map(r => r.rollNo);
+      setFormData(prev => ({ ...prev, child_rolls: children }));
+    }
+  }, [formData.parent_roll, allRolls]);
+
   const handleCreateJob = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     
     setIsProcessing(true);
-    const jobId = `JJC-${Date.now().toString().slice(-6)}`;
+    const jobId = formData.job_card_no || `JJC-${Date.now().toString().slice(-6)}`;
     const jobRef = doc(firestore, 'jumbo_job_cards', jobId);
 
     try {
       await setDoc(jobRef, {
         ...formData,
         id: jobId,
-        job_card_no: formData.job_card_no || jobId,
+        job_card_no: jobId,
         status: "PENDING",
         createdAt: new Date().toISOString(),
         createdById: user.uid,
         createdByName: user.displayName || user.email
       });
       setIsCreateOpen(false);
-      toast({ title: "Job Card Initialized" });
+      toast({ title: "Job Card Initialized", description: "All slitting units have been logged." });
+      if (urlParentRoll) router.replace('/production/jobcards/jumbo-job');
     } catch (e: any) {
       toast({ variant: "destructive", title: "Creation Failed", description: e.message });
     } finally {
@@ -148,11 +182,11 @@ export default function JumboJobCardPage() {
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Jumbo Job Cards</h2>
-          <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Substrate Slitting & Conversion Process Control</p>
+          <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Master Registry for Substrate Slitting Runs</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" className="h-11 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
-            <History className="h-4 w-4 mr-2" /> View Logs
+          <Button variant="outline" className="h-11 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl" onClick={() => router.push('/paper-stock')}>
+            <ArrowLeft className="h-4 w-4 mr-2" /> Back to Stock
           </Button>
           <Button onClick={() => {
             setFormData({ job_card_no: "", parent_roll: "", machine: "", operator: "", child_rolls: [] });
@@ -166,7 +200,7 @@ export default function JumboJobCardPage() {
       <Card className="border-none shadow-xl overflow-hidden rounded-3xl">
         <CardHeader className="bg-slate-900 text-white p-6 px-8 flex flex-row items-center justify-between">
           <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
-            <Scissors className="h-5 w-5 text-primary" /> Active Job Registry
+            <Scissors className="h-5 w-5 text-primary" /> Slitting Pipeline
           </CardTitle>
           <div className="relative w-64">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
@@ -184,8 +218,8 @@ export default function JumboJobCardPage() {
               <TableRow>
                 <TableHead className="font-black text-[10px] uppercase pl-8">Job ID</TableHead>
                 <TableHead className="font-black text-[10px] uppercase">Parent Roll</TableHead>
-                <TableHead className="font-black text-[10px] uppercase">Machine</TableHead>
-                <TableHead className="font-black text-[10px] uppercase text-center">Output Units</TableHead>
+                <TableHead className="font-black text-[10px] uppercase">Operator</TableHead>
+                <TableHead className="font-black text-[10px] uppercase text-center">Output Content</TableHead>
                 <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
                 <TableHead className="text-right font-black text-[10px] uppercase pr-8">Actions</TableHead>
               </TableRow>
@@ -197,15 +231,17 @@ export default function JumboJobCardPage() {
                 <TableRow key={j.id} className="hover:bg-slate-50 transition-colors group">
                   <TableCell className="font-black text-primary font-mono text-xs pl-8">{j.job_card_no}</TableCell>
                   <TableCell className="font-bold text-sm">{j.parent_roll}</TableCell>
-                  <TableCell className="text-[11px] font-bold uppercase text-slate-500">{j.machine || "UNASSIGNED"}</TableCell>
+                  <TableCell className="text-[11px] font-bold uppercase text-slate-500">{j.operator || "UNASSIGNED"}</TableCell>
                   <TableCell className="text-center">
-                    <Badge variant="secondary" className="font-black text-[10px]">{j.child_rolls?.length || 0} ROLLS</Badge>
+                    <div className="flex justify-center gap-2">
+                      <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0} TOTAL</Badge>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge className={cn(
                       "text-[9px] font-black h-5 px-2",
                       j.status === 'COMPLETED' ? "bg-emerald-500" : 
-                      j.status === 'RUNNING' ? "bg-blue-500 animate-pulse" : "bg-amber-500"
+                      j.status === 'RUNNING' ? "bg-blue-500" : "bg-amber-500"
                     )}>
                       {j.status}
                     </Badge>
@@ -219,28 +255,25 @@ export default function JumboJobCardPage() {
                   </TableCell>
                 </TableRow>
               ))}
-              {filteredJobs.length === 0 && !jobsLoading && (
-                <TableRow><TableCell colSpan={6} className="text-center py-20 text-muted-foreground italic text-xs uppercase tracking-widest font-black opacity-20">No matching job cards found</TableCell></TableRow>
-              )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
       {/* CREATE DIALOG */}
-      <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if(!open && urlParentRoll) router.replace('/production/jobcards/jumbo-job'); }}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
           <form onSubmit={handleCreateJob}>
             <div className="bg-slate-900 text-white p-6">
               <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-                <Scissors className="h-5 w-5 text-primary" /> Initialize Slitting Run
+                <FileText className="h-5 w-5 text-primary" /> {editingRoll ? 'Edit' : 'Create'} Jumbo Job Card
               </DialogTitle>
-              <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Technical allocation from Paper Stock</DialogDescription>
+              <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Include all output units for full production traceability</DialogDescription>
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50 max-h-[70vh] overflow-y-auto industrial-scroll">
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase opacity-50">Custom Job ID (Optional)</Label>
+                  <Label className="text-[10px] font-black uppercase opacity-50">Job Card Reference (Auto-gen if empty)</Label>
                   <Input 
                     placeholder="e.g. SLIT-2024-001" 
                     className="h-11 rounded-xl font-bold border-2 bg-white"
@@ -250,7 +283,7 @@ export default function JumboJobCardPage() {
                 </div>
                 <div className="space-y-2">
                   <Label className="text-[10px] font-black uppercase opacity-50">Select Parent Jumbo Roll *</Label>
-                  <Select value={formData.parent_roll} onValueChange={v => setFormData({...formData, parent_roll: v, child_rolls: []})}>
+                  <Select value={formData.parent_roll} onValueChange={v => setFormData({...formData, parent_roll: v})}>
                     <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Choose Parent Roll" /></SelectTrigger>
                     <SelectContent className="z-[100]">
                       {parentRolls.map(r => <SelectItem key={r.id} value={r.rollNo} className="font-bold">{r.rollNo} - {r.paperType}</SelectItem>)}
@@ -259,7 +292,7 @@ export default function JumboJobCardPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase opacity-50">Target Machine</Label>
+                    <Label className="text-[10px] font-black uppercase opacity-50">Slitting Machine</Label>
                     <Select value={formData.machine} onValueChange={v => setFormData({...formData, machine: v})}>
                       <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Machine" /></SelectTrigger>
                       <SelectContent className="z-[100]">
@@ -268,7 +301,7 @@ export default function JumboJobCardPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase opacity-50">Primary Operator</Label>
+                    <Label className="text-[10px] font-black uppercase opacity-50">Operator</Label>
                     <Select value={formData.operator} onValueChange={v => setFormData({...formData, operator: v})}>
                       <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Operator" /></SelectTrigger>
                       <SelectContent className="z-[100]">
@@ -280,12 +313,15 @@ export default function JumboJobCardPage() {
               </div>
 
               <div className="space-y-4">
-                <Label className="text-[10px] font-black uppercase opacity-50">Allocate Output Child Rolls</Label>
+                <div className="flex justify-between items-center">
+                  <Label className="text-[10px] font-black uppercase opacity-50">Production Output Units</Label>
+                  <Badge className="bg-primary text-white text-[9px]">{formData.child_rolls.length} SELECTED</Badge>
+                </div>
                 <div className="bg-white border-2 rounded-2xl p-4 h-[300px] overflow-y-auto industrial-scroll space-y-2">
                   {filteredChildRolls.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3">
-                      <Scissors className="h-8 w-8" />
-                      <p className="text-[10px] font-bold uppercase">Select parent roll to view slitting outputs</p>
+                      <Package className="h-8 w-8" />
+                      <p className="text-[10px] font-bold uppercase">Select parent roll to view outputs</p>
                     </div>
                   ) : filteredChildRolls.map(r => (
                     <div 
@@ -303,19 +339,23 @@ export default function JumboJobCardPage() {
                     >
                       <div className="flex flex-col">
                         <span className="text-xs font-black text-primary">{r.rollNo}</span>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span>
+                        <div className="flex gap-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span>
+                          <Badge variant="outline" className={cn("text-[8px] h-4", r.jobNo ? "text-blue-600 border-blue-200" : "text-emerald-600 border-emerald-200")}>
+                            {r.jobNo ? 'JOB' : 'STOCK'}
+                          </Badge>
+                        </div>
                       </div>
                       {formData.child_rolls.includes(r.rollNo) && <CheckCircle2 className="h-4 w-4 text-primary" />}
                     </div>
                   ))}
                 </div>
-                <p className="text-[9px] text-muted-foreground font-bold uppercase">* Select specific rolls created during slitting to assign to this job card.</p>
               </div>
             </div>
             <DialogFooter className="p-6 bg-white border-t">
               <Button type="button" variant="outline" className="h-12 px-8 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
               <Button type="submit" disabled={!formData.parent_roll || formData.child_rolls.length === 0 || isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">
-                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileText className="h-4 w-4 mr-2" />}
+                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                 Register Job Card
               </Button>
             </DialogFooter>
@@ -339,7 +379,7 @@ export default function JumboJobCardPage() {
             <div className="flex justify-between items-end border-b-4 border-black pb-6">
               <div>
                 <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Jumbo Slitting Department</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Production Floor: Jumbo Slitting</p>
               </div>
               <div className="text-right space-y-1">
                 <Badge className="bg-black text-white px-4 py-1.5 rounded-none font-black text-lg">{selectedJob?.job_card_no}</Badge>
@@ -349,11 +389,11 @@ export default function JumboJobCardPage() {
 
             <div className="mt-8 grid grid-cols-2 gap-12">
               <div className="space-y-6">
-                <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Parent Specification</h3>
-                <div className="grid grid-cols-2 gap-4 text-xs font-bold">
+                <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Parent Specifications</h3>
+                <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-xs font-bold">
                   <span className="opacity-50 uppercase">Roll Number:</span><span>{selectedJob?.parent_roll}</span>
-                  <span className="opacity-50 uppercase">Machine ID:</span><span>{selectedJob?.machine || "—"}</span>
-                  <span className="opacity-50 uppercase">Assigned Op:</span><span>{selectedJob?.operator || "—"}</span>
+                  <span className="opacity-50 uppercase">Machine:</span><span>{selectedJob?.machine || "—"}</span>
+                  <span className="opacity-50 uppercase">Operator:</span><span>{selectedJob?.operator || "—"}</span>
                 </div>
               </div>
               <div className="flex flex-col items-end">
@@ -365,14 +405,15 @@ export default function JumboJobCardPage() {
             </div>
 
             <div className="mt-10">
-              <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Slitting Plan (Allocated Units)</h3>
+              <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Slitting Plan (All Output Units)</h3>
               <Table className="border-2 border-black">
                 <TableHeader className="bg-slate-100">
                   <TableRow className="border-b-2 border-black h-10">
                     <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Roll Code</TableHead>
                     <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Width</TableHead>
                     <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Length</TableHead>
-                    <TableHead className="font-black text-black text-[10px] uppercase px-4">Assigned Job</TableHead>
+                    <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Destination</TableHead>
+                    <TableHead className="font-black text-black text-[10px] uppercase px-4">Job Reference</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -383,7 +424,8 @@ export default function JumboJobCardPage() {
                         <TableCell className="font-bold border-r-2 border-black px-4">{code}</TableCell>
                         <TableCell className="border-r-2 border-black px-4">{roll?.widthMm || "—"} mm</TableCell>
                         <TableCell className="border-r-2 border-black px-4">{roll?.lengthMeters || "—"} mtr</TableCell>
-                        <TableCell className="px-4 font-black text-[10px]">{roll?.jobNo || "STOCK"}</TableCell>
+                        <TableCell className="border-r-2 border-black px-4 font-black text-[10px]">{roll?.jobNo ? 'JOB' : 'STOCK'}</TableCell>
+                        <TableCell className="px-4 font-black text-[10px]">{roll?.jobNo || "—"}</TableCell>
                       </TableRow>
                     );
                   })}
@@ -444,7 +486,7 @@ export default function JumboJobCardPage() {
                       <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll?.lengthMeters} MTR</span></div>
                     </div>
                     <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
-                      <span>Job: {roll?.jobNo || "STOCK"}</span>
+                      <span>Dest: {roll?.jobNo ? 'JOB' : 'STOCK'}</span>
                       <span>Card: {selectedJob?.job_card_no}</span>
                     </div>
                   </div>
@@ -484,6 +526,10 @@ export default function JumboJobCardPage() {
   )
 }
 
-function X({ className }: { className?: string }) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>;
+export default function JumboJobCardPage() {
+  return (
+    <Suspense fallback={<div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>}>
+      <JumboJobCardContent />
+    </Suspense>
+  )
 }

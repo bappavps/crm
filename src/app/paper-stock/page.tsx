@@ -47,7 +47,8 @@ import {
   Save,
   X,
   Settings2,
-  FilterX
+  FilterX,
+  FilePlus
 } from "lucide-react"
 import { 
   Dialog, 
@@ -69,6 +70,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
@@ -99,6 +101,7 @@ const STATUS_OPTIONS = [
   { value: "Slitting", label: "Slitting", color: "bg-orange-500", rowBg: "bg-orange-50" },
   { value: "Job Assign", label: "Job Assign", color: "bg-rose-500", rowBg: "bg-rose-50" },
   { value: "In Production", label: "In Production", color: "bg-cyan-500", rowBg: "bg-cyan-50" },
+  { value: "Consumed", label: "Consumed", color: "bg-slate-400", rowBg: "bg-slate-100" },
 ];
 
 const COLUMN_KEYS = [
@@ -295,7 +298,6 @@ export default function PaperStockPage() {
     return result;
   }, [rolls, filters, sortConfig, headerFilters, filterMode]);
 
-  // Report Data logic
   const reportRows = useMemo(() => {
     if (selectedIds.size > 0) {
       return rolls?.filter(r => selectedIds.has(r.id)) || [];
@@ -318,7 +320,6 @@ export default function PaperStockPage() {
     if (filters.paperType?.length) list.push(`Type: ${filters.paperType.join(', ')}`);
     if (filters.status?.length) list.push(`Status: ${filters.status.join(', ')}`);
     
-    // Include header filters in summary
     Object.entries(headerFilters).forEach(([key, values]) => {
       if (values.length > 0) {
         const label = COLUMN_KEYS.find(c => c.id === key)?.label || key;
@@ -385,7 +386,26 @@ export default function PaperStockPage() {
   const handleOpenDialog = (roll?: any) => {
     if (roll) {
       setEditingRoll(roll);
-      setFormData({ ...formData, ...roll });
+      setFormData({ 
+        rollNo: roll.rollNo || "", 
+        paperCompany: roll.paperCompany || "", 
+        paperType: roll.paperType || "", 
+        status: roll.status || "Main", 
+        widthMm: roll.widthMm || 0, 
+        lengthMeters: roll.lengthMeters || 0, 
+        sqm: roll.sqm || 0, 
+        gsm: roll.gsm || 0, 
+        weightKg: roll.weightKg || 0,
+        purchaseRate: roll.purchaseRate || 0, 
+        receivedDate: roll.receivedDate || "", 
+        dateOfUsed: roll.dateOfUsed || "", 
+        jobNo: roll.jobNo || "", 
+        jobSize: roll.jobSize || "", 
+        jobName: roll.jobName || "", 
+        lotNo: roll.lotNo || "", 
+        companyRollNo: roll.companyRollNo || "", 
+        remarks: roll.remarks || ""
+      });
       setIsCustomStatus(!STATUS_OPTIONS.some(o => o.value === roll.status));
     } else {
       setEditingRoll(null);
@@ -694,6 +714,7 @@ export default function PaperStockPage() {
                 const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-slate-100" };
                 const isHighlighted = highlightedId === j.id;
                 const canSlit = ["Main", "Stock", "Slitting", "Available"].includes(j.status);
+                const isParent = !j.rollNo.includes('-');
                 
                 return (
                   <TableRow 
@@ -737,19 +758,23 @@ export default function PaperStockPage() {
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
                     <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-sky-500 hover:bg-sky-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); handleOpenDialog(j); }}><Pencil className="h-4 w-4" /></Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          disabled={!canSlit}
-                          className={cn("h-8 w-8 rounded-lg shadow-sm text-white transition-all", canSlit ? "bg-orange-500 hover:bg-orange-600 opacity-100" : "bg-slate-300 cursor-not-allowed opacity-50")} 
-                          onClick={(e) => { e.stopPropagation(); if(canSlit) router.push(`/inventory/slitting?rollNo=${j.rollNo}`); }}
-                        >
-                          <Scissors className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-700 hover:bg-slate-800 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); setPrintingRolls([j]); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 bg-rose-500 hover:bg-rose-600 text-white rounded-lg shadow-sm" onClick={(e) => { e.stopPropagation(); if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg shadow-sm"><MoreHorizontal className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
+                            <DropdownMenuItem onClick={() => { setViewingRoll(j); setIsViewOpen(true); }} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Eye className="h-4 w-4 mr-2 text-indigo-500" /> View Specs</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleOpenDialog(j)} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Pencil className="h-4 w-4 mr-2 text-sky-500" /> Edit Record</DropdownMenuItem>
+                            {isParent && (
+                              <DropdownMenuItem onClick={() => router.push(`/production/jobcards/jumbo-job?parentRoll=${j.rollNo}`)} className="font-bold text-xs py-2 rounded-lg cursor-pointer text-primary"><FilePlus className="h-4 w-4 mr-2" /> Create Jumbo Job Card</DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem disabled={!canSlit} onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Scissors className="h-4 w-4 mr-2 text-orange-500" /> Open Slitting Hub</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => { setPrintingRolls([j]); setIsPrintOpen(true); }} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Printer className="h-4 w-4 mr-2 text-slate-700" /> Print Label</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => { if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }} className="font-bold text-xs py-2 rounded-lg cursor-pointer text-rose-500"><Trash2 className="h-4 w-4 mr-2" /> Delete Entry</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1231,4 +1256,8 @@ function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: a
       </div>
     </div>
   );
+}
+
+function MoreHorizontal({ className }: { className?: string }) {
+  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>;
 }
