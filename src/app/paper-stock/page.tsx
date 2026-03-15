@@ -47,7 +47,8 @@ import {
   X,
   Settings2,
   FilterX,
-  FilePlus
+  FilePlus,
+  MoreHorizontal
 } from "lucide-react"
 import { 
   Dialog, 
@@ -758,23 +759,74 @@ export default function PaperStockPage() {
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
                     <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg shadow-sm"><MoreHorizontal className="h-4 w-4" /></Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
-                            <DropdownMenuItem onClick={() => { setViewingRoll(j); setIsViewOpen(true); }} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Eye className="h-4 w-4 mr-2 text-indigo-500" /> View Specs</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleOpenDialog(j)} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Pencil className="h-4 w-4 mr-2 text-sky-500" /> Edit Record</DropdownMenuItem>
-                            {isParent && (
-                              <DropdownMenuItem onClick={() => router.push(`/production/jobcards/jumbo-job?parentRoll=${j.rollNo}`)} className="font-bold text-xs py-2 rounded-lg cursor-pointer text-primary"><FilePlus className="h-4 w-4 mr-2" /> Create Jumbo Job Card</DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem disabled={!canSlit} onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Scissors className="h-4 w-4 mr-2 text-orange-500" /> Open Slitting Hub</DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => { setPrintingRolls([j]); setIsPrintOpen(true); }} className="font-bold text-xs py-2 rounded-lg cursor-pointer"><Printer className="h-4 w-4 mr-2 text-slate-700" /> Print Label</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => { if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }} className="font-bold text-xs py-2 rounded-lg cursor-pointer text-rose-500"><Trash2 className="h-4 w-4 mr-2" /> Delete Entry</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {/* View Specs */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm"
+                          onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}
+                          title="View Specs"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+
+                        {/* Edit Record */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white shadow-sm"
+                          onClick={() => handleOpenDialog(j)}
+                          title="Edit Record"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+
+                        {/* Create Jumbo Job Card */}
+                        {isParent && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm"
+                            onClick={() => router.push(`/production/jobcards/jumbo-job?parentRoll=${j.rollNo}`)}
+                            title="Create Jumbo Job Card"
+                          >
+                            <FilePlus className="h-4 w-4" />
+                          </Button>
+                        )}
+
+                        {/* Open Slitting Hub */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          disabled={!canSlit}
+                          className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white shadow-sm disabled:opacity-30"
+                          onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}
+                          title="Open Slitting Hub"
+                        >
+                          <Scissors className="h-4 w-4" />
+                        </Button>
+
+                        {/* Print Label */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white shadow-sm"
+                          onClick={() => { setPrintingRolls([j]); setIsPrintOpen(true); }}
+                          title="Print Label"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </Button>
+
+                        {/* Delete Entry */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white shadow-sm"
+                          onClick={() => { if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}
+                          title="Delete Entry"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1256,8 +1308,4 @@ function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: a
       </div>
     </div>
   );
-}
-
-function MoreHorizontal({ className }: { className?: string }) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>;
 }
