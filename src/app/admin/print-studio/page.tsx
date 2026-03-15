@@ -67,8 +67,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V5.1)
- * Integrated Background Layer System, Drag & Drop Support, Enhanced Geometry, and Rounded Corner Support.
+ * PRINT TEMPLATE STUDIO (V5.2)
+ * Integrated Background Layer System, Drag & Drop Support, and Professional Print Isolation.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field';
@@ -484,7 +484,7 @@ export default function PrintTemplateStudio() {
       ) : (
         /* --- THE STUDIO EDITOR --- */
         <div className="fixed inset-0 z-[100] bg-slate-100 flex flex-col font-sans">
-          <div className="h-16 border-b flex items-center justify-between px-6 shrink-0 bg-white shadow-sm z-[110]">
+          <div className="h-16 border-b flex items-center justify-between px-6 shrink-0 bg-white shadow-sm z-[110] print:hidden">
             <div className="flex items-center gap-4">
               <Button variant="ghost" onClick={() => setIsEditorOpen(false)} className="font-bold">
                 <Undo2 className="mr-2 h-4 w-4" /> Exit Studio
@@ -506,7 +506,7 @@ export default function PrintTemplateStudio() {
 
           <div className="flex-1 flex overflow-hidden">
             {/* LEFT PANEL */}
-            <div className="w-72 border-r flex flex-col overflow-y-auto bg-slate-50 shrink-0">
+            <div className="w-72 border-r flex flex-col overflow-y-auto bg-slate-50 shrink-0 print:hidden">
               <div className="p-6 space-y-10">
                 <div className="space-y-4">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-primary">Standard Elements</Label>
@@ -541,22 +541,23 @@ export default function PrintTemplateStudio() {
             </div>
 
             {/* CENTER CANVAS */}
-            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative industrial-scroll" 
+            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative industrial-scroll print:p-0 print:bg-white print:overflow-visible" 
                  onDragOver={(e) => e.preventDefault()}
                  onDrop={handleCanvasDrop}>
-              <div className="absolute top-0 left-0 right-0 h-8 bg-white border-b flex items-end px-20 z-10 shadow-sm">
+              <div className="absolute top-0 left-0 right-0 h-8 bg-white border-b flex items-end px-20 z-10 shadow-sm print:hidden">
                 {Array.from({ length: 20 }).map((_, i) => (
                   <div key={i} className="flex-1 border-l border-slate-300 h-2 text-[8px] text-slate-400 pl-1">{i * 50}</div>
                 ))}
               </div>
-              <div className="absolute top-0 left-0 bottom-0 w-8 bg-white border-r flex flex-col py-20 z-10 shadow-sm">
+              <div className="absolute top-0 left-0 bottom-0 w-8 bg-white border-r flex flex-col py-20 z-10 shadow-sm print:hidden">
                 {Array.from({ length: 20 }).map((_, i) => (
                   <div key={i} className="flex-1 border-t border-slate-300 w-2 text-[8px] text-slate-400 pt-1 pl-1 rotate-90 origin-left">{i * 50}</div>
                 ))}
               </div>
 
               <div 
-                className="bg-white shadow-2xl relative border border-slate-300 overflow-hidden"
+                id="studio-canvas-print"
+                className="bg-white shadow-2xl relative border border-slate-300 overflow-hidden print:border-none print:shadow-none"
                 style={{ 
                   width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, 
                   height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`,
@@ -591,7 +592,7 @@ export default function PrintTemplateStudio() {
 
                 {showGuidelines && (
                   <div 
-                    className="absolute inset-0 opacity-[0.05] pointer-events-none z-[5]" 
+                    className="absolute inset-0 opacity-[0.05] pointer-events-none z-[5] guidelines-grid print:hidden" 
                     style={{ 
                       backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', 
                       backgroundSize: '20px 20px' 
@@ -617,7 +618,7 @@ export default function PrintTemplateStudio() {
                 </div>
               </div>
 
-              <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white p-2 rounded-2xl flex items-center gap-4 shadow-2xl border border-white/10 z-[150]">
+              <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white p-2 rounded-2xl flex items-center gap-4 shadow-2xl border border-white/10 z-[150] print:hidden">
                 <div className="flex items-center gap-2 px-2">
                   <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10" onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}>-</Button>
                   <span className="text-[10px] font-black min-w-[45px] text-center">{Math.round(zoom * 100)}%</span>
@@ -650,7 +651,7 @@ export default function PrintTemplateStudio() {
             </div>
 
             {/* RIGHT PANEL */}
-            <div className="w-80 border-l flex flex-col bg-white overflow-y-auto shrink-0 industrial-scroll">
+            <div className="w-80 border-l flex flex-col bg-white overflow-y-auto shrink-0 industrial-scroll print:hidden">
               {selectedElement ? (
                 <div className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-300">
                   <div className="flex justify-between items-center bg-slate-50 -m-6 p-6 mb-4 border-b">
@@ -936,6 +937,31 @@ export default function PrintTemplateStudio() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #studio-canvas-print,
+          #studio-canvas-print * {
+            visibility: visible !important;
+          }
+          #studio-canvas-print {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            transform: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+          }
+          .guidelines-grid {
+            display: none !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }
@@ -1099,7 +1125,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
 
       {isSelected && (
         <div 
-          className="absolute bottom-[-6px] right-[-6px] w-4 h-4 bg-primary cursor-nwse-resize rounded-full border-2 border-white shadow-lg z-[70]" 
+          className="absolute bottom-[-6px] right-[-6px] w-4 h-4 bg-primary cursor-nwse-resize rounded-full border-2 border-white shadow-lg z-[70] print:hidden" 
           onMouseDown={handleResizeStart} 
         />
       )}
