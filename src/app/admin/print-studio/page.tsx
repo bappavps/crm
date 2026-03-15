@@ -67,8 +67,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V5.3)
- * Integrated Background Layer System, Drag & Drop Support, and Professional Print Isolation.
+ * PRINT TEMPLATE STUDIO (V5.5)
+ * Hardened Print Engine for Adobe PDF Precision and Absolute Coordinate Mapping.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field';
@@ -504,7 +504,7 @@ export default function PrintTemplateStudio() {
             </div>
           </div>
 
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex overflow-hidden industrial-container">
             {/* LEFT PANEL */}
             <div className="w-72 border-r flex flex-col overflow-y-auto bg-slate-50 shrink-0 print:hidden">
               <div className="p-6 space-y-10">
@@ -541,7 +541,7 @@ export default function PrintTemplateStudio() {
             </div>
 
             {/* CENTER CANVAS */}
-            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative industrial-scroll print:p-0 print:bg-white print:overflow-visible" 
+            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative studio-viewport print:p-0 print:bg-white print:overflow-visible" 
                  onDragOver={(e) => e.preventDefault()}
                  onDrop={handleCanvasDrop}>
               <div className="absolute top-0 left-0 right-0 h-8 bg-white border-b flex items-end px-20 z-10 shadow-sm print:hidden">
@@ -557,7 +557,7 @@ export default function PrintTemplateStudio() {
 
               <div 
                 id="studio-canvas-print"
-                className="bg-white shadow-2xl relative border border-slate-300 overflow-hidden print:border-none print:shadow-none"
+                className="bg-white shadow-2xl relative border border-slate-300 overflow-hidden canvas-surface print:border-none print:shadow-none"
                 style={{ 
                   width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, 
                   height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`,
@@ -940,12 +940,30 @@ export default function PrintTemplateStudio() {
 
       <style jsx global>{`
         @media print {
-          /* 1. Hide Global App Elements */
-          header, nav, aside, .print\:hidden {
+          /* 1. FORCE PAGE DEFAULTS */
+          @page {
+            margin: 0;
+            size: auto;
+          }
+          
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            background: white !important;
+            overflow: visible !important;
+          }
+
+          /* 2. COMPLETELY HIDE ALL UI WRAPPERS */
+          header, nav, aside, footer, 
+          [data-sidebar="trigger"], 
+          [data-sidebar="sidebar"],
+          .sidebar-wrapper > :not(.print-studio-editor),
+          .print\:hidden {
             display: none !important;
           }
 
-          /* 2. Force the Editor Container to be the root printable area */
+          /* 3. ISOLATE THE STUDIO AND REMOVE FIXED CONSTRAINTS */
           .print-studio-editor {
             position: absolute !important;
             left: 0 !important;
@@ -955,57 +973,66 @@ export default function PrintTemplateStudio() {
             background: white !important;
             display: block !important;
             overflow: visible !important;
+            z-index: 9999 !important;
           }
 
-          /* 3. Hide Toolbars and Sidebars */
-          .print-studio-editor > div:first-child, /* Top toolbar */
-          .w-72, /* Left tools */
-          .w-80, /* Right config */
-          .fixed.bottom-10 { /* Zoom control */
+          /* 4. HIDE INTERNAL STUDIO TOOLBARS */
+          .print-studio-editor > div:first-child, /* Header toolbar */
+          .w-72, /* Left toolbar */
+          .w-80, /* Right config panel */
+          .fixed.bottom-10 { /* Zoom controls */
             display: none !important;
           }
 
-          /* 4. Prepare Canvas Container */
-          .flex-1.flex.overflow-hidden {
+          /* 5. FLATTEN FLEX LAYOUT FOR STABLE COORDINATES */
+          .flex-1.flex.overflow-hidden.industrial-container {
             display: block !important;
             overflow: visible !important;
           }
 
-          .flex-1.bg-slate-200 {
+          .studio-viewport {
             display: block !important;
             background: white !important;
             padding: 0 !important;
             margin: 0 !important;
             overflow: visible !important;
+            position: relative !important;
+            width: 100% !important;
+            height: auto !important;
           }
 
-          /* Hide Rulers */
-          .flex-1.bg-slate-200 > div:nth-child(1),
-          .flex-1.bg-slate-200 > div:nth-child(2) {
+          /* Hide Rulers and helper overlays */
+          .studio-viewport > div:nth-child(1),
+          .studio-viewport > div:nth-child(2) {
             display: none !important;
           }
 
-          /* 5. The Actual Artboard */
+          /* 6. THE CORE ARTBOARD FIX */
+          /* Reset transform so 1px = 1px coordinate mapping is true */
           #studio-canvas-print {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            transform: none !important; /* Force 100% zoom */
+            transform: none !important; 
+            transform-origin: top left !important;
             margin: 0 !important;
             border: none !important;
             box-shadow: none !important;
             background: white !important;
-            visibility: visible !important;
             display: block !important;
+            visibility: visible !important;
           }
 
+          /* Force all absolute design elements to be visible */
           #studio-canvas-print * {
             visibility: visible !important;
           }
 
-          /* 6. Clean up design helpers */
+          /* 7. CLEAN DESIGN AIDS */
           .guidelines-grid,
-          .resize-handle {
+          .resize-handle,
+          .z-[70],
+          .ring-2 {
             display: none !important;
           }
         }
