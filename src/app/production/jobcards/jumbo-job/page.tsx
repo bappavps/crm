@@ -27,7 +27,9 @@ import {
   ArrowRight,
   X,
   Package,
-  ArrowLeft
+  ArrowLeft,
+  Save,
+  MoreHorizontal
 } from "lucide-react"
 import { 
   Dialog, 
@@ -44,6 +46,13 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, query, orderBy, serverTimestamp, setDoc, deleteDoc, where } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
@@ -266,7 +275,7 @@ function JumboJobCardContent() {
           <form onSubmit={handleCreateJob}>
             <div className="bg-slate-900 text-white p-6">
               <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-                <FileText className="h-5 w-5 text-primary" /> {editingRoll ? 'Edit' : 'Create'} Jumbo Job Card
+                <FileText className="h-5 w-5 text-primary" /> Create Jumbo Job Card
               </DialogTitle>
               <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Include all output units for full production traceability</DialogDescription>
             </div>
@@ -383,7 +392,7 @@ function JumboJobCardContent() {
               </div>
               <div className="text-right space-y-1">
                 <Badge className="bg-black text-white px-4 py-1.5 rounded-none font-black text-lg">{selectedJob?.job_card_no}</Badge>
-                <p className="text-[10px] font-bold uppercase pt-2">DATE: {new Date(selectedJob?.createdAt).toLocaleDateString()}</p>
+                <p className="text-[10px] font-bold uppercase pt-2">DATE: {selectedJob?.createdAt ? new Date(selectedJob.createdAt).toLocaleDateString() : '—'}</p>
               </div>
             </div>
 
