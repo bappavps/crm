@@ -67,8 +67,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V5.0)
- * Integrated Background Layer System, Drag & Drop Support, and Enhanced Geometry.
+ * PRINT TEMPLATE STUDIO (V5.1)
+ * Integrated Background Layer System, Drag & Drop Support, Enhanced Geometry, and Rounded Corner Support.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field';
@@ -282,9 +282,9 @@ export default function PrintTemplateStudio() {
         paperWidth: 210,
         paperHeight: 297,
         elements: [
-          { id: 'e1', type: 'title', x: 40, y: 40, width: 400, height: 50, rotate: 0, content: 'TAX INVOICE', style: { fontSize: 28, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#000000' } },
-          { id: 'e2', type: 'field', x: 40, y: 100, width: 300, height: 30, rotate: 0, placeholder: '{{company_name}}', style: { fontSize: 16, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#000000' } },
-          { id: 'e3', type: 'field', x: 500, y: 40, width: 250, height: 30, rotate: 0, placeholder: 'INV NO: {{invoice_no}}', style: { fontSize: 12, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#000000' } }
+          { id: 'e1', type: 'title', x: 40, y: 40, width: 400, height: 50, rotate: 0, content: 'TAX INVOICE', style: { fontSize: 28, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
+          { id: 'e2', type: 'field', x: 40, y: 100, width: 300, height: 30, rotate: 0, placeholder: '{{company_name}}', style: { fontSize: 16, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
+          { id: 'e3', type: 'field', x: 500, y: 40, width: 250, height: 30, rotate: 0, placeholder: 'INV NO: {{invoice_no}}', style: { fontSize: 12, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#000000', borderRadius: 0 } }
         ],
         isDefault: true
       }
@@ -699,7 +699,10 @@ export default function PrintTemplateStudio() {
                         </div>
                         {selectedElement.type === 'rectangle' && (
                           <div className="space-y-3">
-                            <Label className="text-[9px] uppercase font-bold">Corner Rounding</Label>
+                            <div className="flex justify-between items-center">
+                              <Label className="text-[9px] uppercase font-bold">Corner Rounding</Label>
+                              <span className="text-[10px] font-black">{selectedElement.style.borderRadius || 0}px</span>
+                            </div>
                             <Slider value={[selectedElement.style.borderRadius || 0]} min={0} max={100} step={1} onValueChange={(v) => updateElementStyle(selectedElement.id, { borderRadius: v[0] })} />
                           </div>
                         )}
@@ -1024,6 +1027,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       height: '100%',
       backgroundColor: element.style.backgroundColor,
       border: element.style.borderWidth ? `${element.style.borderWidth}px ${element.style.lineStyle || 'solid'} ${element.style.borderColor}` : 'none',
+      borderRadius: element.type === 'circle' ? '100%' : `${element.style.borderRadius || 0}px`,
       opacity: element.style.opacity,
       display: 'flex',
       alignItems: 'center',
@@ -1060,14 +1064,14 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       case 'qr': 
         return <div style={commonStyle}><QRCodeSVG value={replacePlaceholders(element.placeholder || "SAMPLE")} size={Math.min(element.width, element.height) - 10} /></div>;
       case 'rectangle': 
-        return <div style={{ ...commonStyle, borderRadius: `${element.style.borderRadius || 0}px` }} />;
+        return <div style={commonStyle} />;
       case 'circle': 
-        return <div style={{ ...commonStyle, borderRadius: '100%' }} />;
+        return <div style={commonStyle} />;
       case 'line': 
         return <div style={{ ...commonStyle, height: `${element.style.borderWidth || 2}px`, border: 'none', backgroundColor: element.style.borderColor }} />;
       case 'image':
         return element.content ? (
-          <img src={element.content} alt="Element" style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: element.style.opacity }} />
+          <img src={element.content} alt="Element" style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: element.style.opacity, borderRadius: commonStyle.borderRadius }} />
         ) : (
           <div className="w-full h-full border-2 border-dashed flex items-center justify-center text-[8px] uppercase font-bold opacity-30">No Image</div>
         );
