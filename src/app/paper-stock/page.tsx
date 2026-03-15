@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -45,7 +46,8 @@ import {
   CalendarDays,
   Save,
   X,
-  Settings2
+  Settings2,
+  FilterX
 } from "lucide-react"
 import { 
   Dialog, 
@@ -152,6 +154,7 @@ export default function PaperStockPage() {
 
   // Header Filters State
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
+  const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
 
   const defaultVisibleColumns = COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {})
 
@@ -260,11 +263,13 @@ export default function PaperStockPage() {
       if (filters.receivedFrom && row.receivedDate < filters.receivedFrom) return false;
       if (filters.receivedTo && row.receivedDate > filters.receivedTo) return false;
 
-      // 3. Header Excel-Style Filters
-      for (const [key, selected] of Object.entries(headerFilters)) {
-        if (selected && selected.length > 0) {
-          const val = String(row[key] || "");
-          if (!selected.includes(val)) return false;
+      // 3. Header Excel-Style Filters - Only if in advanced mode
+      if (filterMode === 'advanced') {
+        for (const [key, selected] of Object.entries(headerFilters)) {
+          if (selected && selected.length > 0) {
+            const val = String(row[key] || "");
+            if (!selected.includes(val)) return false;
+          }
         }
       }
 
@@ -286,7 +291,7 @@ export default function PaperStockPage() {
       });
     }
     return result;
-  }, [rolls, filters, sortConfig, headerFilters]);
+  }, [rolls, filters, sortConfig, headerFilters, filterMode]);
 
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
@@ -487,13 +492,15 @@ export default function PaperStockPage() {
               <ArrowUpDown className="h-2.5 w-2.5 opacity-30 group-hover/header:opacity-100 transition-opacity" />
             )}
           </div>
-          <ColumnHeaderFilter 
-            columnKey={field}
-            label={label}
-            data={rolls || []}
-            selectedValues={headerFilters[field] || []}
-            onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))}
-          />
+          {filterMode === 'advanced' && (
+            <ColumnHeaderFilter 
+              columnKey={field}
+              label={label}
+              data={rolls || []}
+              selectedValues={headerFilters[field] || []}
+              onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))}
+            />
+          )}
         </div>
       </TableHead>
     );
@@ -513,19 +520,37 @@ export default function PaperStockPage() {
     <div className="flex flex-col h-full space-y-6 font-sans animate-in fade-in duration-500 pb-20">
       <ActionModal isOpen={modal.isOpen} onClose={() => setModal(p => ({ ...p, isOpen: false }))} {...modal} />
 
-      <div className="space-y-1">
-        <h1 className="text-[28px] font-semibold tracking-tight">Paper Stock Details</h1>
-        <p className="text-sm font-normal text-muted-foreground">
-          Master inventory of all parent and child paper rolls including width, length, stock status, and job allocation.
-        </p>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <h1 className="text-[28px] font-semibold tracking-tight">Paper Stock Details</h1>
+          <p className="text-sm font-normal text-muted-foreground">
+            Master inventory of all parent and child paper rolls including width, length, stock status, and job allocation.
+          </p>
+        </div>
+        <Button 
+          variant="outline" 
+          onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
+          className={cn(
+            "h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl transition-all",
+            filterMode === 'advanced' ? "bg-primary text-white border-primary" : "border-slate-200 text-slate-600"
+          )}
+        >
+          {filterMode === 'quick' ? (
+            <><Settings2 className="h-4 w-4 mr-2" /> Advance Filter</>
+          ) : (
+            <><FilterX className="h-4 w-4 mr-2" /> Back to Quick Filter</>
+          )}
+        </Button>
       </div>
 
-      <PaperStockFilters 
-        data={rolls || []} 
-        filters={filters} 
-        setFilters={setFilters} 
-        onReset={handleResetAll} 
-      />
+      {filterMode === 'quick' && (
+        <PaperStockFilters 
+          data={rolls || []} 
+          filters={filters} 
+          setFilters={setFilters} 
+          onReset={handleResetAll} 
+        />
+      )}
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">

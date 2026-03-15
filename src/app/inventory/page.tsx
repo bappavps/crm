@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
@@ -20,7 +21,8 @@ import {
   Eye,
   LayoutGrid,
   Info,
-  AlertCircle
+  AlertCircle,
+  Settings2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -62,6 +64,7 @@ export default function InventoryPage() {
 
   // Header Filters State
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
+  const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
 
   useEffect(() => {
     setIsMounted(true)
@@ -124,7 +127,7 @@ export default function InventoryPage() {
       weightKg: j.weightKg,
       lotNo: j.lotNo,
       receivedDate: j.receivedDate,
-      lastUsedDate: j.dateOfUse || "-",
+      lastUsedDate: j.dateOfUsed || "-",
       purchaseRate: j.purchaseRate,
       status: j.status || 'In Stock',
       hasAlert: alerts?.some(a => a.rollId === j.rollNo && !a.resolved)
@@ -156,15 +159,15 @@ export default function InventoryPage() {
     if (categoryFilter !== "all") result = result.filter(item => item.itemType === categoryFilter);
     if (statusFilter !== "all") result = result.filter(item => item.status === statusFilter);
 
-    // Header Filters
-    for (const [key, selected] of Object.entries(headerFilters)) {
-      if (selected && selected.length > 0) {
-        const val = String(result.find(r => r.id === r.id)?.[key] || ""); // Mapping logic needs to handle field keys
-        // Since combinedStock keys might differ from DB keys, we check specifically
-        result = result.filter(item => {
-          const itemVal = String(item[key] || "");
-          return selected.includes(itemVal);
-        });
+    // Header Filters - Only if in advanced mode
+    if (filterMode === 'advanced') {
+      for (const [key, selected] of Object.entries(headerFilters)) {
+        if (selected && selected.length > 0) {
+          result = result.filter(item => {
+            const itemVal = String(item[key] || "");
+            return selected.includes(itemVal);
+          });
+        }
       }
     }
 
@@ -182,7 +185,7 @@ export default function InventoryPage() {
     });
 
     return result;
-  }, [jumbos, inventory, alerts, searchQuery, categoryFilter, statusFilter, sortField, sortOrder, headerFilters]);
+  }, [jumbos, inventory, alerts, searchQuery, categoryFilter, statusFilter, sortField, sortOrder, headerFilters, filterMode]);
 
   const stats = useMemo(() => {
     const totalSqm = combinedStock.reduce((acc, item) => acc + (Number(item.sqm) || 0), 0)
@@ -200,6 +203,20 @@ export default function InventoryPage() {
           <h2 className="text-3xl font-bold tracking-tight text-primary">Inventory Hub</h2>
           <p className="text-muted-foreground">Limited real-time technical registry.</p>
         </div>
+        <Button 
+          variant="outline" 
+          onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
+          className={cn(
+            "h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl transition-all",
+            filterMode === 'advanced' ? "bg-primary text-white border-primary" : "border-slate-200 text-slate-600"
+          )}
+        >
+          {filterMode === 'quick' ? (
+            <><Settings2 className="h-4 w-4 mr-2" /> Advance Filter</>
+          ) : (
+            <><FilterX className="h-4 w-4 mr-2" /> Back to Quick Filter</>
+          )}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -213,13 +230,15 @@ export default function InventoryPage() {
         <CardHeader>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CardTitle className="text-lg flex items-center gap-2"><Boxes className="h-5 w-5 text-primary" /> Stock Preview</CardTitle>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Filter loaded items..." className="pl-8 w-[200px]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            {filterMode === 'quick' && (
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Filter loaded items..." className="pl-8 w-[200px]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                </div>
+                <Button variant="outline" size="icon" onClick={() => { setSearchQuery(""); setCategoryFilter("all"); setStatusFilter("all"); setHeaderFilters({}); }}><FilterX className="h-4 w-4" /></Button>
               </div>
-              <Button variant="outline" size="icon" onClick={() => { setSearchQuery(""); setCategoryFilter("all"); setStatusFilter("all"); setHeaderFilters({}); }}><FilterX className="h-4 w-4" /></Button>
-            </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -230,61 +249,71 @@ export default function InventoryPage() {
                   <TableHead className="h-10 px-4">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-[11px] uppercase text-slate-700">Roll ID</span>
-                      <ColumnHeaderFilter 
-                        columnKey="barcode" 
-                        label="Roll ID" 
-                        data={combinedStock} 
-                        selectedValues={headerFilters['barcode'] || []} 
-                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, barcode: v }))} 
-                      />
+                      {filterMode === 'advanced' && (
+                        <ColumnHeaderFilter 
+                          columnKey="barcode" 
+                          label="Roll ID" 
+                          data={combinedStock} 
+                          selectedValues={headerFilters['barcode'] || []} 
+                          onFilterChange={(v) => setHeaderFilters(p => ({ ...p, barcode: v }))} 
+                        />
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="h-10 px-4">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-[11px] uppercase text-slate-700">Supplier</span>
-                      <ColumnHeaderFilter 
-                        columnKey="paperCompany" 
-                        label="Supplier" 
-                        data={combinedStock} 
-                        selectedValues={headerFilters['paperCompany'] || []} 
-                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, paperCompany: v }))} 
-                      />
+                      {filterMode === 'advanced' && (
+                        <ColumnHeaderFilter 
+                          columnKey="paperCompany" 
+                          label="Supplier" 
+                          data={combinedStock} 
+                          selectedValues={headerFilters['paperCompany'] || []} 
+                          onFilterChange={(v) => setHeaderFilters(p => ({ ...p, paperCompany: v }))} 
+                        />
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="h-10 px-4">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-[11px] uppercase text-slate-700">Type</span>
-                      <ColumnHeaderFilter 
-                        columnKey="itemType" 
-                        label="Type" 
-                        data={combinedStock} 
-                        selectedValues={headerFilters['itemType'] || []} 
-                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, itemType: v }))} 
-                      />
+                      {filterMode === 'advanced' && (
+                        <ColumnHeaderFilter 
+                          columnKey="itemType" 
+                          label="Type" 
+                          data={combinedStock} 
+                          selectedValues={headerFilters['itemType'] || []} 
+                          onFilterChange={(v) => setHeaderFilters(p => ({ ...p, itemType: v }))} 
+                        />
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="h-10 px-4">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-[11px] uppercase text-slate-700">SQM</span>
-                      <ColumnHeaderFilter 
-                        columnKey="sqm" 
-                        label="SQM" 
-                        data={combinedStock} 
-                        selectedValues={headerFilters['sqm'] || []} 
-                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, sqm: v }))} 
-                      />
+                      {filterMode === 'advanced' && (
+                        <ColumnHeaderFilter 
+                          columnKey="sqm" 
+                          label="SQM" 
+                          data={combinedStock} 
+                          selectedValues={headerFilters['sqm'] || []} 
+                          onFilterChange={(v) => setHeaderFilters(p => ({ ...p, sqm: v }))} 
+                        />
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="h-10 px-4">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-[11px] uppercase text-slate-700">Status</span>
-                      <ColumnHeaderFilter 
-                        columnKey="status" 
-                        label="Status" 
-                        data={combinedStock} 
-                        selectedValues={headerFilters['status'] || []} 
-                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, status: v }))} 
-                      />
+                      {filterMode === 'advanced' && (
+                        <ColumnHeaderFilter 
+                          columnKey="status" 
+                          label="Status" 
+                          data={combinedStock} 
+                          selectedValues={headerFilters['status'] || []} 
+                          onFilterChange={(v) => setHeaderFilters(p => ({ ...p, status: v }))} 
+                        />
+                      )}
                     </div>
                   </TableHead>
                   <TableHead className="text-right h-10 px-4">Action</TableHead>
