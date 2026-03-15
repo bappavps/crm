@@ -1,7 +1,10 @@
+
 'use client';
 
 import React, { createContext, useContext, ReactNode, useMemo } from 'react';
-import { useUser, useFirestore, useCollection, useMemoFirebase, useDoc } from '@/firebase';
+import { useUser, useFirestore, useMemoFirebase } from '@/firebase/provider';
+import { useCollection } from '@/firebase/firestore/use-collection';
+import { useDoc } from '@/firebase/firestore/use-doc';
 import { collection, doc } from 'firebase/firestore';
 
 export type PermissionKey = 

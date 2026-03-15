@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
     if (!isServer) {
       config.output = {
         ...config.output,
-        chunkLoadTimeout: 300000, // Increased to 300 seconds for maximum stability in cloud environments
+        chunkLoadTimeout: 600000, // Increased to 600 seconds for maximum stability in cloud environments
       };
     }
     return config;
