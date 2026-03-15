@@ -1,10 +1,8 @@
-
 "use client"
 
 import * as React from "react"
 import { 
   Search, 
-  FilterX, 
   ChevronDown,
   Check,
   Building2,
@@ -21,7 +19,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
 interface PaperStockFiltersProps {
@@ -123,15 +120,6 @@ export function PaperStockFilters({ data, filters, setFilters, onReset }: PaperS
             selected={filters.status || []} 
             onToggle={(v) => toggleMultiSelect('status', v)} 
           />
-          
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={onReset} 
-            className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4 border-2 rounded-xl border-destructive/20 hover:bg-destructive/5"
-          >
-            <FilterX className="h-4 w-4 mr-1.5" /> Reset Filters
-          </Button>
         </div>
       </div>
     </div>

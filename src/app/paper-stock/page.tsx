@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -527,20 +526,30 @@ export default function PaperStockPage() {
             Master inventory of all parent and child paper rolls including width, length, stock status, and job allocation.
           </p>
         </div>
-        <Button 
-          variant="outline" 
-          onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
-          className={cn(
-            "h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl transition-all",
-            filterMode === 'advanced' ? "bg-primary text-white border-primary" : "border-slate-200 text-slate-600"
-          )}
-        >
-          {filterMode === 'quick' ? (
-            <><Settings2 className="h-4 w-4 mr-2" /> Advance Filter</>
-          ) : (
-            <><FilterX className="h-4 w-4 mr-2" /> Back to Quick Filter</>
-          )}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
+            className={cn(
+              "h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl transition-all",
+              filterMode === 'advanced' ? "bg-primary text-white border-primary" : "border-slate-200 text-slate-600"
+            )}
+          >
+            {filterMode === 'quick' ? (
+              <><Settings2 className="h-4 w-4 mr-2" /> Advance Filter</>
+            ) : (
+              <><FilterX className="h-4 w-4 mr-2" /> Back to Quick Filter</>
+            )}
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={handleResetAll} 
+            className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4 border-2 rounded-xl border-destructive/20 hover:bg-destructive/5"
+          >
+            <FilterX className="h-4 w-4 mr-1.5" /> Reset Filters
+          </Button>
+        </div>
       </div>
 
       {filterMode === 'quick' && (
@@ -604,7 +613,7 @@ export default function PaperStockPage() {
           </div>
         </div>
 
-        <div className="w-full h-[600px] overflow-scroll relative border-t industrial-scroll">
+        <div className="w-full h-[750px] overflow-scroll relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
@@ -654,7 +663,7 @@ export default function PaperStockPage() {
                       <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
                     </TableCell>
                     <TableCell className={cn("text-center font-bold text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-semibold text-[13px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
+                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>
                         {j.level > 0 && (
                           <span className="text-slate-400 font-mono font-bold mr-1">
