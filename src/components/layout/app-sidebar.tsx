@@ -31,7 +31,9 @@ import {
   ClipboardType,
   Boxes,
   ShoppingBag,
-  Printer
+  Printer,
+  ChevronRight,
+  UserCog
 } from "lucide-react"
 import {
   Sidebar,
@@ -42,18 +44,33 @@ import {
   SidebarMenuItem,
   SidebarGroup,
   SidebarGroupLabel,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
   useSidebar
 } from "@/components/ui/sidebar"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { usePermissions, PermissionKey } from "@/components/auth/permission-context"
+import { cn } from "@/lib/utils"
+
+interface SubNavItem {
+  name: string;
+  href: string;
+}
 
 interface NavItem {
   name: string;
   icon: any;
   href: string;
   permission: PermissionKey;
+  subItems?: SubNavItem[];
 }
 
 const masterGroup = {
@@ -86,6 +103,27 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     ]
   },
   {
+    label: "Operator",
+    items: [
+      {
+        name: 'Machine Operators',
+        icon: UserCog,
+        href: '/operators',
+        permission: 'liveFloor',
+        subItems: [
+          { name: 'Jumbo Operator', href: '/operators/jumbo' },
+          { name: 'POS Roll Operator', href: '/operators/pos-roll' },
+          { name: 'One Ply Operator', href: '/operators/one-ply' },
+          { name: 'Printing Operator', href: '/operators/printing' },
+          { name: 'Flat Bed Operator', href: '/operators/flat-bed' },
+          { name: 'Rotery Die Operator', href: '/operators/rotery-die' },
+          { name: 'Label Slitting Operator', href: '/operators/label-slitting' },
+          { name: 'Packing Section', href: '/operators/packing' },
+        ]
+      }
+    ]
+  },
+  {
     label: "Inventory Hub",
     items: [
       { name: 'Paper Stock', icon: Boxes, href: '/paper-stock', permission: 'stockRegistry' },
@@ -97,7 +135,22 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Production",
     items: [
-      { name: 'Job Cards', icon: IdCard, href: '/production/job-card', permission: 'jobCards' },
+      { 
+        name: 'Job Cards', 
+        icon: IdCard, 
+        href: '/production/job-card', 
+        permission: 'jobCards',
+        subItems: [
+          { name: 'Jumbo Job', href: '/production/jobcards/jumbo-job' },
+          { name: 'POS Roll', href: '/production/jobcards/pos-roll' },
+          { name: 'One Ply', href: '/production/jobcards/one-ply' },
+          { name: 'Printing', href: '/production/jobcards/printing' },
+          { name: 'Flat Bed', href: '/production/jobcards/flat-bed' },
+          { name: 'Rotery Die', href: '/production/jobcards/rotery-die' },
+          { name: 'Label Slitting', href: '/production/jobcards/label-slitting' },
+          { name: 'Packing Slip', href: '/production/jobcards/packing-slip' },
+        ]
+      },
       { name: 'BOM Master', icon: Layers, href: '/bom', permission: 'bom' },
       { name: 'Live Floor', icon: Factory, href: '/production', permission: 'liveFloor' },
     ]
@@ -187,18 +240,47 @@ export function AppSidebar() {
               <SidebarMenu>
                 {visibleItems.map((item) => (
                   <SidebarMenuItem key={item.name}>
-                    <SidebarMenuButton 
-                      asChild 
-                      isActive={pathname === item.href}
-                      className="px-4 py-1.5 transition-all duration-200 h-9"
-                      onClick={handleNavClick}
-                      tooltip={item.name}
-                    >
-                      <Link href={item.href}>
-                        <item.icon className="mr-3 h-4 w-4" />
-                        <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
-                      </Link>
-                    </SidebarMenuButton>
+                    {item.subItems ? (
+                      <Collapsible defaultOpen={pathname.startsWith(item.href)} className="group/collapsible">
+                        <CollapsibleTrigger asChild>
+                          <SidebarMenuButton tooltip={item.name} className="px-4 py-1.5 h-9">
+                            <item.icon className="mr-3 h-4 w-4" />
+                            <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
+                            <ChevronRight className="ml-auto h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                          </SidebarMenuButton>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <SidebarMenuSub className="ml-4 border-l border-white/10 pl-2 mt-1 space-y-1">
+                            {item.subItems.map((sub) => (
+                              <SidebarMenuSubItem key={sub.name}>
+                                <SidebarMenuSubButton asChild isActive={pathname === sub.href} onClick={handleNavClick} className={cn(
+                                  "h-10 px-4 rounded-lg transition-all duration-200 hover:bg-white/5",
+                                  pathname === sub.href && "text-primary border-l-2 border-primary bg-white/5 rounded-l-none"
+                                )}>
+                                  <Link href={sub.href}>
+                                    <span className="text-[13px] font-medium">{sub.name}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                                <div className="h-[1px] w-full bg-white/[0.08] mt-1.5" />
+                              </SidebarMenuSubItem>
+                            ))}
+                          </SidebarMenuSub>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    ) : (
+                      <SidebarMenuButton 
+                        asChild 
+                        isActive={pathname === item.href}
+                        className="px-4 py-1.5 transition-all duration-200 h-9"
+                        onClick={handleNavClick}
+                        tooltip={item.name}
+                      >
+                        <Link href={item.href}>
+                          <item.icon className="mr-3 h-4 w-4" />
+                          <span className="text-xs font-bold uppercase tracking-tight">{item.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    )}
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>
