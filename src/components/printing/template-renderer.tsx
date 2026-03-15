@@ -1,3 +1,4 @@
+
 "use client"
 
 import React from 'react'
@@ -34,24 +35,19 @@ const FONT_FAMILIES = [
   { id: 'playfair', value: "'Playfair Display', serif" },
   { id: 'montserrat', value: "'Montserrat', sans-serif" },
   { id: 'oswald', value: "'Oswald', sans-serif" },
-  { id: 'lato', value: "'Lato', sans-serif" },
-  { id: 'poppins', value: "'Poppins', sans-serif" },
-  { id: 'merriweather', value: "'Merriweather', serif" },
-  { id: 'opensans', value: "'Open Sans', sans-serif" },
-  { id: 'raleway', value: "'Raleway', sans-serif" },
-  { id: 'ubuntu', value: "'Ubuntu', sans-serif" },
-  { id: 'lora', value: "'Lora', serif" },
   { id: 'mono', value: "ui-monospace, SFMono-Regular, monospace" },
   { id: 'cursive', value: "cursive" },
-  { id: 'narrow', value: "Arial Narrow, sans-serif" },
 ];
 
 export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scale = 1 }: TemplateRendererProps) {
+  
   const replacePlaceholders = (text: string) => {
     if (!text) return "";
     let result = text;
     Object.entries(data).forEach(([key, value]) => {
-      result = result.replace(new RegExp(`{{${key}}}`, 'g'), String(value || ""));
+      // Handle keys with and without curly braces for maximum compatibility
+      const regex = new RegExp(`{{${key}}}`, 'g');
+      result = result.replace(regex, String(value || ""));
     });
     return result;
   };
@@ -59,45 +55,58 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
 
   const renderElement = (el: TemplateElement) => {
-    const style = {
-      ...el.style,
+    const style: React.CSSProperties = {
+      position: 'absolute',
       left: `${el.x}px`,
       top: `${el.y}px`,
       width: `${el.width}px`,
       height: `${el.height}px`,
       transform: `rotate(${el.rotate || 0}deg)`,
-      fontSize: `${el.style.fontSize}px`,
-      fontFamily: getFontFamilyValue(el.style.fontFamily),
-      position: 'absolute' as const,
+      opacity: el.style.opacity || 1,
+      backgroundColor: el.style.backgroundColor || 'transparent',
+      border: el.style.borderWidth ? `${el.style.borderWidth}px ${el.style.lineStyle || 'solid'} ${el.style.borderColor || '#000'}` : 'none',
+      borderRadius: el.type === 'circle' ? '100%' : `${el.style.borderRadius || 0}px`,
       display: 'flex',
       alignItems: 'center',
       justifyContent: el.style.textAlign === 'center' ? 'center' : el.style.textAlign === 'right' ? 'flex-end' : 'flex-start',
       overflow: 'hidden'
     };
 
+    if (el.type === 'line') {
+      style.height = `${el.style.borderWidth || 2}px`;
+      style.border = 'none';
+      style.backgroundColor = el.style.borderColor || '#000';
+    }
+
+    const textStyle: React.CSSProperties = {
+      fontSize: `${el.style.fontSize}px`,
+      fontFamily: getFontFamilyValue(el.style.fontFamily),
+      fontWeight: el.style.fontWeight,
+      color: el.style.color,
+      textAlign: el.style.textAlign || 'left' as any,
+      width: '100%',
+      padding: '4px'
+    };
+
     switch (el.type) {
       case 'text':
       case 'title':
         return (
-          <div style={{ ...style, textAlign: el.style.textAlign }}>
-            <span style={{ fontFamily: 'inherit', width: '100%', display: 'block' }}>
-              {replacePlaceholders(el.content || "")}
-            </span>
+          <div style={style}>
+            <span style={textStyle}>{replacePlaceholders(el.content || "")}</span>
           </div>
         );
       case 'field':
         return (
-          <div style={{ ...style, textAlign: el.style.textAlign }}>
-            <span style={{ fontFamily: 'inherit', width: '100%', display: 'block' }}>
-              {replacePlaceholders(el.placeholder || "")}
-            </span>
+          <div style={style}>
+            <span style={textStyle}>{replacePlaceholders(el.placeholder || "")}</span>
           </div>
         );
       case 'barcode':
         const barcodeVal = replacePlaceholders(el.placeholder || "");
         return (
-          <div style={{ ...style, overflow: 'hidden' }}>
-            <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'left center' }}>
+          <div style={style}>
+            <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'center' }}>
               <Barcode 
                 value={barcodeVal || "SAMPLE"} 
                 height={el.height - 20} 
@@ -112,18 +121,16 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
         const qrVal = replacePlaceholders(el.placeholder || "");
         return (
           <div style={style}>
-            <QRCodeSVG value={qrVal || "NA"} size={el.width} />
+            <QRCodeSVG value={qrVal || "NA"} size={Math.min(el.width, el.height) - 5} />
           </div>
         );
-      case 'line':
-        return <div style={{ ...style, height: '2px', backgroundColor: 'black' }} />;
       case 'rectangle':
-        return <div style={{ ...style, border: '2px solid black' }} />;
       case 'circle':
-        return <div style={{ ...style, border: '2px solid black', borderRadius: '100%' }} />;
+      case 'line':
+        return <div style={style} />;
       case 'image':
         return el.content ? (
-          <img src={el.content} style={style} className="object-contain" alt="Rendered" />
+          <img src={el.content} style={{ ...style, objectFit: 'contain', border: 'none' }} alt="Element" />
         ) : null;
       default:
         return null;
@@ -132,10 +139,6 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
 
   return (
     <>
-      {/* 
-        Inject physical print styling for thermal printers (TSC).
-        This ensures the driver respects the designed label size.
-      */}
       <style dangerouslySetInnerHTML={{
         __html: `
           @media print {
@@ -144,20 +147,23 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
               margin: 0;
             }
             body { margin: 0; }
-            #print-area {
+            #print-area-rendered {
               width: ${paperWidth}mm !important;
               height: ${paperHeight}mm !important;
               margin: 0 !important;
               padding: 0 !important;
               overflow: hidden;
+              position: absolute !important;
+              top: 0 !important;
+              left: 0 !important;
             }
           }
         `
       }} />
       
       <div 
-        id="print-area"
-        className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none"
+        id="print-area-rendered"
+        className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none overflow-hidden"
         style={{ 
           width: `${paperWidth * MM_TO_PX}px`, 
           height: `${paperHeight * MM_TO_PX}px`,
