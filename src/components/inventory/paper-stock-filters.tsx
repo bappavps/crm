@@ -5,7 +5,6 @@ import * as React from "react"
 import { 
   Search, 
   FilterX, 
-  Calendar as CalendarIcon, 
   ChevronDown,
   Check,
   Building2,
@@ -133,30 +132,6 @@ export function PaperStockFilters({ data, filters, setFilters, onReset }: PaperS
           >
             <FilterX className="h-4 w-4 mr-1.5" /> Reset Filters
           </Button>
-        </div>
-      </div>
-
-      <Separator className="opacity-50" />
-
-      {/* DATE RANGE FILTERS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <div className="md:col-span-2 space-y-2">
-          <Label className="text-[10px] font-black uppercase text-slate-400">Purchase Date Range (Received)</Label>
-          <div className="flex items-center gap-2">
-            <Input 
-              type="date" 
-              className="h-10 text-xs font-bold rounded-xl" 
-              value={filters.receivedFrom || ""} 
-              onChange={e => setFilters({ ...filters, receivedFrom: e.target.value })}
-            />
-            <span className="text-slate-300 font-bold">to</span>
-            <Input 
-              type="date" 
-              className="h-10 text-xs font-bold rounded-xl" 
-              value={filters.receivedTo || ""} 
-              onChange={e => setFilters({ ...filters, receivedTo: e.target.value })}
-            />
-          </div>
         </div>
       </div>
     </div>
