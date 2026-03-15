@@ -52,7 +52,9 @@ import {
   Table as TableIcon,
   ChevronRight,
   ShieldCheck,
-  Eye
+  Eye,
+  Wrench,
+  ArrowRightLeft
 } from "lucide-react"
 import { 
   Dialog, 
