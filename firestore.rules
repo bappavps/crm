@@ -3,81 +3,49 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * SHREE LABEL CRM - SECURITY RULES CONFIGURATION (V12.6)
-     */
-
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    function isTargetAdmin() {
-      return isSignedIn() && 
-             request.auth.token != null && 
-             request.auth.token.email != null && 
-             request.auth.token.email.lower() == 'gm.shreelabel@gmail.com';
-    }
-
     function isAdmin() {
       return isSignedIn() && (
-        isTargetAdmin() ||
+        request.auth.token.email == 'gm.shreelabel@gmail.com' ||
         exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
       );
     }
 
     function isUserActive() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      return isTargetAdmin() || (exists(userPath) && get(userPath).data.isActive == true);
+      return request.auth.token.email == 'gm.shreelabel@gmail.com' || (exists(userPath) && get(userPath).data.isActive == true);
     }
 
-    // --- MASTER METADATA & CONFIG ---
-
-    match /paper_companies/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isAdmin();
+      allow write: if isAdmin() || (request.auth.uid == userId);
     }
 
-    match /paper_types/{id} {
-      allow get, list: if isSignedIn();
+    match /adminUsers/{id} {
+      allow read, write: if isAdmin();
+    }
+
+    match /paper_stock/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+
+    match /jumbo_job_cards/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+
+    match /machines/{id} {
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /roles/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /quotation_templates/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /print_templates/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /suppliers/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /machines/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /cylinders/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /materials/{id} {
-      allow get, list: if isSignedIn();
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
@@ -85,97 +53,8 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /system_settings/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /roll_settings/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /job_settings/{id} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    // --- COLLECTION RULES ---
-
-    match /users/{userId} {
-      allow get: if isOwner(userId) || userId == request.auth.token.email || isAdmin();
-      allow list: if isAdmin();
-      allow create: if isOwner(userId) || isAdmin();
-      allow update: if isAdmin() || (isOwner(userId) && isUserActive());
-      allow delete: if isAdmin();
-    }
-
-    match /adminUsers/{adminUid} {
-      allow get: if isOwner(adminUid) || isTargetAdmin();
-      allow list: if isAdmin();
-      allow write: if isTargetAdmin() || (isAdmin() && adminUid == request.auth.uid);
-      allow delete: if isAdmin();
-    }
-
-    // Paper Stock - Main Substrate Registry
-    match /paper_stock/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn() && isUserActive();
-      allow delete: if isAdmin();
-    }
-
-    match /customers/{id} { 
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isUserActive(); 
-      allow update: if isAdmin() || (isSignedIn() && resource.data.sales_owner_id == request.auth.uid); 
-      allow delete: if isAdmin(); 
-    }
-    
-    match /estimates/{id} { 
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isUserActive();
-      allow update: if isSignedIn() && (isAdmin() || resource.data.sales_owner_id == request.auth.uid);
-      allow delete: if isAdmin();
-    }
-
-    match /quotations/{id} { 
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isUserActive();
-      allow update: if isSignedIn() && (isAdmin() || resource.data.sales_owner_id == request.auth.uid);
-      allow delete: if isAdmin();
-    }
-
-    match /salesOrders/{id} { 
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn() && isUserActive();
-      allow update: if isSignedIn() && (isAdmin() || resource.data.sales_owner_id == request.auth.uid);
-      allow delete: if isAdmin();
-    }
-
-    match /purchaseOrders/{id} {
-      allow get, list: if isSignedIn();
-      allow write: if isSignedIn() && isUserActive();
-    }
-
-    match /jobs/{path=**} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /raw_materials/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /inventoryItems/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /jobCards/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /boms/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /workOrders/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /qualityChecks/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /dispatchChallans/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /invoices/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /artworks/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /alerts/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    match /notifications/{id} { allow read, write: if isSignedIn() && isUserActive(); }
-    
-    match /system_logs/{path=**} {
-      allow read, write: if isAdmin();
-    }
-
     match /{path=**} {
-      allow read, write: if false;
+      allow read, write: if isSignedIn() && isUserActive();
     }
   }
 }

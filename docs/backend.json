@@ -42,18 +42,22 @@
       },
       "required": ["rollNo", "paperCompany", "widthMm", "lengthMeters", "gsm"]
     },
-    "PrintTemplate": {
-      "title": "PrintTemplate",
+    "JumboJobCard": {
+      "title": "JumboJobCard",
       "type": "object",
-      "description": "Visual layout for official CRM documents.",
+      "description": "Production instructions for jumbo roll slitting.",
       "properties": {
-        "id": { "type": "string" },
-        "name": { "type": "string" },
-        "documentType": { "type": "string" },
-        "paperWidth": { "type": "number" },
-        "paperHeight": { "type": "number" },
-        "elements": { "type": "array" },
-        "isDefault": { "type": "boolean" }
+        "job_card_no": { "type": "string" },
+        "parent_roll": { "type": "string" },
+        "child_rolls": { "type": "array", "items": { "type": "string" } },
+        "machine": { "type": "string" },
+        "operator": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "RUNNING", "COMPLETED"] },
+        "startTime": { "type": "string" },
+        "endTime": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "createdById": { "type": "string" }
       }
     }
   },
@@ -68,9 +72,9 @@
       "schema": { "$ref": "#/backend/entities/PaperStock" },
       "description": "Primary substrate inventory registry."
     },
-    "/print_templates/{templateId}": {
-      "schema": { "$ref": "#/backend/entities/PrintTemplate" },
-      "description": "Visual document layouts."
+    "/jumbo_job_cards/{jobId}": {
+      "schema": { "$ref": "#/backend/entities/JumboJobCard" },
+      "description": "Jumbo slitting production logs."
     },
     "/roles/{roleId}": {
       "description": "System access roles and granular permissions."
