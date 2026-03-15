@@ -45,7 +45,7 @@ const STEPS = [
   { id: 'final', label: 'Result', icon: Database }
 ];
 
-const REQUIRED_FIELDS = ["rollNo", "paperCompany", "paperType", "widthMm", "lengthMeters", "gsm", "receivedDate"];
+const REQUIRED_FIELDS = ["rollNo"];
 
 const FIELD_LABELS: Record<string, string> = {
   rollNo: "Roll No",
@@ -88,11 +88,12 @@ const normalizeHeader = (str: string) =>
     .replace(/[^a-z0-9]/g, '') 
     .trim();
 
-const cleanNumeric = (val: any): number => {
+const cleanNumeric = (val: any): number | null => {
+  if (val === undefined || val === null || String(val).trim() === "") return null;
   if (typeof val === 'number') return val;
-  if (!val) return 0;
   const cleaned = String(val).replace(/,/g, '').replace(/[^0-9.]/g, '');
-  return parseFloat(cleaned) || 0;
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? null : num;
 };
 
 const parseExcelDate = (val: any): string => {
@@ -244,37 +245,38 @@ export default function StockImportPage() {
 
       chunk.forEach((row, chunkIdx) => {
         const globalIdx = i + chunkIdx;
+        
+        // Skip completely empty rows
+        const isRowEmpty = Object.values(row).every(v => v === null || v === undefined || String(v).trim() === "");
+        if (isRowEmpty) return;
+
         const mapped: any = { _original: row };
         const reasons: string[] = [];
 
         Object.entries(mapping).forEach(([key, header]) => {
           let val = row[header];
+          
           if (["widthMm", "lengthMeters", "gsm", "weightKg", "purchaseRate"].includes(key)) {
             val = cleanNumeric(val);
-            if (["widthMm", "lengthMeters", "gsm"].includes(key) && val <= 0) {
-              reasons.push(`${FIELD_LABELS[key]} must be > 0`);
-            }
           } else if (key === "receivedDate" || key === "dateOfUsed") {
             if (val) val = parseExcelDate(val);
+            else val = "";
+          } else {
+            val = cleanForFirestore(val);
           }
-          mapped[key] = cleanForFirestore(val);
+          mapped[key] = val;
         });
 
-        REQUIRED_FIELDS.forEach(f => {
-          if (!mapped[f] || mapped[f] === "") {
-            reasons.push(`Missing mandatory field: ${FIELD_LABELS[f]}`);
-          }
-        });
+        // Silently skip if rollNo is missing
+        if (!mapped.rollNo || String(mapped.rollNo).trim() === "") {
+          return;
+        }
 
         if (!mapped.status || mapped.status === "") {
           mapped.status = "Stock";
         }
-
-        if (reasons.length > 0) {
-          errors.push({ index: globalIdx + 2, row, reasons });
-        }
         
-        results.push({ ...mapped, _errors: reasons });
+        results.push({ ...mapped, _errors: [] });
       });
 
       setAnalysisProgress(Math.round(((i + chunk.length) / total) * 100));
@@ -319,11 +321,15 @@ export default function StockImportPage() {
           Object.keys(FIELD_LABELS).forEach(key => {
             if (key === 'rollNo' || key === 'status') return;
             if (key === 'sqm') {
-              const w = cleanNumeric(d.widthMm);
-              const l = cleanNumeric(d.lengthMeters);
-              final.sqm = Number(((w / 1000) * l).toFixed(2)) || 0;
+              const w = d.widthMm;
+              const l = d.lengthMeters;
+              if (w !== null && l !== null) {
+                final.sqm = Number(((w / 1000) * l).toFixed(2)) || 0;
+              } else {
+                final.sqm = null;
+              }
             } else {
-              final[key] = cleanForFirestore(d[key]);
+              final[key] = d[key];
             }
           });
 
