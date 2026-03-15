@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -80,7 +81,8 @@ import {
   deleteDoc,
   setDoc,
   writeBatch,
-  where
+  where,
+  getDocs
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
@@ -136,6 +138,7 @@ export default function PaperStockPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isViewOpen, setIsViewOpen] = useState(false)
   const [isPrintOpen, setIsPrintOpen] = useState(false)
+  const [isReportOpen, setIsReportOpen] = useState(false)
   const [isScannerOpen, setIsScannerOpen] = useState(false)
   
   const [editingRoll, setEditingRoll] = useState<any>(null)
@@ -291,6 +294,40 @@ export default function PaperStockPage() {
     }
     return result;
   }, [rolls, filters, sortConfig, headerFilters, filterMode]);
+
+  // Report Data logic
+  const reportRows = useMemo(() => {
+    if (selectedIds.size > 0) {
+      return rolls?.filter(r => selectedIds.has(r.id)) || [];
+    }
+    return filteredRows;
+  }, [selectedIds, filteredRows, rolls]);
+
+  const reportTotals = useMemo(() => {
+    return reportRows.reduce((acc, r) => ({
+      rolls: acc.rolls + 1,
+      weight: acc.weight + (Number(r.weightKg) || 0),
+      sqm: acc.sqm + (Number(r.sqm) || 0)
+    }), { rolls: 0, weight: 0, sqm: 0 });
+  }, [reportRows]);
+
+  const activeFiltersSummary = useMemo(() => {
+    const list: string[] = [];
+    if (filters.search) list.push(`Search: ${filters.search}`);
+    if (filters.paperCompany?.length) list.push(`Company: ${filters.paperCompany.join(', ')}`);
+    if (filters.paperType?.length) list.push(`Type: ${filters.paperType.join(', ')}`);
+    if (filters.status?.length) list.push(`Status: ${filters.status.join(', ')}`);
+    
+    // Include header filters in summary
+    Object.entries(headerFilters).forEach(([key, values]) => {
+      if (values.length > 0) {
+        const label = COLUMN_KEYS.find(c => c.id === key)?.label || key;
+        list.push(`${label}: ${values.join(', ')}`);
+      }
+    });
+
+    return list.length > 0 ? list.join(' | ') : "None";
+  }, [filters, headerFilters]);
 
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
@@ -467,7 +504,6 @@ export default function PaperStockPage() {
   const SortableHeader = ({ label, field, className = "", stickLeft }: { label: string, field: string, className?: string, stickLeft?: string }) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
-    const hasHeaderFilter = headerFilters[field]?.length > 0;
 
     return (
       <TableHead 
@@ -527,6 +563,13 @@ export default function PaperStockPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={() => setIsReportOpen(true)}
+            className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+          >
+            <FileText className="h-4 w-4 mr-2 text-primary" /> Print Stock Report
+          </Button>
           <Button 
             variant="outline" 
             onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
@@ -613,7 +656,7 @@ export default function PaperStockPage() {
           </div>
         </div>
 
-        <div className="w-full h-[750px] overflow-scroll relative border-t industrial-scroll">
+        <div className="w-full h-[calc(100vh-320px)] overflow-scroll relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
@@ -960,6 +1003,95 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Report Preview Dialog */}
+      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
+        <DialogContent className="sm:max-w-[95vw] h-[95vh] p-0 overflow-hidden bg-slate-100 rounded-none border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-4 flex items-center justify-between no-print">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 bg-primary/20 rounded-lg flex items-center justify-center"><FileText className="h-5 w-5 text-primary" /></div>
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-widest">Stock Report Generator</h3>
+                <p className="text-[10px] text-slate-400 font-bold uppercase">A4 Industrial Layout • {reportRows.length} Rows</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 h-10 px-6 font-black uppercase text-[10px] tracking-widest" onClick={() => setIsReportOpen(false)}>Close Preview</Button>
+              <Button className="bg-primary hover:bg-primary/90 text-white h-10 px-8 font-black uppercase text-[10px] tracking-widest shadow-xl" onClick={() => window.print()}>
+                <Printer className="h-4 w-4 mr-2" /> Execute A4 Print
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto p-10 bg-slate-200 industrial-scroll">
+            <div id="stock-report-print" className="bg-white mx-auto shadow-2xl p-12 min-h-screen text-black font-sans" style={{ width: '210mm' }}>
+              <div className="border-b-4 border-black pb-6 flex justify-between items-end">
+                <div className="space-y-1">
+                  <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
+                  <p className="text-sm font-bold uppercase tracking-widest opacity-70">Industrial Paper Stock Registry</p>
+                </div>
+                <div className="text-right space-y-1">
+                  <h2 className="text-xl font-black uppercase">Technical Report</h2>
+                  <p className="text-xs font-bold">DATE: {new Date().toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              <div className="mt-8 grid grid-cols-1 gap-4 text-[10px] font-bold bg-slate-50 p-4 border rounded-lg">
+                <div className="flex gap-2">
+                  <span className="text-primary uppercase shrink-0">Active Filters:</span>
+                  <span className="opacity-70 font-mono uppercase leading-relaxed">{activeFiltersSummary}</span>
+                </div>
+              </div>
+
+              <table className="w-full mt-8 border-collapse table-fixed">
+                <thead>
+                  <tr className="bg-slate-100 border-y-2 border-black">
+                    {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                      <th key={col.id} className="p-2 text-center text-[8px] font-black uppercase border-r border-black/10 overflow-hidden truncate">
+                        {col.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportRows.map((r, i) => (
+                    <tr key={i} className="border-b border-black/10 h-8">
+                      {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                        <td key={col.id} className={cn(
+                          "p-1 text-[8px] border-r border-black/10 text-center overflow-hidden truncate",
+                          col.id === 'rollNo' ? "font-black font-mono text-primary" : "font-medium"
+                        )}>
+                          {r[col.id] || '-'}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-10 grid grid-cols-3 gap-8 p-6 bg-slate-900 text-white rounded-xl shadow-xl">
+                <div className="text-center space-y-1 border-r border-white/10">
+                  <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Inventory Units</p>
+                  <p className="text-2xl font-black">{reportTotals.rolls}</p>
+                </div>
+                <div className="text-center space-y-1 border-r border-white/10">
+                  <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Material Weight</p>
+                  <p className="text-2xl font-black">{reportTotals.weight.toLocaleString()} <small className="text-[10px] font-bold">KG</small></p>
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Square Meters</p>
+                  <p className="text-2xl font-black">{reportTotals.sqm.toLocaleString()} <small className="text-[10px] font-bold">SQM</small></p>
+                </div>
+              </div>
+
+              <div className="mt-20 flex justify-between pt-10 border-t border-dashed border-black/20 text-[9px] font-black uppercase opacity-50">
+                <p>Generated by {user?.displayName || user?.email}</p>
+                <p>ERP System v3.5 • Confidential Operational Data</p>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Technical Intake Scanner</DialogTitle></div>
@@ -977,7 +1109,8 @@ export default function PaperStockPage() {
       <style jsx global>{`
         @media print {
           body * { visibility: hidden !important; }
-          #print-area, #print-area * { visibility: visible !important; }
+          #print-area, #print-area *, #stock-report-print, #stock-report-print * { visibility: visible !important; }
+          
           #print-area {
             position: absolute !important;
             left: 0 !important;
@@ -989,6 +1122,18 @@ export default function PaperStockPage() {
             width: 100% !important;
             display: block !important;
           }
+
+          #stock-report-print {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            margin: 0 !important;
+            width: 210mm !important;
+            box-shadow: none !important;
+            padding: 10mm !important;
+            display: block !important;
+          }
+
           .label-page {
             page-break-after: always;
             display: flex;
@@ -996,6 +1141,7 @@ export default function PaperStockPage() {
             align-items: center;
             min-height: 100vh;
           }
+          
           @page { margin: 0 !important; }
         }
       `}</style>
