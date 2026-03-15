@@ -95,9 +95,14 @@ function JumboJobCardContent() {
     return collection(firestore, 'paper_stock');
   }, [firestore]);
 
+  // FIXED: Load only ACTIVE machines from the JUMBO section
   const machinesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return collection(firestore, 'machines');
+    return query(
+      collection(firestore, 'machines'),
+      where('section', '==', 'Jumbo'),
+      where('status', '==', 'Active')
+    );
   }, [firestore]);
 
   const usersQuery = useMemoFirebase(() => {
@@ -305,7 +310,9 @@ function JumboJobCardContent() {
                     <Select value={formData.machine} onValueChange={v => setFormData({...formData, machine: v})}>
                       <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Machine" /></SelectTrigger>
                       <SelectContent className="z-[100]">
-                        {machines?.map(m => <SelectItem key={m.id} value={m.name}>{m.name}</SelectItem>)}
+                        {machines?.map(m => (
+                          <SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
