@@ -88,6 +88,7 @@ import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
 import { TemplateRenderer } from "@/components/printing/template-renderer"
+import { ColumnHeaderFilter } from "@/components/inventory/column-header-filter"
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -148,6 +149,9 @@ export default function PaperStockPage() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [isCustomStatus, setIsCustomStatus] = useState(false)
+
+  // Header Filters State
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
 
   const defaultVisibleColumns = COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {})
 
@@ -236,6 +240,7 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     let result = rolls.filter(row => {
+      // 1. Global Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const matchesGlobal = Object.entries(row).some(([key, val]) => {
@@ -244,6 +249,8 @@ export default function PaperStockPage() {
         });
         if (!matchesGlobal) return false;
       }
+      
+      // 2. Specific Advanced Filters
       if (filters.lotNoSearch && !String(row.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
       if (filters.rollNoSearch && !String(row.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
       if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(row.paperCompany || ""))) return false;
@@ -252,6 +259,15 @@ export default function PaperStockPage() {
       if (filters.status?.length > 0 && !filters.status.includes(String(row.status || ""))) return false;
       if (filters.receivedFrom && row.receivedDate < filters.receivedFrom) return false;
       if (filters.receivedTo && row.receivedDate > filters.receivedTo) return false;
+
+      // 3. Header Excel-Style Filters
+      for (const [key, selected] of Object.entries(headerFilters)) {
+        if (selected && selected.length > 0) {
+          const val = String(row[key] || "");
+          if (!selected.includes(val)) return false;
+        }
+      }
+
       return true;
     });
 
@@ -270,7 +286,7 @@ export default function PaperStockPage() {
       });
     }
     return result;
-  }, [rolls, filters, sortConfig]);
+  }, [rolls, filters, sortConfig, headerFilters]);
 
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
@@ -444,14 +460,40 @@ export default function PaperStockPage() {
     }, 500);
   };
 
-  const SortableHeader = ({ label, field, className = "" }: { label: string, field: string, className?: string }) => {
+  const SortableHeader = ({ label, field, className = "", stickLeft }: { label: string, field: string, className?: string, stickLeft?: string }) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
+    const hasHeaderFilter = headerFilters[field]?.length > 0;
+
     return (
-      <TableHead className={cn("cursor-pointer select-none transition-colors hover:bg-slate-200 border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30] text-center", isActive && "bg-slate-200", className)} onClick={() => requestSort(field)}>
-        <div className="flex items-center justify-center gap-1.5 px-2">
-          <span className="font-semibold text-[11px] uppercase text-slate-700 tracking-tight">{label}</span>
-          {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />) : <ArrowUpDown className="h-2.5 w-2.5 opacity-30" />}
+      <TableHead 
+        className={cn(
+          "transition-colors border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30]", 
+          isActive && "bg-slate-200", 
+          stickLeft && "z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]",
+          className
+        )}
+        style={stickLeft ? { left: stickLeft } : {}}
+      >
+        <div className="flex items-center justify-between h-full px-2 gap-1 group/header">
+          <div 
+            className="flex items-center gap-1.5 flex-1 justify-center cursor-pointer h-full" 
+            onClick={() => requestSort(field)}
+          >
+            <span className="font-semibold text-[11px] uppercase text-slate-700 tracking-tight">{label}</span>
+            {isActive ? (
+              sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
+            ) : (
+              <ArrowUpDown className="h-2.5 w-2.5 opacity-30 group-hover/header:opacity-100 transition-opacity" />
+            )}
+          </div>
+          <ColumnHeaderFilter 
+            columnKey={field}
+            label={label}
+            data={rolls || []}
+            selectedValues={headerFilters[field] || []}
+            onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))}
+          />
         </div>
       </TableHead>
     );
@@ -459,6 +501,7 @@ export default function PaperStockPage() {
 
   const handleResetAll = () => {
     setFilters(initialFilters);
+    setHeaderFilters({});
     setSortConfig({ key: 'rollNo', direction: 'desc' });
     setCurrentPage(1);
     setSelectedIds(new Set());
@@ -546,7 +589,7 @@ export default function PaperStockPage() {
                   </div>
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[200px] border-r sticky top-0 left-[100px] bg-slate-100 z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]" />
+                <SortableHeader label="Roll No" field="rollNo" className="w-[200px]" stickLeft="100px" />
                 <SortableHeader label="Status" field="status" className="w-[120px]" />
                 <SortableHeader label="Paper Company" field="paperCompany" />
                 <SortableHeader label="Paper Type" field="paperType" />
@@ -611,7 +654,6 @@ export default function PaperStockPage() {
                     {visibleColumns['dateOfUsed'] && <TableCell className="text-[13px] font-medium border-r border-b px-2 text-center">{j.dateOfUsed || '-'}</TableCell>}
                     {visibleColumns['jobNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-semibold text-slate-700 text-center">{j.jobNo || '-'}</TableCell>}
                     {visibleColumns['jobSize'] && <TableCell className="text-[13px] border-r border-b text-center">{j.jobSize || '-'}</TableCell>}
-                    {visibleColumns['jobName'] && <TableCell className="text-[13px] font-medium border-r border-b truncate max-w-[150px] text-center">{j.jobName || '-'}</TableCell>}
                     {visibleColumns['jobName'] && <TableCell className="text-[13px] font-medium border-r border-b truncate max-w-[150px] text-center">{j.jobName || '-'}</TableCell>}
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}

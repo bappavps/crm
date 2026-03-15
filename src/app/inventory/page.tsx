@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
@@ -42,6 +41,7 @@ import { collection, doc, query, limit, orderBy } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import * as XLSX from 'xlsx'
 import { cn } from "@/lib/utils"
+import { ColumnHeaderFilter } from "@/components/inventory/column-header-filter"
 
 type SortField = 'barcode' | 'itemType' | 'status' | 'receivedDate' | 'sqm';
 type SortOrder = 'asc' | 'desc';
@@ -59,6 +59,9 @@ export default function InventoryPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [sortField, setSortField] = useState<SortField>('barcode')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+
+  // Header Filters State
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
 
   useEffect(() => {
     setIsMounted(true)
@@ -138,6 +141,7 @@ export default function InventoryPage() {
 
     let result = [...jumboItems, ...otherItems];
 
+    // Global Search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter(item => 
@@ -148,19 +152,37 @@ export default function InventoryPage() {
       );
     }
 
+    // Top Level Filters
     if (categoryFilter !== "all") result = result.filter(item => item.itemType === categoryFilter);
     if (statusFilter !== "all") result = result.filter(item => item.status === statusFilter);
+
+    // Header Filters
+    for (const [key, selected] of Object.entries(headerFilters)) {
+      if (selected && selected.length > 0) {
+        const val = String(result.find(r => r.id === r.id)?.[key] || ""); // Mapping logic needs to handle field keys
+        // Since combinedStock keys might differ from DB keys, we check specifically
+        result = result.filter(item => {
+          const itemVal = String(item[key] || "");
+          return selected.includes(itemVal);
+        });
+      }
+    }
 
     result.sort((a, b) => {
       let valA = a[sortField]?.toString().toLowerCase() || "";
       let valB = b[sortField]?.toString().toLowerCase() || "";
+      if (sortField === 'sqm') {
+        valA = Number(a[sortField] || 0);
+        valB = Number(b[sortField] || 0);
+        return sortOrder === 'asc' ? (valA as any) - (valB as any) : (valB as any) - (valA as any);
+      }
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
 
     return result;
-  }, [jumbos, inventory, alerts, searchQuery, categoryFilter, statusFilter, sortField, sortOrder]);
+  }, [jumbos, inventory, alerts, searchQuery, categoryFilter, statusFilter, sortField, sortOrder, headerFilters]);
 
   const stats = useMemo(() => {
     const totalSqm = combinedStock.reduce((acc, item) => acc + (Number(item.sqm) || 0), 0)
@@ -196,7 +218,7 @@ export default function InventoryPage() {
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Filter loaded items..." className="pl-8 w-[200px]" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               </div>
-              <Button variant="outline" size="icon" onClick={() => { setSearchQuery(""); setCategoryFilter("all"); setStatusFilter("all"); }}><FilterX className="h-4 w-4" /></Button>
+              <Button variant="outline" size="icon" onClick={() => { setSearchQuery(""); setCategoryFilter("all"); setStatusFilter("all"); setHeaderFilters({}); }}><FilterX className="h-4 w-4" /></Button>
             </div>
           </div>
         </CardHeader>
@@ -204,13 +226,68 @@ export default function InventoryPage() {
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Roll ID</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>SQM</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
+                <TableRow className="bg-slate-50/50">
+                  <TableHead className="h-10 px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[11px] uppercase text-slate-700">Roll ID</span>
+                      <ColumnHeaderFilter 
+                        columnKey="barcode" 
+                        label="Roll ID" 
+                        data={combinedStock} 
+                        selectedValues={headerFilters['barcode'] || []} 
+                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, barcode: v }))} 
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="h-10 px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[11px] uppercase text-slate-700">Supplier</span>
+                      <ColumnHeaderFilter 
+                        columnKey="paperCompany" 
+                        label="Supplier" 
+                        data={combinedStock} 
+                        selectedValues={headerFilters['paperCompany'] || []} 
+                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, paperCompany: v }))} 
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="h-10 px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[11px] uppercase text-slate-700">Type</span>
+                      <ColumnHeaderFilter 
+                        columnKey="itemType" 
+                        label="Type" 
+                        data={combinedStock} 
+                        selectedValues={headerFilters['itemType'] || []} 
+                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, itemType: v }))} 
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="h-10 px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[11px] uppercase text-slate-700">SQM</span>
+                      <ColumnHeaderFilter 
+                        columnKey="sqm" 
+                        label="SQM" 
+                        data={combinedStock} 
+                        selectedValues={headerFilters['sqm'] || []} 
+                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, sqm: v }))} 
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="h-10 px-4">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-[11px] uppercase text-slate-700">Status</span>
+                      <ColumnHeaderFilter 
+                        columnKey="status" 
+                        label="Status" 
+                        data={combinedStock} 
+                        selectedValues={headerFilters['status'] || []} 
+                        onFilterChange={(v) => setHeaderFilters(p => ({ ...p, status: v }))} 
+                      />
+                    </div>
+                  </TableHead>
+                  <TableHead className="text-right h-10 px-4">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
