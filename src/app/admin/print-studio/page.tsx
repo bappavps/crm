@@ -67,7 +67,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V5.2)
+ * PRINT TEMPLATE STUDIO (V5.3)
  * Integrated Background Layer System, Drag & Drop Support, and Professional Print Isolation.
  */
 
@@ -483,7 +483,7 @@ export default function PrintTemplateStudio() {
         </>
       ) : (
         /* --- THE STUDIO EDITOR --- */
-        <div className="fixed inset-0 z-[100] bg-slate-100 flex flex-col font-sans">
+        <div className="fixed inset-0 z-[100] bg-slate-100 flex flex-col font-sans print-studio-editor">
           <div className="h-16 border-b flex items-center justify-between px-6 shrink-0 bg-white shadow-sm z-[110] print:hidden">
             <div className="flex items-center gap-4">
               <Button variant="ghost" onClick={() => setIsEditorOpen(false)} className="font-bold">
@@ -940,24 +940,72 @@ export default function PrintTemplateStudio() {
 
       <style jsx global>{`
         @media print {
-          body * {
-            visibility: hidden !important;
+          /* 1. Hide Global App Elements */
+          header, nav, aside, .print\:hidden {
+            display: none !important;
           }
-          #studio-canvas-print,
-          #studio-canvas-print * {
-            visibility: visible !important;
+
+          /* 2. Force the Editor Container to be the root printable area */
+          .print-studio-editor {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: white !important;
+            display: block !important;
+            overflow: visible !important;
           }
+
+          /* 3. Hide Toolbars and Sidebars */
+          .print-studio-editor > div:first-child, /* Top toolbar */
+          .w-72, /* Left tools */
+          .w-80, /* Right config */
+          .fixed.bottom-10 { /* Zoom control */
+            display: none !important;
+          }
+
+          /* 4. Prepare Canvas Container */
+          .flex-1.flex.overflow-hidden {
+            display: block !important;
+            overflow: visible !important;
+          }
+
+          .flex-1.bg-slate-200 {
+            display: block !important;
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            overflow: visible !important;
+          }
+
+          /* Hide Rulers */
+          .flex-1.bg-slate-200 > div:nth-child(1),
+          .flex-1.bg-slate-200 > div:nth-child(2) {
+            display: none !important;
+          }
+
+          /* 5. The Actual Artboard */
           #studio-canvas-print {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            transform: none !important;
+            transform: none !important; /* Force 100% zoom */
             margin: 0 !important;
-            padding: 0 !important;
             border: none !important;
             box-shadow: none !important;
+            background: white !important;
+            visibility: visible !important;
+            display: block !important;
           }
-          .guidelines-grid {
+
+          #studio-canvas-print * {
+            visibility: visible !important;
+          }
+
+          /* 6. Clean up design helpers */
+          .guidelines-grid,
+          .resize-handle {
             display: none !important;
           }
         }
