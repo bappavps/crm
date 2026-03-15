@@ -1005,7 +1005,7 @@ export default function PaperStockPage() {
 
       {/* Report Preview Dialog */}
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
-        <DialogContent className="sm:max-w-[95vw] h-[95vh] p-0 overflow-hidden bg-slate-100 rounded-none border-none shadow-3xl">
+        <DialogContent className="sm:max-w-[95vw] h-[95vh] p-0 overflow-hidden bg-slate-100 rounded-none border-none shadow-3xl print-dialog-content">
           <div className="bg-slate-900 text-white p-4 flex items-center justify-between no-print">
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 bg-primary/20 rounded-lg flex items-center justify-center"><FileText className="h-5 w-5 text-primary" /></div>
@@ -1022,7 +1022,7 @@ export default function PaperStockPage() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-10 bg-slate-200 industrial-scroll">
+          <div className="flex-1 overflow-auto p-10 bg-slate-200 industrial-scroll print-container">
             <div id="stock-report-print" className="bg-white mx-auto shadow-2xl p-12 min-h-screen text-black font-sans" style={{ width: '210mm' }}>
               <div className="border-b-4 border-black pb-6 flex justify-between items-end">
                 <div className="space-y-1">
@@ -1108,71 +1108,83 @@ export default function PaperStockPage() {
 
       <style jsx global>{`
         @media print {
-          /* 1. Hide every UI element by default */
-          body * { 
-            visibility: hidden !important; 
-          }
-          
-          /* 2. Target specific print areas and their children */
-          #print-area, #print-area *, 
-          #stock-report-print, #stock-report-print * { 
-            visibility: visible !important; 
-          }
-          
-          /* 3. Global Print Sanity */
-          @page { 
-            size: A4 portrait; 
-            margin: 10mm !important; 
-          }
-          
-          body { 
-            background: white !important; 
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-
-          /* 4. Labels Layout (Small Thermal Labels) */
-          #print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            display: block !important;
-          }
-
-          .label-page {
-            page-break-after: always;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-          }
-
-          /* 5. Stock Report Layout (A4 Management Report) */
-          #stock-report-print {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 210mm !important;
-            display: block !important;
+          /* 1. Hide everything by default using display none to prevent empty gaps */
+          html, body {
+            height: auto !important;
+            overflow: visible !important;
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
-            box-shadow: none !important;
           }
 
+          body > * { 
+            display: none !important; 
+          }
+          
+          /* 2. Target only the Radix Portal that contains the Dialog we are printing */
+          body > [data-radix-portal] {
+            display: block !important;
+          }
+
+          /* 3. Force the Dialog Content to behave like a standard page, not a modal */
+          .print-dialog-content {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            background: white !important;
+            box-shadow: none !important;
+            max-width: none !important;
+            max-height: none !important;
+            transform: none !important;
+            display: block !important;
+            overflow: visible !important;
+          }
+
+          /* Hide modal background and close buttons */
+          .print-dialog-content > div:first-child,
+          .print-dialog-content button[aria-label="Close"] {
+            display: none !important;
+          }
+
+          .no-print { 
+            display: none !important; 
+          }
+          
+          /* 4. Reset Container Constraints */
+          .print-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            background: white !important;
+            overflow: visible !important;
+          }
+
+          #stock-report-print {
+            width: 210mm !important;
+            margin: 0 auto !important;
+            padding: 10mm !important;
+            box-shadow: none !important;
+            display: block !important;
+            position: relative !important;
+          }
+
+          /* 5. Table Print Optimization */
           #stock-report-print table {
             width: 100% !important;
             border-collapse: collapse !important;
-            table-layout: fixed !important; /* Forces columns to stay aligned */
+            table-layout: fixed !important;
           }
 
           #stock-report-print thead {
-            display: table-header-group !important; /* Repeats header on every page */
+            display: table-header-group !important;
           }
 
           #stock-report-print tr {
-            page-break-inside: avoid !important; /* Prevents rows from splitting */
+            page-break-inside: avoid !important;
           }
 
           #stock-report-print th, #stock-report-print td {
@@ -1181,13 +1193,23 @@ export default function PaperStockPage() {
             font-size: 8px !important;
           }
 
-          /* Hide Dialog overlays and close buttons */
-          .no-print, 
-          [role="dialog"] button[aria-label="Close"],
-          .z-portal,
-          header,
-          aside {
-            display: none !important;
+          /* 6. Label Printing Optimization */
+          #print-area {
+            display: block !important;
+            width: 100% !important;
+          }
+
+          .label-page {
+            page-break-after: always;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+            min-height: 100vh !important;
+          }
+
+          @page {
+            size: A4 portrait;
+            margin: 0;
           }
         }
       `}</style>
