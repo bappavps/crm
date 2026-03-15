@@ -41,15 +41,10 @@ const FONT_FAMILIES = [
 
 export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scale = 1 }: TemplateRendererProps) {
   
-  const replacePlaceholders = (text: string) => {
-    if (!text) return "";
-    let result = text;
-    Object.entries(data).forEach(([key, value]) => {
-      // Handle keys with and without curly braces for maximum compatibility
-      const regex = new RegExp(`{{${key}}}`, 'g');
-      result = result.replace(regex, String(value || ""));
-    });
-    return result;
+  const getVal = (key: string) => {
+    if (!key) return "";
+    const cleanKey = key.replace(/[{}]/g, '');
+    return String(data[cleanKey] || "");
   };
 
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
@@ -72,12 +67,6 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
       overflow: 'hidden'
     };
 
-    if (el.type === 'line') {
-      style.height = `${el.style.borderWidth || 2}px`;
-      style.border = 'none';
-      style.backgroundColor = el.style.borderColor || '#000';
-    }
-
     const textStyle: React.CSSProperties = {
       fontSize: `${el.style.fontSize}px`,
       fontFamily: getFontFamilyValue(el.style.fontFamily),
@@ -93,35 +82,49 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
       case 'title':
         return (
           <div style={style}>
-            <span style={textStyle}>{replacePlaceholders(el.content || "")}</span>
+            <span style={textStyle}>{el.content}</span>
           </div>
         );
       case 'field':
         return (
           <div style={style}>
-            <span style={textStyle}>{replacePlaceholders(el.placeholder || "")}</span>
+            <span style={textStyle}>{getVal(el.placeholder || "")}</span>
+          </div>
+        );
+      case 'table':
+        const tableData = data[el.placeholder || ""] || [];
+        return (
+          <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
+              <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
+              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>W (MM)</span>
+              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>L (MTR)</span>
+              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>DEST</span>
+            </div>
+            {/* Rows */}
+            {tableData.map((row: any, idx: number) => (
+              <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
+                <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace' }}>{row.roll_code || row.rollNo}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.width || row.widthMm}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.length || row.lengthMeters}</span>
+                <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>{row.destination || (row.jobNo ? 'JOB' : 'STOCK')}</span>
+              </div>
+            ))}
           </div>
         );
       case 'barcode':
-        const barcodeVal = replacePlaceholders(el.placeholder || "");
         return (
           <div style={style}>
             <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'center' }}>
-              <Barcode 
-                value={barcodeVal || "SAMPLE"} 
-                height={el.height - 20} 
-                width={1.5} 
-                fontSize={10} 
-                displayValue={true} 
-              />
+              <Barcode value={getVal(el.placeholder || "") || "SAMPLE"} height={el.height - 20} width={1.5} fontSize={10} displayValue={true} />
             </div>
           </div>
         );
       case 'qr':
-        const qrVal = replacePlaceholders(el.placeholder || "");
         return (
           <div style={style}>
-            <QRCodeSVG value={qrVal || "NA"} size={Math.min(el.width, el.height) - 5} />
+            <QRCodeSVG value={getVal(el.placeholder || "") || "NA"} size={Math.min(el.width, el.height) - 5} />
           </div>
         );
       case 'rectangle':

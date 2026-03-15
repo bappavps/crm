@@ -48,7 +48,11 @@ import {
   Paintbrush,
   Lock,
   Wallpaper,
-  MousePointerSquareDashed
+  MousePointerSquareDashed,
+  Table as TableIcon,
+  ChevronRight,
+  ShieldCheck,
+  Eye
 } from "lucide-react"
 import { 
   Dialog, 
@@ -67,11 +71,11 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V5.6)
- * Hardened Print Engine for Adobe PDF Precision and Absolute Coordinate Mapping.
+ * PRINT TEMPLATE STUDIO (V6.0)
+ * Extended for Production Job Cards and System Template Management.
  */
 
-type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field';
+type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
 
 interface TemplateElement {
   id: string;
@@ -108,11 +112,12 @@ interface BackgroundConfig {
 interface PrintTemplate {
   id: string;
   name: string;
-  documentType: string;
+  documentType: 'Invoice' | 'Label' | 'Job Card' | 'Challan' | 'PO';
   paperWidth: number; 
   paperHeight: number; 
   elements: TemplateElement[];
   isDefault: boolean;
+  isSystemTemplate?: boolean;
   background?: BackgroundConfig;
 }
 
@@ -134,18 +139,31 @@ const FONT_FAMILIES = [
   { id: 'cursive', name: 'Script', value: "cursive" },
 ];
 
-const CRM_PLACEHOLDERS = [
-  { key: '{{company_name}}', label: 'Company Name', icon: Building2, preview: 'Shree Label Creation' },
-  { key: '{{invoice_no}}', label: 'Invoice Number', icon: Hash, preview: 'INV-2024-001' },
-  { key: '{{date}}', label: 'Current Date', icon: CalendarDays, preview: new Date().toLocaleDateString() },
-  { key: '{{customer_name}}', label: 'Customer Name', icon: User, preview: 'Austin Pharmaceuticals' },
-  { key: '{{roll_number}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
-  { key: '{{paper_item}}', label: 'Paper Item/Type', icon: FileText, preview: 'PP White' },
-  { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
-  { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
-  { key: '{{weight}}', label: 'Weight (KG)', icon: LayoutGrid, preview: '245' },
-  { key: '{{received_date}}', label: 'Received Date', icon: CalendarDays, preview: '2024-01-15' },
-];
+const PLACEHOLDERS = {
+  GENERAL: [
+    { key: '{{company_name}}', label: 'Company Name', icon: Building2, preview: 'Shree Label Creation' },
+    { key: '{{date}}', label: 'Current Date', icon: CalendarDays, preview: new Date().toLocaleDateString() },
+  ],
+  PRODUCTION: [
+    { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
+    { key: '{{job_date}}', label: 'Job Date', icon: CalendarDays, preview: '2024-05-20' },
+    { key: '{{machine_name}}', label: 'Machine Name', icon: Wrench, preview: 'Jumbo Slitter A1' },
+    { key: '{{operator_name}}', label: 'Operator', icon: User, preview: 'Rahul Sharma' },
+    { key: '{{job_qr_code}}', label: 'Job QR Identity', icon: QrCode, preview: 'QR_DATA' },
+  ],
+  PARENT_ROLL: [
+    { key: '{{parent_roll}}', label: 'Parent Roll No', icon: Box, preview: 'T-1001' },
+    { key: '{{parent_width}}', label: 'Parent Width', icon: Maximize2, preview: '1020' },
+    { key: '{{parent_length}}', label: 'Parent Length', icon: ArrowRightLeft, preview: '3000' },
+    { key: '{{paper_type}}', label: 'Paper Type', icon: FileText, preview: 'Chromo' },
+  ],
+  INVENTORY: [
+    { key: '{{roll_number}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
+    { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
+    { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
+    { key: '{{weight}}', label: 'Weight (KG)', icon: LayoutGrid, preview: '245' },
+  ]
+};
 
 const MM_TO_PX = 3.78; 
 
@@ -166,6 +184,7 @@ export default function PrintTemplateStudio() {
   const [isSeeding, setIsSeeding] = useState(false)
   const [gridSnap, setGridSnap] = useState(5)
   const [showGuidelines, setShowGuidelines] = useState(true)
+  const [activeCategory, setActiveCategory] = useState<string>("All")
 
   useEffect(() => { setIsMounted(true) }, [])
 
@@ -174,6 +193,17 @@ export default function PrintTemplateStudio() {
     return query(collection(firestore, 'print_templates'), orderBy('documentType'));
   }, [firestore]);
   const { data: templates, isLoading } = useCollection(templatesQuery);
+
+  const filteredTemplates = useMemo(() => {
+    if (!templates) return [];
+    if (activeCategory === "All") return templates;
+    return templates.filter(t => {
+      if (activeCategory === "Job Cards") return t.documentType === 'Job Card';
+      if (activeCategory === "Labels") return t.documentType === 'Label';
+      if (activeCategory === "Documents") return ['Invoice', 'Challan', 'PO'].includes(t.documentType);
+      return true;
+    });
+  }, [templates, activeCategory]);
 
   const selectedElement = useMemo(() => 
     currentTemplate?.elements.find(el => el.id === selectedElementId)
@@ -185,7 +215,7 @@ export default function PrintTemplateStudio() {
     
     const formData = new FormData(e.currentTarget)
     const name = formData.get("name") as string
-    const type = formData.get("documentType") as string
+    const type = formData.get("documentType") as any
     const sizeId = formData.get("paperSize") as string
     const size = PAPER_SIZES.find(s => s.id === sizeId) || PAPER_SIZES[0]
 
@@ -221,6 +251,12 @@ export default function PrintTemplateStudio() {
   }
 
   const handleDeleteTemplate = async (templateId: string) => {
+    const tpl = templates?.find(t => t.id === templateId);
+    if (tpl?.isSystemTemplate) {
+      toast({ variant: "destructive", title: "Protected", description: "System templates cannot be deleted." });
+      return;
+    }
+
     if (!firestore || !confirm("Permanently delete this template?")) return
     try {
       await deleteDoc(doc(firestore, 'print_templates', templateId))
@@ -242,6 +278,7 @@ export default function PrintTemplateStudio() {
       id: newId,
       name: `${template.name} (Copy)`,
       isDefault: false,
+      isSystemTemplate: false, // Duplicates are always user-owned
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     }
@@ -255,6 +292,10 @@ export default function PrintTemplateStudio() {
 
   const handleSaveTemplate = async () => {
     if (!firestore || !currentTemplate) return
+    if (currentTemplate.isSystemTemplate) {
+      toast({ variant: "destructive", title: "Read Only", description: "Please duplicate this system template to save changes." });
+      return;
+    }
     setIsSaving(true)
     try {
       await setDoc(doc(firestore, 'print_templates', currentTemplate.id), {
@@ -274,19 +315,38 @@ export default function PrintTemplateStudio() {
     setIsSeeding(true)
     const batch = writeBatch(firestore)
     
-    const samples = [
+    const samples: PrintTemplate[] = [
       {
-        id: 'sample-invoice-1',
-        name: 'Standard Tax Invoice',
-        documentType: 'Invoice',
+        id: 'system-jumbo-job-card',
+        name: 'Jumbo Job Card - Technical Sheet',
+        documentType: 'Job Card',
         paperWidth: 210,
         paperHeight: 297,
+        isDefault: true,
+        isSystemTemplate: true,
         elements: [
-          { id: 'e1', type: 'title', x: 40, y: 40, width: 400, height: 50, rotate: 0, content: 'TAX INVOICE', style: { fontSize: 28, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
-          { id: 'e2', type: 'field', x: 40, y: 100, width: 300, height: 30, rotate: 0, placeholder: '{{company_name}}', style: { fontSize: 16, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
-          { id: 'e3', type: 'field', x: 500, y: 40, width: 250, height: 30, rotate: 0, placeholder: 'INV NO: {{invoice_no}}', style: { fontSize: 12, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#000000', borderRadius: 0 } }
-        ],
-        isDefault: true
+          { id: 'title', type: 'title', x: 40, y: 40, width: 600, height: 50, rotate: 0, content: 'SHREE LABEL CREATION', style: { fontSize: 32, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
+          { id: 'subtitle', type: 'text', x: 40, y: 90, width: 400, height: 30, rotate: 0, content: 'JUMBO SLITTING INSTRUCTION SHEET', style: { fontSize: 14, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#666666', borderRadius: 0 } },
+          { id: 'jobid', type: 'field', x: 550, y: 40, width: 200, height: 40, rotate: 0, placeholder: '{{job_card_id}}', style: { fontSize: 18, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#E4892B', borderRadius: 0 } },
+          { id: 'line1', type: 'line', x: 40, y: 130, width: 710, height: 2, rotate: 0, style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 2, borderColor: '#000000' } },
+          { id: 'table_label', type: 'text', x: 40, y: 400, width: 300, height: 30, rotate: 0, content: 'SLITTING OUTPUT PLAN (DYNAMIC)', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
+          { id: 'output_table', type: 'table', x: 40, y: 440, width: 710, height: 300, rotate: 0, placeholder: 'SLIT_ROLLS', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 1, borderColor: '#ccc' } }
+        ]
+      },
+      {
+        id: 'system-thermal-label',
+        name: 'Industrial Thermal Label (150x100)',
+        documentType: 'Label',
+        paperWidth: 150,
+        paperHeight: 100,
+        isDefault: true,
+        isSystemTemplate: true,
+        elements: [
+          { id: 'brand', type: 'text', x: 20, y: 20, width: 300, height: 30, rotate: 0, content: 'SHREE LABEL', style: { fontSize: 24, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
+          { id: 'reelid_label', type: 'text', x: 20, y: 60, width: 100, height: 20, rotate: 0, content: 'REEL ID', style: { fontSize: 10, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#999', borderRadius: 0 } },
+          { id: 'reelid', type: 'field', x: 20, y: 80, width: 400, height: 80, rotate: 0, placeholder: '{{roll_number}}', style: { fontSize: 64, fontWeight: 'black', fontFamily: 'mono', textAlign: 'left', color: '#000000', borderRadius: 0 } },
+          { id: 'qr', type: 'qr', x: 420, y: 40, width: 120, height: 120, rotate: 0, placeholder: '{{roll_number}}', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } }
+        ]
       }
     ]
 
@@ -295,7 +355,7 @@ export default function PrintTemplateStudio() {
         batch.set(doc(firestore, 'print_templates', s.id), { ...s, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
       }
       await batch.commit()
-      toast({ title: "Samples Imported" })
+      toast({ title: "System Templates Initialized" })
     } catch (e) {
       toast({ variant: "destructive", title: "Import Failed" })
     } finally {
@@ -311,8 +371,8 @@ export default function PrintTemplateStudio() {
       type,
       x: 100,
       y: 100,
-      width: type === 'qr' ? 80 : (type === 'barcode' ? 200 : (type === 'rectangle' || type === 'circle' ? 100 : 150)),
-      height: type === 'qr' ? 80 : (type === 'barcode' ? 60 : (type === 'rectangle' || type === 'circle' ? 100 : 30)),
+      width: type === 'qr' ? 80 : (type === 'barcode' ? 200 : (type === 'rectangle' || type === 'circle' ? 100 : (type === 'table' ? 600 : 150))),
+      height: type === 'qr' ? 80 : (type === 'barcode' ? 60 : (type === 'rectangle' || type === 'circle' ? 100 : (type === 'table' ? 200 : 30))),
       rotate: 0,
       content: content || (placeholder ? "" : (type === 'text' || type === 'title' ? "New Text Element" : "")),
       placeholder: placeholder || "",
@@ -323,7 +383,7 @@ export default function PrintTemplateStudio() {
         color: '#000000',
         fontFamily: 'inter',
         backgroundColor: (type === 'rectangle' || type === 'circle') ? '#ffffff' : 'transparent',
-        borderWidth: (type === 'rectangle' || type === 'circle' || type === 'line') ? 2 : 0,
+        borderWidth: (type === 'rectangle' || type === 'circle' || type === 'line' || type === 'table') ? 2 : 0,
         borderColor: '#000000',
         borderRadius: 0,
         opacity: 1,
@@ -430,56 +490,76 @@ export default function PrintTemplateStudio() {
         <>
           <div className="flex items-center justify-between">
             <div className="space-y-1">
-              <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Print Template Studio</h2>
-              <p className="text-muted-foreground font-medium text-sm">Visual drag & drop designer for official ERP documents and labels.</p>
+              <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Template Library</h2>
+              <p className="text-muted-foreground font-medium text-sm">Industrial document & label designer for Shree Label ERP.</p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleSeedSamples} disabled={isSeeding} className="h-12 border-primary/20 hover:bg-primary/5">
                 {isSeeding ? <Loader2 className="animate-spin mr-2" /> : <Sparkles className="mr-2 h-5 w-5 text-primary" />}
-                Import Samples
+                Sync System Templates
               </Button>
               <Button onClick={() => setIsNewDialogOpen(true)} className="h-12 px-8 font-black uppercase shadow-xl">
-                <Plus className="mr-2 h-5 w-5" /> New Design
+                <Plus className="mr-2 h-5 w-5" /> Create Design
               </Button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {isLoading ? (
-              <div className="col-span-full py-20 text-center"><Loader2 className="animate-spin h-10 w-10 mx-auto text-primary" /></div>
-            ) : templates?.map(tpl => (
-              <Card key={tpl.id} className="group hover:border-primary transition-all overflow-hidden border-none shadow-lg">
-                <div className="bg-slate-900 aspect-[3/4] p-4 relative flex items-center justify-center">
-                  <div className="bg-white shadow-2xl w-full h-full rounded p-4 flex flex-col gap-2 overflow-hidden scale-90 opacity-80 group-hover:opacity-100 transition-all">
-                    <div className="h-4 w-1/2 bg-slate-100 rounded" />
-                    <div className="h-2 w-full bg-slate-50 rounded" />
-                    <div className="h-2 w-full bg-slate-50 rounded" />
-                  </div>
-                  <div className="absolute inset-0 bg-primary/90 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 p-6">
-                    <Button variant="secondary" className="w-full font-black uppercase text-[10px]" onClick={() => { setCurrentTemplate(tpl); setIsEditorOpen(true); }}>
-                      Edit Template
-                    </Button>
-                    <div className="flex gap-2 w-full">
-                      <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1" onClick={() => handleDuplicateTemplate(tpl)}>
-                        <Copy className="h-4 w-4" />
+          <Tabs value={activeCategory} onValueChange={setActiveCategory} className="w-full">
+            <TabsList className="bg-slate-100 p-1 rounded-xl mb-6">
+              {["All", "Job Cards", "Labels", "Documents"].map(cat => (
+                <TabsTrigger key={cat} value={cat} className="px-8 font-bold text-xs uppercase tracking-widest">{cat}</TabsTrigger>
+              ))}
+            </TabsList>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {isLoading ? (
+                <div className="col-span-full py-20 text-center"><Loader2 className="animate-spin h-10 w-10 mx-auto text-primary" /></div>
+              ) : filteredTemplates.map(tpl => (
+                <Card key={tpl.id} className="group hover:border-primary transition-all overflow-hidden border-none shadow-lg bg-white relative">
+                  {tpl.isSystemTemplate && (
+                    <div className="absolute top-2 left-2 z-20">
+                      <Badge className="bg-slate-900 text-white border-none text-[8px] font-black uppercase py-0.5 px-2">SYSTEM DEFAULT</Badge>
+                    </div>
+                  )}
+                  <div className="bg-slate-100 aspect-[3/4] p-4 relative flex items-center justify-center overflow-hidden">
+                    <div className="bg-white shadow-2xl w-full h-full rounded p-4 flex flex-col gap-2 overflow-hidden scale-90 opacity-80 group-hover:opacity-100 transition-all">
+                      <div className="h-4 w-1/2 bg-slate-100 rounded" />
+                      <div className="h-2 w-full bg-slate-50 rounded" />
+                      <div className="h-2 w-full bg-slate-50 rounded" />
+                      <div className="mt-auto h-10 w-full border-2 border-dashed border-slate-50 rounded flex items-center justify-center text-[8px] font-bold text-slate-200 uppercase">Preview Area</div>
+                    </div>
+                    <div className="absolute inset-0 bg-primary/90 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 p-6">
+                      <Button 
+                        variant="secondary" 
+                        className="w-full font-black uppercase text-[10px] tracking-widest" 
+                        onClick={() => { setCurrentTemplate(tpl); setIsEditorOpen(true); }}
+                      >
+                        {tpl.isSystemTemplate ? <><Eye className="h-3 w-3 mr-2" /> Inspect Template</> : <><Paintbrush className="h-3 w-3 mr-2" /> Edit Layout</>}
                       </Button>
-                      <Button variant="destructive" size="icon" className="flex-1" onClick={() => handleDeleteTemplate(tpl.id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-2 w-full">
+                        <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1" onClick={() => handleDuplicateTemplate(tpl)}>
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        {!tpl.isSystemTemplate && (
+                          <Button variant="destructive" size="icon" className="flex-1" onClick={() => handleDeleteTemplate(tpl.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <CardHeader className="p-4 bg-white border-t">
-                  <div className="flex justify-between items-start">
-                    <div className="truncate flex-1">
-                      <CardTitle className="text-xs font-black uppercase truncate">{tpl.name}</CardTitle>
-                      <CardDescription className="text-[9px] uppercase font-bold text-primary">{tpl.documentType}</CardDescription>
+                  <CardHeader className="p-4 bg-white border-t">
+                    <div className="flex justify-between items-start">
+                      <div className="truncate flex-1">
+                        <CardTitle className="text-xs font-black uppercase truncate">{tpl.name}</CardTitle>
+                        <CardDescription className="text-[9px] uppercase font-bold text-primary">{tpl.documentType}</CardDescription>
+                      </div>
                     </div>
-                  </div>
-                </CardHeader>
-              </Card>
-            ))}
-          </div>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          </Tabs>
         </>
       ) : (
         /* --- THE STUDIO EDITOR --- */
@@ -491,16 +571,25 @@ export default function PrintTemplateStudio() {
               </Button>
               <Separator orientation="vertical" className="h-6" />
               <div>
-                <h3 className="text-sm font-black uppercase tracking-tight leading-none">{currentTemplate?.name}</h3>
+                <h3 className="text-sm font-black uppercase tracking-tight leading-none">
+                  {currentTemplate?.name}
+                  {currentTemplate?.isSystemTemplate && <Badge variant="secondary" className="ml-2 h-4 text-[8px] border-none font-black bg-slate-100">LOCKED</Badge>}
+                </h3>
                 <p className="text-[10px] text-muted-foreground font-bold tracking-widest">{currentTemplate?.documentType} • {currentTemplate?.paperWidth}x{currentTemplate?.paperHeight}mm</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => window.print()} className="font-bold"><Printer className="h-4 w-4 mr-2" /> Preview Print</Button>
-              <Button onClick={handleSaveTemplate} disabled={isSaving} className="font-black h-10 px-8 bg-primary shadow-lg">
-                {isSaving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                Save Changes
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => window.print()} className="font-bold"><Printer className="h-4 w-4 mr-2" /> Test Print</Button>
+              {!currentTemplate?.isSystemTemplate ? (
+                <Button onClick={handleSaveTemplate} disabled={isSaving} className="font-black h-10 px-8 bg-primary shadow-lg">
+                  {isSaving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                  Save Changes
+                </Button>
+              ) : (
+                <Button onClick={() => handleDuplicateTemplate(currentTemplate)} className="font-black h-10 px-8 bg-slate-900 text-white shadow-lg">
+                  <Copy className="h-4 w-4 mr-2" /> Duplicate to Edit
+                </Button>
+              )}
             </div>
           </div>
 
@@ -509,31 +598,39 @@ export default function PrintTemplateStudio() {
             <div className="w-72 border-r flex flex-col overflow-y-auto bg-slate-50 shrink-0 print:hidden">
               <div className="p-6 space-y-10">
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary">Standard Elements</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary">Core Components</Label>
                   <div className="grid grid-cols-2 gap-2">
                     <ElementTool icon={Type} label="Text" onClick={() => addElement('text')} />
-                    <ElementTool icon={Type} label="Headline" onClick={() => addElement('title')} />
+                    <ElementTool icon={Type} label="Title" onClick={() => addElement('title')} />
                     <ElementTool icon={ImageIcon} label="Image" onClick={() => addElement('image')} />
                     <ElementTool icon={CircleIcon} label="Circle" onClick={() => addElement('circle')} />
                     <ElementTool icon={LayoutGrid} label="Box" onClick={() => addElement('rectangle')} />
                     <ElementTool icon={Split} label="Line" onClick={() => addElement('line')} />
                     <ElementTool icon={Hash} label="Barcode" onClick={() => addElement('barcode')} />
                     <ElementTool icon={QrCode} label="QR Code" onClick={() => addElement('qr')} />
+                    <ElementTool icon={TableIcon} label="Data Table" onClick={() => addElement('table', 'SLIT_ROLLS')} />
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary">ERP Dynamic Fields</Label>
-                  <div className="space-y-1 bg-white rounded-xl p-2 border shadow-inner">
-                    {CRM_PLACEHOLDERS.map(p => (
-                      <button 
-                        key={p.key}
-                        onClick={() => addElement('field', p.key)}
-                        className="w-full flex items-center gap-3 p-2.5 rounded-lg hover:bg-primary/10 transition-all text-left group"
-                      >
-                        <p.icon className="h-3.5 w-3.5 text-slate-400 group-hover:text-primary" />
-                        <span className="text-[11px] font-bold uppercase truncate text-slate-600 group-hover:text-primary">{p.label}</span>
-                      </button>
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary">ERP Field Directory</Label>
+                  <div className="bg-white rounded-2xl border shadow-sm divide-y overflow-hidden">
+                    {Object.entries(PLACEHOLDERS).map(([group, fields]) => (
+                      <div key={group} className="p-2">
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-2 mb-1">{group}</p>
+                        <div className="space-y-0.5">
+                          {fields.map(p => (
+                            <button 
+                              key={p.key}
+                              onClick={() => addElement('field', p.key)}
+                              className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-primary/5 transition-all text-left group"
+                            >
+                              <p.icon className="h-3 w-3 text-slate-300 group-hover:text-primary" />
+                              <span className="text-[10px] font-black uppercase truncate text-slate-600 group-hover:text-primary">{p.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -656,77 +753,55 @@ export default function PrintTemplateStudio() {
                 <div className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-300">
                   <div className="flex justify-between items-center bg-slate-50 -m-6 p-6 mb-4 border-b">
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
-                      <Settings2 className="h-4 w-4" /> Element Config
+                      <Settings2 className="h-4 w-4" /> Property Panel
                     </h4>
-                    <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10" onClick={() => deleteElement(selectedElement.id)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {!currentTemplate?.isSystemTemplate && (
+                      <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10" onClick={() => deleteElement(selectedElement.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
 
                   <div className="space-y-6">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Geometry</Label>
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Dimension</Label>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">X Pos</Label><Input type="number" value={selectedElement.x} onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Y Pos</Label><Input type="number" value={selectedElement.y} onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Width</Label><Input type="number" value={selectedElement.width} onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Height</Label><Input type="number" value={selectedElement.height} onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" /></div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center"><Label className="text-[9px] uppercase font-bold">Rotation</Label><span className="text-[10px] font-black">{selectedElement.rotate}°</span></div>
-                      <Slider value={[selectedElement.rotate]} min={0} max={360} step={1} onValueChange={(v) => updateElement(selectedElement.id, { rotate: v[0] })} />
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">X</Label><Input type="number" value={selectedElement.x} onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Y</Label><Input type="number" value={selectedElement.y} onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">W</Label><Input type="number" value={selectedElement.width} onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">H</Label><Input type="number" value={selectedElement.height} onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
                     </div>
                   </div>
 
                   {/* APPEARANCE SECTION */}
                   <div className="space-y-6">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Appearance</Label>
-                    {['rectangle', 'circle', 'text', 'title', 'field'].includes(selectedElement.type) && (
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Style</Label>
+                    {['rectangle', 'circle', 'text', 'title', 'field', 'table'].includes(selectedElement.type) && (
                       <div className="space-y-1.5">
-                        <Label className="text-[9px] uppercase font-bold">Background / Fill</Label>
+                        <Label className="text-[9px] uppercase font-bold">Background</Label>
                         <div className="flex gap-2">
-                          <Input type="color" value={selectedElement.style.backgroundColor === 'transparent' ? '#ffffff' : selectedElement.style.backgroundColor} onChange={e => updateElementStyle(selectedElement.id, { backgroundColor: e.target.value })} className="h-9 w-12 p-1 rounded-lg" />
-                          <Button variant="outline" size="sm" className="h-9 text-[9px] uppercase" onClick={() => updateElementStyle(selectedElement.id, { backgroundColor: 'transparent' })}>Transparent</Button>
+                          <Input type="color" value={selectedElement.style.backgroundColor === 'transparent' ? '#ffffff' : selectedElement.style.backgroundColor} onChange={e => updateElementStyle(selectedElement.id, { backgroundColor: e.target.value })} className="h-9 w-12 p-1 rounded-lg" disabled={currentTemplate?.isSystemTemplate} />
+                          <Button variant="outline" size="sm" className="h-9 text-[9px] uppercase font-black" onClick={() => updateElementStyle(selectedElement.id, { backgroundColor: 'transparent' })} disabled={currentTemplate?.isSystemTemplate}>Transparent</Button>
                         </div>
                       </div>
                     )}
-                    {['rectangle', 'circle', 'line'].includes(selectedElement.type) && (
-                      <>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Border Width</Label><Input type="number" value={selectedElement.style.borderWidth} onChange={e => updateElementStyle(selectedElement.id, { borderWidth: Number(e.target.value) })} className="h-9 text-xs" /></div>
-                          <div className="space-y-1.5">
-                            <Label className="text-[9px] uppercase font-bold">Border Color</Label>
-                            <Input type="color" value={selectedElement.style.borderColor} onChange={e => updateElementStyle(selectedElement.id, { borderColor: e.target.value })} className="h-9 w-full p-1 rounded-lg" />
-                          </div>
-                        </div>
-                        {selectedElement.type === 'rectangle' && (
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                              <Label className="text-[9px] uppercase font-bold">Corner Rounding</Label>
-                              <span className="text-[10px] font-black">{selectedElement.style.borderRadius || 0}px</span>
-                            </div>
-                            <Slider value={[selectedElement.style.borderRadius || 0]} min={0} max={100} step={1} onValueChange={(v) => updateElementStyle(selectedElement.id, { borderRadius: v[0] })} />
-                          </div>
-                        )}
-                      </>
-                    )}
                     <div className="space-y-3">
                       <Label className="text-[9px] uppercase font-bold">Opacity</Label>
-                      <Slider value={[(selectedElement.style.opacity || 1) * 100]} min={0} max={100} step={1} onValueChange={(v) => updateElementStyle(selectedElement.id, { opacity: v[0] / 100 })} />
+                      <Slider value={[(selectedElement.style.opacity || 1) * 100]} min={0} max={100} step={1} onValueChange={(v) => updateElementStyle(selectedElement.id, { opacity: v[0] / 100 })} disabled={currentTemplate?.isSystemTemplate} />
                     </div>
                   </div>
 
-                  {(['text', 'title', 'field'].includes(selectedElement.type)) && (
+                  {(['text', 'title', 'field', 'table'].includes(selectedElement.type)) && (
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Typography</Label>
-                      {selectedElement.type !== 'field' && (
+                      {selectedElement.type !== 'field' && selectedElement.type !== 'table' && (
                         <div className="space-y-1.5">
-                          <Label className="text-[9px] uppercase font-bold">Content</Label>
-                          <Input value={selectedElement.content} onChange={e => updateElement(selectedElement.id, { content: e.target.value })} className="h-10 text-xs font-bold" />
+                          <Label className="text-[9px] uppercase font-bold">Text Content</Label>
+                          <Input value={selectedElement.content} onChange={e => updateElement(selectedElement.id, { content: e.target.value })} className="h-10 text-xs font-bold" disabled={currentTemplate?.isSystemTemplate} />
                         </div>
                       )}
                       <div className="space-y-1.5">
                         <Label className="text-[9px] uppercase font-bold">Font Family</Label>
-                        <Select value={selectedElement.style.fontFamily} onValueChange={v => updateElementStyle(selectedElement.id, { fontFamily: v })}>
+                        <Select value={selectedElement.style.fontFamily} onValueChange={v => updateElementStyle(selectedElement.id, { fontFamily: v })} disabled={currentTemplate?.isSystemTemplate}>
                           <SelectTrigger className="h-10 text-xs font-black"><SelectValue /></SelectTrigger>
                           <SelectContent className="z-[200]">
                             {FONT_FAMILIES.map(f => <SelectItem key={f.id} value={f.id} style={{ fontFamily: f.value }}>{f.name}</SelectItem>)}
@@ -734,49 +809,22 @@ export default function PrintTemplateStudio() {
                         </Select>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Font Size</Label><Input type="number" value={selectedElement.style.fontSize} onChange={e => updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-9 text-xs" /></div>
+                        <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold">Size</Label><Input type="number" value={selectedElement.style.fontSize} onChange={e => updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-9 text-xs" disabled={currentTemplate?.isSystemTemplate} /></div>
                         <div className="space-y-1.5">
                           <Label className="text-[9px] uppercase font-bold">Color</Label>
-                          <Input type="color" value={selectedElement.style.color} onChange={e => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 w-full p-1" />
+                          <Input type="color" value={selectedElement.style.color} onChange={e => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 w-full p-1" disabled={currentTemplate?.isSystemTemplate} />
                         </div>
-                      </div>
-                      <div className="flex gap-1 bg-slate-50 p-1 rounded-lg border">
-                        <Button variant={selectedElement.style.textAlign === 'left' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'left' })}><AlignLeft className="h-4 w-4" /></Button>
-                        <Button variant={selectedElement.style.textAlign === 'center' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'center' })}><AlignCenter className="h-4 w-4" /></Button>
-                        <Button variant={selectedElement.style.textAlign === 'right' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'right' })}><AlignRight className="h-4 w-4" /></Button>
                       </div>
                     </div>
                   )}
 
-                  {selectedElement.type === 'image' && (
+                  {selectedElement.type === 'table' && (
                     <div className="space-y-6">
-                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Media</Label>
-                      <div className="space-y-4">
-                        <div className="p-8 border-2 border-dashed rounded-xl text-center bg-slate-50 hover:bg-slate-100 relative group">
-                          <Upload className="h-8 w-8 mx-auto text-slate-300 group-hover:text-primary" />
-                          <p className="text-[10px] font-bold uppercase text-slate-400 mt-2">Local Upload</p>
-                          <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e)} />
-                        </div>
-                        {selectedElement.content && (
-                          <Button variant="outline" className="w-full text-destructive" onClick={() => updateElement(selectedElement.id, { content: "" })}>
-                            <Eraser className="h-4 w-4 mr-2" /> Remove Image
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {(['barcode', 'qr'].includes(selectedElement.type)) && (
-                    <div className="space-y-6">
-                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Data Mapping</Label>
-                      <div className="space-y-1.5">
-                        <Label className="text-[9px] uppercase font-bold">Source ERP Field</Label>
-                        <Select value={selectedElement.placeholder} onValueChange={v => updateElement(selectedElement.id, { placeholder: v })}>
-                          <SelectTrigger className="h-10 text-xs font-black"><SelectValue /></SelectTrigger>
-                          <SelectContent className="z-[200]">
-                            {CRM_PLACEHOLDERS.map(p => <SelectItem key={p.key} value={p.key}>{p.label}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
+                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Data Source</Label>
+                      <div className="p-4 bg-primary/5 rounded-xl border border-primary/10">
+                        <p className="text-[9px] font-black text-primary uppercase">Repeating Loop:</p>
+                        <p className="text-xs font-bold mt-1">SLITTING OUTPUTS (SLIT_ROLLS)</p>
+                        <p className="text-[8px] font-medium text-slate-500 mt-2">This component will render a multi-column table for all rolls slitted in this job card.</p>
                       </div>
                     </div>
                   )}
@@ -791,14 +839,14 @@ export default function PrintTemplateStudio() {
                     <div className="space-y-6">
                       <div className="p-8 border-2 border-dashed rounded-2xl text-center bg-slate-50 hover:bg-primary/5 hover:border-primary/20 relative group transition-all">
                         <Upload className="h-10 w-10 mx-auto text-slate-300 group-hover:text-primary mb-2" />
-                        <p className="text-[10px] font-black uppercase text-slate-400 group-hover:text-primary">Upload Form/Logo Background</p>
-                        <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, true)} />
+                        <p className="text-[10px] font-black uppercase text-slate-400 group-hover:text-primary">Upload Form Overlay</p>
+                        <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, true)} disabled={currentTemplate?.isSystemTemplate} />
                       </div>
 
                       {currentTemplate?.background?.image && (
                         <div className="space-y-6 animate-in fade-in">
                           <div className="space-y-2">
-                            <Label className="text-[10px] font-black uppercase opacity-50">Background Visibility</Label>
+                            <Label className="text-[10px] font-black uppercase opacity-50">Transparency</Label>
                             <Slider 
                               value={[(currentTemplate.background.opacity || 1) * 100]} 
                               min={0} max={100} step={1} 
@@ -806,45 +854,8 @@ export default function PrintTemplateStudio() {
                                 ...currentTemplate,
                                 background: { ...currentTemplate.background!, opacity: v[0] / 100 }
                               })} 
+                              disabled={currentTemplate?.isSystemTemplate}
                             />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label className="text-[10px] font-black uppercase opacity-50">Image Display Mode</Label>
-                            <div className="grid grid-cols-3 gap-2">
-                              {['fit', 'stretch', 'center'].map(mode => (
-                                <Button 
-                                  key={mode} 
-                                  variant={currentTemplate.background?.mode === mode ? 'secondary' : 'outline'}
-                                  size="sm"
-                                  className="text-[9px] font-black uppercase h-8"
-                                  onClick={() => setCurrentTemplate({
-                                    ...currentTemplate,
-                                    background: { ...currentTemplate.background!, mode: mode as any }
-                                  })}
-                                >
-                                  {mode}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                            <div className="flex items-center gap-2">
-                              <Lock className="h-3 w-3 text-slate-400" />
-                              <span className="text-[10px] font-black uppercase text-slate-500">Layer Locked</span>
-                            </div>
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              className="text-destructive h-7 text-[9px] font-black uppercase"
-                              onClick={() => setCurrentTemplate({
-                                ...currentTemplate,
-                                background: { ...currentTemplate.background!, image: "" }
-                              })}
-                            >
-                              Remove
-                            </Button>
                           </div>
                         </div>
                       )}
@@ -892,9 +903,6 @@ export default function PrintTemplateStudio() {
               </div>
             </Button>
           </div>
-          <DialogFooter className="sm:justify-center mt-4">
-            <Button variant="ghost" onClick={() => { setIsDropDialogOpen(false); setDroppedImageData(null); }} className="text-[10px] font-black uppercase">Cancel</Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -910,12 +918,13 @@ export default function PrintTemplateStudio() {
                 <Input name="name" placeholder="e.g. Modern Label v1" required className="h-11 rounded-xl border-2 font-bold" />
               </div>
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase opacity-50">Document Type</Label>
+                <Label className="text-[10px] font-black uppercase opacity-50">Category</Label>
                 <Select name="documentType" required>
                   <SelectTrigger className="h-11 rounded-xl border-2 font-bold"><SelectValue placeholder="Select Category" /></SelectTrigger>
                   <SelectContent className="z-[200]">
                     <SelectItem value="Invoice">Tax Invoice</SelectItem>
-                    <SelectItem value="Label">Thermal Roll Label</SelectItem>
+                    <SelectItem value="Job Card">Technical Job Card</SelectItem>
+                    <SelectItem value="Label">Industrial Label</SelectItem>
                     <SelectItem value="Challan">Delivery Challan</SelectItem>
                     <SelectItem value="PO">Purchase Order</SelectItem>
                   </SelectContent>
@@ -940,67 +949,12 @@ export default function PrintTemplateStudio() {
 
       <style jsx global>{`
         @media print {
-          /* 1. Page Setup */
-          @page {
-            margin: 0;
-            size: auto;
-          }
-          
-          /* 2. Global Print Reset - Force Natural Flow */
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            height: auto !important;
-            background: white !important;
-            overflow: visible !important;
-          }
-
-          /* Hide absolutely everything inside body by default to ensure no bleed-through */
-          body * {
-            visibility: hidden !important;
-          }
-
-          /* 3. Specifically reveal the canvas and all its elements */
-          #studio-canvas-print,
-          #studio-canvas-print * {
-            visibility: visible !important;
-          }
-
-          /* 4. The Core Fix: Top-Level Projection */
-          /* We project the artboard to the top-left using fixed positioning */
-          /* and neutralize all interactive transforms/zooms */
-          #studio-canvas-print {
-            position: fixed !important;
-            left: 0 !important;
-            top: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            transform: none !important; /* CRITICAL: Must be 1:1 scale for printer */
-            transform-origin: top left !important;
-            border: none !important;
-            box-shadow: none !important;
-            background: white !important;
-            display: block !important;
-            z-index: 2147483647 !important; /* Absolute top */
-          }
-
-          /* 5. Industrial Color Correction */
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          /* 6. Explicitly kill UI helpers that might have inherited visibility */
-          .guidelines-grid,
-          .resize-handle,
-          .z-[70],
-          .ring-2,
-          .print\:hidden,
-          button,
-          .fixed.bottom-10 {
-            display: none !important;
-            visibility: hidden !important;
-          }
+          @page { margin: 0; size: auto; }
+          html, body { margin: 0 !important; padding: 0 !important; height: auto !important; background: white !important; overflow: visible !important; }
+          body * { visibility: hidden !important; }
+          #studio-canvas-print, #studio-canvas-print * { visibility: visible !important; }
+          #studio-canvas-print { position: fixed !important; left: 0 !important; top: 0 !important; margin: 0 !important; padding: 0 !important; transform: none !important; transform-origin: top left !important; border: none !important; box-shadow: none !important; background: white !important; display: block !important; z-index: 2147483647 !important; }
+          .guidelines-grid, .resize-handle, .print\:hidden, button, .fixed.bottom-10 { display: none !important; visibility: hidden !important; }
         }
       `}</style>
     </div>
@@ -1079,13 +1033,12 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
 
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
 
-  const replacePlaceholders = (text: string) => {
-    if (!text) return "";
-    let result = text;
-    CRM_PLACEHOLDERS.forEach(p => {
-      result = result.replace(new RegExp(p.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), p.preview);
+  const getPreviewData = () => {
+    const data: Record<string, string> = {};
+    Object.values(PLACEHOLDERS).flat().forEach(p => {
+      data[p.key.replace(/[{}]/g, '')] = p.preview;
     });
-    return result;
+    return data;
   };
 
   const renderContent = () => {
@@ -1102,36 +1055,53 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       overflow: 'hidden'
     };
 
+    const textStyle = { 
+      fontSize: `${element.style.fontSize}px`, 
+      fontFamily: getFontFamilyValue(element.style.fontFamily), 
+      fontWeight: element.style.fontWeight, 
+      color: element.style.color, 
+      width: '100%' 
+    };
+
     switch (element.type) {
       case 'text': 
       case 'title':
         return (
           <div style={{ ...commonStyle, textAlign: element.style.textAlign, padding: '4px' }}>
-            <span style={{ fontSize: `${element.style.fontSize}px`, fontFamily: getFontFamilyValue(element.style.fontFamily), fontWeight: element.style.fontWeight, color: element.style.color, width: '100%' }}>
-              {replacePlaceholders(element.content || "")}
-            </span>
+            <span style={textStyle}>{element.content}</span>
           </div>
         );
       case 'field': 
+        const previewVal = Object.values(PLACEHOLDERS).flat().find(p => p.key === element.placeholder)?.preview || "VALUE";
         return (
           <div style={{ ...commonStyle, textAlign: element.style.textAlign, padding: '4px' }}>
-            <span style={{ fontSize: `${element.style.fontSize}px`, fontFamily: getFontFamilyValue(element.style.fontFamily), fontWeight: element.style.fontWeight, color: element.style.color, width: '100%' }}>
-              {replacePlaceholders(element.placeholder || "")}
-            </span>
+            <span style={textStyle}>{previewVal}</span>
+          </div>
+        );
+      case 'table':
+        return (
+          <div style={{ ...commonStyle, flexDirection: 'column', padding: 0 }}>
+            <div className="w-full bg-slate-900 text-white p-2 text-[10px] font-black uppercase flex justify-between">
+              <span>ROLL ID</span><span>WIDTH</span><span>LENGTH</span><span>DEST</span>
+            </div>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="w-full border-b p-2 text-[9px] font-bold flex justify-between uppercase opacity-50">
+                <span>T-1001-{ALPHABET[i]}</span><span>250MM</span><span>2000M</span><span>JOB</span>
+              </div>
+            ))}
           </div>
         );
       case 'barcode': 
         return (
           <div style={commonStyle}>
             <div style={{ transform: `scale(${Math.min(1, element.width / 150)})`, transformOrigin: 'center' }}>
-              <Barcode value={replacePlaceholders(element.placeholder || "SAMPLE")} height={element.height - 20} width={1.5} fontSize={10} />
+              <Barcode value="PREVIEW" height={element.height - 20} width={1.5} fontSize={10} />
             </div>
           </div>
         );
       case 'qr': 
-        return <div style={commonStyle}><QRCodeSVG value={replacePlaceholders(element.placeholder || "SAMPLE")} size={Math.min(element.width, element.height) - 10} /></div>;
+        return <div style={commonStyle}><QRCodeSVG value="PREVIEW" size={Math.min(element.width, element.height) - 10} /></div>;
       case 'rectangle': 
-        return <div style={commonStyle} />;
       case 'circle': 
         return <div style={commonStyle} />;
       case 'line': 
@@ -1173,3 +1143,5 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
     </div>
   )
 }
+
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
