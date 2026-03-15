@@ -45,7 +45,10 @@ import {
   Grid3X3,
   Eraser,
   RefreshCw,
-  Paintbrush
+  Paintbrush,
+  Lock,
+  Wallpaper,
+  MousePointerSquareDashed
 } from "lucide-react"
 import { 
   Dialog, 
@@ -64,8 +67,8 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V4.0)
- * Fixed Placeholders, Local Image Uploads, and Advanced Geometric Properties.
+ * PRINT TEMPLATE STUDIO (V5.0)
+ * Integrated Background Layer System, Drag & Drop Support, and Enhanced Geometry.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field';
@@ -95,6 +98,13 @@ interface TemplateElement {
   };
 }
 
+interface BackgroundConfig {
+  image: string;
+  opacity: number;
+  mode: 'fit' | 'stretch' | 'center';
+  locked: boolean;
+}
+
 interface PrintTemplate {
   id: string;
   name: string;
@@ -103,6 +113,7 @@ interface PrintTemplate {
   paperHeight: number; 
   elements: TemplateElement[];
   isDefault: boolean;
+  background?: BackgroundConfig;
 }
 
 const PAPER_SIZES = [
@@ -145,6 +156,8 @@ export default function PrintTemplateStudio() {
   const [isMounted, setIsMounted] = useState(false)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [isNewDialogOpen, setIsNewDialogOpen] = useState(false)
+  const [isDropDialogOpen, setIsDropDialogOpen] = useState(false)
+  const [droppedImageData, setDroppedImageData] = useState<string | null>(null)
   
   const [currentTemplate, setCurrentTemplate] = useState<PrintTemplate | null>(null)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
@@ -183,7 +196,13 @@ export default function PrintTemplateStudio() {
       paperWidth: size.w,
       paperHeight: size.h,
       elements: [],
-      isDefault: false
+      isDefault: false,
+      background: {
+        image: "",
+        opacity: 1,
+        mode: 'fit',
+        locked: true
+      }
     }
 
     try {
@@ -284,7 +303,7 @@ export default function PrintTemplateStudio() {
     }
   }
 
-  const addElement = (type: ElementType, placeholder?: string) => {
+  const addElement = (type: ElementType, placeholder?: string, content?: string) => {
     if (!currentTemplate) return
     const id = crypto.randomUUID()
     const newEl: TemplateElement = {
@@ -295,7 +314,7 @@ export default function PrintTemplateStudio() {
       width: type === 'qr' ? 80 : (type === 'barcode' ? 200 : (type === 'rectangle' || type === 'circle' ? 100 : 150)),
       height: type === 'qr' ? 80 : (type === 'barcode' ? 60 : (type === 'rectangle' || type === 'circle' ? 100 : 30)),
       rotate: 0,
-      content: placeholder ? "" : (type === 'text' || type === 'title' ? "New Text Element" : ""),
+      content: content || (placeholder ? "" : (type === 'text' || type === 'title' ? "New Text Element" : "")),
       placeholder: placeholder || "",
       style: {
         fontSize: type === 'title' ? 24 : 14,
@@ -345,17 +364,62 @@ export default function PrintTemplateStudio() {
     setSelectedElementId(null)
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isBackground = false) => {
     const file = e.target.files?.[0]
-    if (!file || !selectedElement || selectedElement.type !== 'image') return
+    if (!file) return
 
     const reader = new FileReader()
     reader.onload = (evt) => {
       const base64 = evt.target?.result as string
-      updateElement(selectedElement.id, { content: base64 })
-      toast({ title: "Image Loaded" })
+      if (isBackground && currentTemplate) {
+        setCurrentTemplate({
+          ...currentTemplate,
+          background: {
+            ...currentTemplate.background!,
+            image: base64
+          }
+        })
+        toast({ title: "Background Set" })
+      } else if (selectedElement && selectedElement.type === 'image') {
+        updateElement(selectedElement.id, { content: base64 })
+        toast({ title: "Image Loaded" })
+      } else {
+        addElement('image', undefined, base64)
+      }
     }
     reader.readAsDataURL(file)
+  }
+
+  const handleCanvasDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files?.[0]
+    if (!file || !file.type.startsWith('image/')) return
+
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      const base64 = evt.target?.result as string
+      setDroppedImageData(base64)
+      setIsDropDialogOpen(true)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleDropChoice = (choice: 'background' | 'element') => {
+    if (!droppedImageData || !currentTemplate) return
+    if (choice === 'background') {
+      setCurrentTemplate({
+        ...currentTemplate,
+        background: {
+          ...currentTemplate.background!,
+          image: droppedImageData
+        }
+      })
+      toast({ title: "Background Layer Updated" })
+    } else {
+      addElement('image', undefined, droppedImageData)
+    }
+    setDroppedImageData(null)
+    setIsDropDialogOpen(false)
   }
 
   if (!isMounted) return null;
@@ -477,7 +541,9 @@ export default function PrintTemplateStudio() {
             </div>
 
             {/* CENTER CANVAS */}
-            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative industrial-scroll">
+            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative industrial-scroll" 
+                 onDragOver={(e) => e.preventDefault()}
+                 onDrop={handleCanvasDrop}>
               <div className="absolute top-0 left-0 right-0 h-8 bg-white border-b flex items-end px-20 z-10 shadow-sm">
                 {Array.from({ length: 20 }).map((_, i) => (
                   <div key={i} className="flex-1 border-l border-slate-300 h-2 text-[8px] text-slate-400 pl-1">{i * 50}</div>
@@ -490,7 +556,7 @@ export default function PrintTemplateStudio() {
               </div>
 
               <div 
-                className="bg-white shadow-2xl relative border border-slate-300"
+                className="bg-white shadow-2xl relative border border-slate-300 overflow-hidden"
                 style={{ 
                   width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, 
                   height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`,
@@ -499,9 +565,33 @@ export default function PrintTemplateStudio() {
                 }}
                 onMouseDown={() => setSelectedElementId(null)}
               >
+                {/* BACKGROUND LAYER */}
+                {currentTemplate?.background?.image && (
+                  <div 
+                    className="absolute inset-0 pointer-events-none z-0"
+                    style={{
+                      opacity: currentTemplate.background.opacity,
+                      display: 'flex',
+                      alignItems: currentTemplate.background.mode === 'center' ? 'center' : 'stretch',
+                      justifyContent: currentTemplate.background.mode === 'center' ? 'center' : 'stretch'
+                    }}
+                  >
+                    <img 
+                      src={currentTemplate.background.image} 
+                      className={cn(
+                        "pointer-events-none",
+                        currentTemplate.background.mode === 'stretch' && "w-full h-full object-cover",
+                        currentTemplate.background.mode === 'fit' && "w-full h-full object-contain",
+                        currentTemplate.background.mode === 'center' && "max-w-full max-h-full"
+                      )}
+                      alt="Background"
+                    />
+                  </div>
+                )}
+
                 {showGuidelines && (
                   <div 
-                    className="absolute inset-0 opacity-[0.05] pointer-events-none" 
+                    className="absolute inset-0 opacity-[0.05] pointer-events-none z-[5]" 
                     style={{ 
                       backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', 
                       backgroundSize: '20px 20px' 
@@ -509,20 +599,22 @@ export default function PrintTemplateStudio() {
                   />
                 )}
 
-                {currentTemplate?.elements.map(el => (
-                  <CanvasElement 
-                    key={el.id} 
-                    element={el} 
-                    isSelected={selectedElementId === el.id} 
-                    onSelect={(e) => { 
-                      e.stopPropagation(); 
-                      setSelectedElementId(el.id); 
-                    }}
-                    onMove={(x, y) => updateElement(el.id, { x, y })}
-                    onResize={(width, height) => updateElement(el.id, { width, height })}
-                    gridSnap={gridSnap}
-                  />
-                ))}
+                <div className="relative z-10 w-full h-full">
+                  {currentTemplate?.elements.map(el => (
+                    <CanvasElement 
+                      key={el.id} 
+                      element={el} 
+                      isSelected={selectedElementId === el.id} 
+                      onSelect={(e) => { 
+                        e.stopPropagation(); 
+                        setSelectedElementId(el.id); 
+                      }}
+                      onMove={(x, y) => updateElement(el.id, { x, y })}
+                      onResize={(width, height) => updateElement(el.id, { width, height })}
+                      gridSnap={gridSnap}
+                    />
+                  ))}
+                </div>
               </div>
 
               <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white p-2 rounded-2xl flex items-center gap-4 shadow-2xl border border-white/10 z-[150]">
@@ -659,7 +751,7 @@ export default function PrintTemplateStudio() {
                         <div className="p-8 border-2 border-dashed rounded-xl text-center bg-slate-50 hover:bg-slate-100 relative group">
                           <Upload className="h-8 w-8 mx-auto text-slate-300 group-hover:text-primary" />
                           <p className="text-[10px] font-bold uppercase text-slate-400 mt-2">Local Upload</p>
-                          <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageUpload} />
+                          <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e)} />
                         </div>
                         {selectedElement.content && (
                           <Button variant="outline" className="w-full text-destructive" onClick={() => updateElement(selectedElement.id, { content: "" })}>
@@ -686,17 +778,121 @@ export default function PrintTemplateStudio() {
                   )}
                 </div>
               ) : (
-                <div className="p-20 text-center text-muted-foreground flex flex-col items-center gap-6">
-                  <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center border-2 border-dashed">
-                    <MousePointer2 className="h-6 w-6 opacity-20" />
+                <div className="p-6 space-y-10 animate-in slide-in-from-right-4 duration-300">
+                  <div className="space-y-8">
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 border-b pb-4">
+                      <Wallpaper className="h-4 w-4" /> Canvas Background
+                    </h4>
+                    
+                    <div className="space-y-6">
+                      <div className="p-8 border-2 border-dashed rounded-2xl text-center bg-slate-50 hover:bg-primary/5 hover:border-primary/20 relative group transition-all">
+                        <Upload className="h-10 w-10 mx-auto text-slate-300 group-hover:text-primary mb-2" />
+                        <p className="text-[10px] font-black uppercase text-slate-400 group-hover:text-primary">Upload Form/Logo Background</p>
+                        <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => handleImageUpload(e, true)} />
+                      </div>
+
+                      {currentTemplate?.background?.image && (
+                        <div className="space-y-6 animate-in fade-in">
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase opacity-50">Background Visibility</Label>
+                            <Slider 
+                              value={[(currentTemplate.background.opacity || 1) * 100]} 
+                              min={0} max={100} step={1} 
+                              onValueChange={(v) => setCurrentTemplate({
+                                ...currentTemplate,
+                                background: { ...currentTemplate.background!, opacity: v[0] / 100 }
+                              })} 
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label className="text-[10px] font-black uppercase opacity-50">Image Display Mode</Label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {['fit', 'stretch', 'center'].map(mode => (
+                                <Button 
+                                  key={mode} 
+                                  variant={currentTemplate.background?.mode === mode ? 'secondary' : 'outline'}
+                                  size="sm"
+                                  className="text-[9px] font-black uppercase h-8"
+                                  onClick={() => setCurrentTemplate({
+                                    ...currentTemplate,
+                                    background: { ...currentTemplate.background!, mode: mode as any }
+                                  })}
+                                >
+                                  {mode}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                            <div className="flex items-center gap-2">
+                              <Lock className="h-3 w-3 text-slate-400" />
+                              <span className="text-[10px] font-black uppercase text-slate-500">Layer Locked</span>
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-destructive h-7 text-[9px] font-black uppercase"
+                              onClick={() => setCurrentTemplate({
+                                ...currentTemplate,
+                                background: { ...currentTemplate.background!, image: "" }
+                              })}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Select canvas element to configure</p>
+
+                  <Separator />
+
+                  <div className="p-10 text-center text-muted-foreground flex flex-col items-center gap-6 bg-slate-50/50 rounded-3xl border border-dashed">
+                    <div className="h-16 w-16 bg-white rounded-full flex items-center justify-center shadow-sm">
+                      <MousePointerSquareDashed className="h-6 w-6 opacity-20" />
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Select canvas element to configure specific properties</p>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
       )}
+
+      {/* DRAG AND DROP MODAL */}
+      <Dialog open={isDropDialogOpen} onOpenChange={setIsDropDialogOpen}>
+        <DialogContent className="sm:max-w-[400px] rounded-3xl p-8">
+          <DialogHeader className="items-center text-center">
+            <div className="h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+              <Wallpaper className="h-8 w-8 text-primary" />
+            </div>
+            <DialogTitle className="text-xl font-black uppercase">Image Dropped</DialogTitle>
+            <DialogDescription className="font-medium">How would you like to use this image in your design?</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-4 pt-6">
+            <Button onClick={() => handleDropChoice('background')} className="h-16 rounded-2xl flex items-center justify-start gap-4 px-6 font-black uppercase text-left">
+              <div className="bg-white/20 p-2 rounded-lg"><Wallpaper className="h-5 w-5" /></div>
+              <div>
+                <p className="text-xs">Set as Background</p>
+                <p className="text-[9px] opacity-60 font-normal normal-case">Fixed bottom layer for forms or templates.</p>
+              </div>
+            </Button>
+            <Button variant="outline" onClick={() => handleDropChoice('element')} className="h-16 rounded-2xl flex items-center justify-start gap-4 px-6 font-black uppercase text-left border-2">
+              <div className="bg-slate-100 p-2 rounded-lg"><ImageIcon className="h-5 w-5 text-primary" /></div>
+              <div>
+                <p className="text-xs">Insert as Element</p>
+                <p className="text-[9px] text-muted-foreground font-normal normal-case">Resizable draggable image on the canvas.</p>
+              </div>
+            </Button>
+          </div>
+          <DialogFooter className="sm:justify-center mt-4">
+            <Button variant="ghost" onClick={() => { setIsDropDialogOpen(false); setDroppedImageData(null); }} className="text-[10px] font-black uppercase">Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={isNewDialogOpen} onOpenChange={setIsNewDialogOpen}>
         <DialogContent className="sm:max-w-[425px] rounded-3xl">
