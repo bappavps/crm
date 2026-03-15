@@ -67,7 +67,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 
 /**
- * PRINT TEMPLATE STUDIO (V5.5)
+ * PRINT TEMPLATE STUDIO (V5.6)
  * Hardened Print Engine for Adobe PDF Precision and Absolute Coordinate Mapping.
  */
 
@@ -940,12 +940,13 @@ export default function PrintTemplateStudio() {
 
       <style jsx global>{`
         @media print {
-          /* 1. FORCE PAGE DEFAULTS */
+          /* 1. Page Setup */
           @page {
             margin: 0;
             size: auto;
           }
           
+          /* 2. Global Print Reset - Force Natural Flow */
           html, body {
             margin: 0 !important;
             padding: 0 !important;
@@ -954,86 +955,51 @@ export default function PrintTemplateStudio() {
             overflow: visible !important;
           }
 
-          /* 2. COMPLETELY HIDE ALL UI WRAPPERS */
-          header, nav, aside, footer, 
-          [data-sidebar="trigger"], 
-          [data-sidebar="sidebar"],
-          .sidebar-wrapper > :not(.print-studio-editor),
-          .print\:hidden {
-            display: none !important;
+          /* Hide absolutely everything inside body by default to ensure no bleed-through */
+          body * {
+            visibility: hidden !important;
           }
 
-          /* 3. ISOLATE THE STUDIO AND REMOVE FIXED CONSTRAINTS */
-          .print-studio-editor {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            background: white !important;
-            display: block !important;
-            overflow: visible !important;
-            z-index: 9999 !important;
-          }
-
-          /* 4. HIDE INTERNAL STUDIO TOOLBARS */
-          .print-studio-editor > div:first-child, /* Header toolbar */
-          .w-72, /* Left toolbar */
-          .w-80, /* Right config panel */
-          .fixed.bottom-10 { /* Zoom controls */
-            display: none !important;
-          }
-
-          /* 5. FLATTEN FLEX LAYOUT FOR STABLE COORDINATES */
-          .flex-1.flex.overflow-hidden.industrial-container {
-            display: block !important;
-            overflow: visible !important;
-          }
-
-          .studio-viewport {
-            display: block !important;
-            background: white !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            overflow: visible !important;
-            position: relative !important;
-            width: 100% !important;
-            height: auto !important;
-          }
-
-          /* Hide Rulers and helper overlays */
-          .studio-viewport > div:nth-child(1),
-          .studio-viewport > div:nth-child(2) {
-            display: none !important;
-          }
-
-          /* 6. THE CORE ARTBOARD FIX */
-          /* Reset transform so 1px = 1px coordinate mapping is true */
-          #studio-canvas-print {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            transform: none !important; 
-            transform-origin: top left !important;
-            margin: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            background: white !important;
-            display: block !important;
-            visibility: visible !important;
-          }
-
-          /* Force all absolute design elements to be visible */
+          /* 3. Specifically reveal the canvas and all its elements */
+          #studio-canvas-print,
           #studio-canvas-print * {
             visibility: visible !important;
           }
 
-          /* 7. CLEAN DESIGN AIDS */
+          /* 4. The Core Fix: Top-Level Projection */
+          /* We project the artboard to the top-left using fixed positioning */
+          /* and neutralize all interactive transforms/zooms */
+          #studio-canvas-print {
+            position: fixed !important;
+            left: 0 !important;
+            top: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            transform: none !important; /* CRITICAL: Must be 1:1 scale for printer */
+            transform-origin: top left !important;
+            border: none !important;
+            box-shadow: none !important;
+            background: white !important;
+            display: block !important;
+            z-index: 2147483647 !important; /* Absolute top */
+          }
+
+          /* 5. Industrial Color Correction */
+          * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
+          /* 6. Explicitly kill UI helpers that might have inherited visibility */
           .guidelines-grid,
           .resize-handle,
           .z-[70],
-          .ring-2 {
+          .ring-2,
+          .print\:hidden,
+          button,
+          .fixed.bottom-10 {
             display: none !important;
+            visibility: hidden !important;
           }
         }
       `}</style>
