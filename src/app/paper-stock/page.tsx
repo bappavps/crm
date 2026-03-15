@@ -1108,29 +1108,35 @@ export default function PaperStockPage() {
 
       <style jsx global>{`
         @media print {
-          body * { visibility: hidden !important; }
-          #print-area, #print-area *, #stock-report-print, #stock-report-print * { visibility: visible !important; }
+          /* 1. Hide every UI element by default */
+          body * { 
+            visibility: hidden !important; 
+          }
           
+          /* 2. Target specific print areas and their children */
+          #print-area, #print-area *, 
+          #stock-report-print, #stock-report-print * { 
+            visibility: visible !important; 
+          }
+          
+          /* 3. Global Print Sanity */
+          @page { 
+            size: A4 portrait; 
+            margin: 10mm !important; 
+          }
+          
+          body { 
+            background: white !important; 
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+
+          /* 4. Labels Layout (Small Thermal Labels) */
           #print-area {
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            margin: 0 !important;
-            box-shadow: none !important;
-            background: white !important;
-            z-index: 9999 !important;
             width: 100% !important;
-            display: block !important;
-          }
-
-          #stock-report-print {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            margin: 0 !important;
-            width: 210mm !important;
-            box-shadow: none !important;
-            padding: 10mm !important;
             display: block !important;
           }
 
@@ -1141,8 +1147,48 @@ export default function PaperStockPage() {
             align-items: center;
             min-height: 100vh;
           }
-          
-          @page { margin: 0 !important; }
+
+          /* 5. Stock Report Layout (A4 Management Report) */
+          #stock-report-print {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 210mm !important;
+            display: block !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            box-shadow: none !important;
+          }
+
+          #stock-report-print table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important; /* Forces columns to stay aligned */
+          }
+
+          #stock-report-print thead {
+            display: table-header-group !important; /* Repeats header on every page */
+          }
+
+          #stock-report-print tr {
+            page-break-inside: avoid !important; /* Prevents rows from splitting */
+          }
+
+          #stock-report-print th, #stock-report-print td {
+            border: 1px solid #000 !important;
+            padding: 4px !important;
+            font-size: 8px !important;
+          }
+
+          /* Hide Dialog overlays and close buttons */
+          .no-print, 
+          [role="dialog"] button[aria-label="Close"],
+          .z-portal,
+          header,
+          aside {
+            display: none !important;
+          }
         }
       `}</style>
     </div>
