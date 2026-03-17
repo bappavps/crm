@@ -96,6 +96,7 @@ import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
 import { ColumnHeaderFilter } from "@/components/inventory/column-header-filter"
+import { useToast } from "@/hooks/use-toast"
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -135,6 +136,7 @@ interface SortConfig {
 }
 
 export default function PaperStockPage() {
+  const { toast } = useToast()
   const { user } = useUser()
   const router = useRouter()
   const firestore = useFirestore()
@@ -161,11 +163,9 @@ export default function PaperStockPage() {
   const [isCustomStatus, setIsCustomStatus] = useState(false)
   const [siteOrigin, setSiteOrigin] = useState("")
 
-  // Header Filters State
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
   const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
 
-  // Manual Job Card State
   const [manualParentRoll, setManualParentRoll] = useState("")
   const [manualChildRolls, setManualChildRolls] = useState<string[]>([])
   const [manualMachine, setManualMachine] = useState("")
@@ -190,7 +190,7 @@ export default function PaperStockPage() {
     if (isMounted) localStorage.setItem('paperStockVisibleColumns', JSON.stringify(visibleColumns))
   }, [visibleColumns, isMounted])
 
-  const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string; }>({ isOpen: false, type: 'SUCCESS', title: '' });
+  const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string; onConfirm?: () => void; }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
   const initialFilters = {
     search: "",
@@ -327,6 +327,13 @@ export default function PaperStockPage() {
     return list.length > 0 ? list.join(' | ') : "None";
   }, [filters, headerFilters]);
 
+  const reportRows = useMemo(() => {
+    if (selectedIds.size > 0) {
+      return rolls?.filter(r => selectedIds.has(r.id)) || [];
+    }
+    return filteredRows;
+  }, [rolls, filteredRows, selectedIds]);
+
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
     const itemMap = new Map();
@@ -350,6 +357,12 @@ export default function PaperStockPage() {
     return flattened;
   }, [filteredRows]);
 
+  const totalPages = Math.ceil(hierarchicalRows.length / rowsPerPage);
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * rowsPerPage;
+    return hierarchicalRows.slice(start, start + rowsPerPage);
+  }, [hierarchicalRows, currentPage, rowsPerPage]);
+
   const suggestions = useMemo(() => {
     if (!rolls) return { companies: [], types: [], gsms: [], lots: [], mfrRolls: [] };
     return {
@@ -360,12 +373,6 @@ export default function PaperStockPage() {
       mfrRolls: Array.from(new Set(rolls.map(r => String(r.companyRollNo || "").trim()).filter(Boolean))).sort(),
     };
   }, [rolls]);
-
-  const totalPages = Math.ceil(hierarchicalRows.length / rowsPerPage);
-  const paginatedRows = useMemo(() => {
-    const start = (currentPage - 1) * rowsPerPage;
-    return hierarchicalRows.slice(start, start + rowsPerPage);
-  }, [hierarchicalRows, currentPage, rowsPerPage]);
 
   const handleOpenDialog = (roll?: any) => {
     if (roll) {
@@ -411,6 +418,40 @@ export default function PaperStockPage() {
       if (editingRoll) { await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' }); }
       else { await setDoc(doc(firestore, 'paper_stock', rollId), { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' }); }
     } catch (error: any) { setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); } finally { setIsProcessing(false); }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0 || !firestore) return;
+    setModal({
+      isOpen: true,
+      type: 'CONFIRMATION',
+      title: `Delete ${selectedIds.size} Rolls?`,
+      description: `Are you sure you want to permanently remove these ${selectedIds.size} records? This action cannot be undone.`,
+      onConfirm: async () => {
+        setIsProcessing(true);
+        try {
+          const batch = writeBatch(firestore);
+          selectedIds.forEach(id => {
+            batch.delete(doc(firestore, 'paper_stock', id));
+          });
+          await batch.commit();
+          setSelectedIds(new Set());
+          setModal(p => ({ ...p, isOpen: false }));
+          toast({ title: "Bulk Delete Successful" });
+        } catch (err: any) {
+          setModal({ isOpen: true, type: 'ERROR', title: 'Deletion Failed', description: err.message });
+        } finally {
+          setIsProcessing(false);
+        }
+      }
+    });
+  };
+
+  const handleBulkPrint = () => {
+    const toPrint = rolls?.filter(r => selectedIds.has(r.id)) || [];
+    if (toPrint.length === 0) return;
+    setPrintingRolls(toPrint);
+    setIsPrintOpen(true);
   };
 
   const startScanner = () => {
@@ -505,14 +546,24 @@ export default function PaperStockPage() {
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-6"><h2 className="font-semibold text-sm uppercase tracking-wider flex items-center gap-3"><LayoutGrid className="h-5 w-5 text-primary" /> Master Grid</h2></div>
+          <div className="flex items-center gap-6">
+            <h2 className="font-semibold text-sm uppercase tracking-wider flex items-center gap-3"><LayoutGrid className="h-5 w-5 text-primary" /> Master Grid</h2>
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3 animate-in slide-in-from-left-4 duration-300">
+                <Separator orientation="vertical" className="h-6 bg-white/20" />
+                <Badge className="bg-primary text-white font-black text-[10px]">{selectedIds.size} SELECTED</Badge>
+                <Button variant="ghost" size="sm" className="h-8 px-3 text-rose-400 hover:text-white hover:bg-rose-600 font-bold uppercase text-[9px] tracking-widest rounded-lg" onClick={handleBulkDelete}><Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete Selected</Button>
+                <Button variant="ghost" size="sm" className="h-8 px-3 text-primary hover:text-white hover:bg-primary font-bold uppercase text-[9px] tracking-widest rounded-lg" onClick={handleBulkPrint}><Printer className="h-3.5 w-3.5 mr-1.5" /> Print Selected Labels</Button>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-3">
             <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl"><QrCode className="h-4 w-4 mr-2" /> Live Scanner</Button>
             <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}><Plus className="h-4 w-4 mr-2" /> Add Roll</Button>
           </div>
         </div>
 
-        <div className="w-full h-[calc(100vh-320px)] overflow-scroll relative border-t industrial-scroll">
+        <div className="w-full h-[calc(100vh-260px)] overflow-scroll relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
@@ -570,7 +621,7 @@ export default function PaperStockPage() {
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white shadow-sm" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm" onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}><Scissors className="h-4 w-4" /></Button>
@@ -609,17 +660,74 @@ export default function PaperStockPage() {
               </div>
               <div className="p-4 bg-slate-100 rounded-lg border text-center">
                 <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
-                <p className="text-xl font-black text-primary">{filteredRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
+                <p className="text-xl font-black text-primary">{reportRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
               </div>
               <div className="p-4 bg-slate-100 rounded-lg border text-center">
                 <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
-                <p className="text-xl font-black">{filteredRows.length}</p>
+                <p className="text-xl font-black">{reportRows.length}</p>
               </div>
             </div>
             <Table className="mt-10 border-2 border-black">
-              <TableHeader className="bg-slate-100"><TableRow className="border-b-2 border-black h-10"><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black">Roll No</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black">Company</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black">Type</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">Width</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">Length</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">SQM</TableHead><TableHead className="font-black text-black text-[9px] uppercase text-center">Status</TableHead></TableRow></TableHeader>
-              <TableBody>{filteredRows.slice(0, 100).map((r) => (<TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8"><TableCell className="font-bold border-r border-black/10 text-[10px]">{r.rollNo}</TableCell><TableCell className="border-r border-black/10 text-[9px]">{r.paperCompany}</TableCell><TableCell className="border-r border-black/10 text-[9px]">{r.paperType}</TableCell><TableCell className="border-r border-black/10 text-center text-[9px]">{r.widthMm}mm</TableCell><TableCell className="border-r border-black/10 text-center text-[9px]">{r.lengthMeters}m</TableCell><TableCell className="border-r border-black/10 text-center font-black text-[9px]">{r.sqm}</TableCell><TableCell className="text-center font-black text-[8px] uppercase">{r.status}</TableCell></TableRow>))}</TableBody>
+              <TableHeader className="bg-slate-100">
+                <TableRow className="border-b-2 border-black h-10">
+                  {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                    <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black px-2">
+                      {col.label}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reportRows.map((r) => (
+                  <TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8">
+                    {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                      <TableCell key={col.id} className={cn("border-r border-black/10 text-[9px] px-2 text-center", col.id === 'rollNo' && "font-bold text-[10px]")}>
+                        {r[col.id] || '-'}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
             </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
+        <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
+            <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
+            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
+          </div>
+          <div className="p-10 flex flex-col items-center gap-8 max-h-[60vh] overflow-y-auto industrial-scroll">
+            <div id="label-batch" className="space-y-10">
+              {printingRolls.map((roll) => (
+                <div key={roll.id} className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
+                  <div className="border-b-4 border-black pb-4 flex justify-between items-center">
+                    <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
+                    <span className="text-xl font-bold">REEL ID</span>
+                  </div>
+                  <div className="mt-6 flex justify-between gap-6">
+                    <div className="flex-1 space-y-4">
+                      <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{roll.rollNo}</p></div>
+                      <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll.paperType || "SUBSTRATE"}</p></div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.rollNo}` : roll.rollNo} size={120} /></div>
+                      <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
+                    </div>
+                  </div>
+                  <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
+                    <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll.widthMm} MM</span></div>
+                    <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll.lengthMeters} MTR</span></div>
+                  </div>
+                  <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
+                    <span>Status: {roll.status}</span>
+                    <span>System ID: {roll.id}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -627,7 +735,7 @@ export default function PaperStockPage() {
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-8 shrink-0">
-            <div className="flex justify-between items-start">
+            <div className="flex justify-between items-start mb-6">
               <div className="space-y-4">
                 <div className="space-y-1">
                   <DialogTitle className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
@@ -722,8 +830,22 @@ export default function PaperStockPage() {
       <style jsx global>{`
         @media print {
           body * { visibility: hidden !important; }
-          #print-area-rendered, #print-area-rendered * { visibility: visible !important; }
-          #print-area-rendered { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; background: white !important; }
+          #print-area-rendered, #print-area-rendered *, #print-area, #print-area *, #label-batch, #label-batch * { visibility: visible !important; }
+          #print-area, #label-batch {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: white !important;
+          }
+          .label-print-item {
+            page-break-after: always;
+            margin: 0 !important;
+            box-shadow: none !important;
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
+          }
           .no-print { display: none !important; }
         }
       `}</style>
