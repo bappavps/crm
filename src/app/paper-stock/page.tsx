@@ -42,14 +42,11 @@ import {
   CircleDollarSign,
   Maximize2,
   MessageSquare,
-  Camera,
   CalendarDays,
   Save,
   X,
   Settings2,
   FilterX,
-  FilePlus,
-  MoreHorizontal,
   RotateCcw,
   CheckCircle2,
   IdCard,
@@ -98,7 +95,6 @@ import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 import { Html5QrcodeScanner } from "html5-qrcode"
 import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
-import { TemplateRenderer } from "@/components/printing/template-renderer"
 import { ColumnHeaderFilter } from "@/components/inventory/column-header-filter"
 
 const STATUS_OPTIONS = [
@@ -165,6 +161,10 @@ export default function PaperStockPage() {
   const [isCustomStatus, setIsCustomStatus] = useState(false)
   const [siteOrigin, setSiteOrigin] = useState("")
 
+  // Header Filters State
+  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
+  const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
+
   // Manual Job Card State
   const [manualParentRoll, setManualParentRoll] = useState("")
   const [manualChildRolls, setManualChildRolls] = useState<string[]>([])
@@ -173,7 +173,6 @@ export default function PaperStockPage() {
   const [parentSearch, setParentSearch] = useState("")
 
   const defaultVisibleColumns = useMemo(() => COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {}), []);
-
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(defaultVisibleColumns)
 
   useEffect(() => { 
@@ -217,11 +216,6 @@ export default function PaperStockPage() {
     return query(collection(firestore, 'paper_stock'), limit(1000));
   }, [firestore]);
 
-  const templatesQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Label'));
-  }, [firestore]);
-
   const machinesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'machines'), where('status', '==', 'Active'));
@@ -233,7 +227,6 @@ export default function PaperStockPage() {
   }, [firestore]);
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
-  const { data: labelTemplates } = useCollection(templatesQuery);
   const { data: machines } = useCollection(machinesQuery);
   const { data: users } = useCollection(usersQuery);
 
@@ -254,27 +247,6 @@ export default function PaperStockPage() {
     return users.filter(u => u.roles?.includes('Operator') || u.roles?.includes('Admin'));
   }, [users]);
 
-  const selectedTemplate = useMemo(() => {
-    if (selectedTemplateId === "default") return null;
-    return labelTemplates?.find(t => t.id === selectedTemplateId);
-  }, [labelTemplates, selectedTemplateId]);
-
-  const getPrintDataMapping = (roll: any) => {
-    if (!roll) return {};
-    return {
-      roll_number: roll.rollNo,
-      paper_item: roll.paperType,
-      width: roll.widthMm,
-      length: roll.lengthMeters,
-      gsm: roll.gsm,
-      weight: roll.weightKg,
-      received_date: roll.receivedDate,
-      company_name: "SHREE LABEL CREATION",
-      customer_name: roll.jobName || "-",
-      date: new Date().toLocaleDateString()
-    };
-  };
-
   const calculatedSqm = useMemo(() => {
     const w = Number(formData.widthMm) || 0;
     const l = Number(formData.lengthMeters) || 0;
@@ -291,7 +263,6 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     let result = rolls.filter(row => {
-      // 1. Global Search
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const matchesGlobal = Object.entries(row).some(([key, val]) => {
@@ -301,7 +272,6 @@ export default function PaperStockPage() {
         if (!matchesGlobal) return false;
       }
       
-      // 2. Specific Advanced Filters
       if (filters.lotNoSearch && !String(row.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
       if (filters.rollNoSearch && !String(row.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
       if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(row.paperCompany || ""))) return false;
@@ -311,7 +281,6 @@ export default function PaperStockPage() {
       if (filters.receivedFrom && row.receivedDate < filters.receivedFrom) return false;
       if (filters.receivedTo && row.receivedDate > filters.receivedTo) return false;
 
-      // 3. Header Excel-Style Filters - Only if in advanced mode
       if (filterMode === 'advanced') {
         for (const [key, selected] of Object.entries(headerFilters)) {
           if (selected && selected.length > 0) {
@@ -341,21 +310,6 @@ export default function PaperStockPage() {
     return result;
   }, [rolls, filters, sortConfig, headerFilters, filterMode]);
 
-  const reportRows = useMemo(() => {
-    if (selectedIds.size > 0) {
-      return rolls?.filter(r => selectedIds.has(r.id)) || [];
-    }
-    return filteredRows;
-  }, [selectedIds, filteredRows, rolls]);
-
-  const reportTotals = useMemo(() => {
-    return reportRows.reduce((acc, r) => ({
-      rolls: acc.rolls + 1,
-      weight: acc.weight + (Number(r.weightKg) || 0),
-      sqm: acc.sqm + (Number(r.sqm) || 0)
-    }), { rolls: 0, weight: 0, sqm: 0 });
-  }, [reportRows]);
-
   const activeFiltersSummary = useMemo(() => {
     const list: string[] = [];
     if (filters.search) list.push(`Search: ${filters.search}`);
@@ -375,36 +329,23 @@ export default function PaperStockPage() {
 
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
-
     const itemMap = new Map();
-    filteredRows.forEach(item => {
-      itemMap.set(item.rollNo, { ...item, children: [] });
-    });
-
+    filteredRows.forEach(item => { itemMap.set(item.rollNo, { ...item, children: [] }); });
     const roots: any[] = [];
     filteredRows.forEach(item => {
       const parts = item.rollNo.split('-');
       if (parts.length > 1) {
         const parentId = parts.slice(0, -1).join('-');
-        if (itemMap.has(parentId)) {
-          itemMap.get(parentId).children.push(itemMap.get(item.rollNo));
-        } else {
-          roots.push(itemMap.get(item.rollNo));
-        }
-      } else {
-        roots.push(itemMap.get(item.rollNo));
-      }
+        if (itemMap.has(parentId)) { itemMap.get(parentId).children.push(itemMap.get(item.rollNo)); }
+        else { roots.push(itemMap.get(item.rollNo)); }
+      } else { roots.push(itemMap.get(item.rollNo)); }
     });
-
     const flattened: any[] = [];
     const traverse = (node: any, level: number, isLast: boolean) => {
       flattened.push({ ...node, level, isLast });
       const sortedChildren = node.children.sort((a: any, b: any) => a.rollNo.localeCompare(b.rollNo));
-      sortedChildren.forEach((child: any, idx: number) => {
-        traverse(child, level + 1, idx === sortedChildren.length - 1);
-      });
+      sortedChildren.forEach((child: any, idx: number) => { traverse(child, level + 1, idx === sortedChildren.length - 1); });
     };
-
     roots.forEach(root => traverse(root, 0, true));
     return flattened;
   }, [filteredRows]);
@@ -430,47 +371,25 @@ export default function PaperStockPage() {
     if (roll) {
       setEditingRoll(roll);
       setFormData({ 
-        rollNo: roll.rollNo || "", 
-        paperCompany: roll.paperCompany || "", 
-        paperType: roll.paperType || "", 
-        status: roll.status || "Main", 
-        widthMm: roll.widthMm || 0, 
-        lengthMeters: roll.lengthMeters || 0, 
-        sqm: roll.sqm || 0, 
-        gsm: roll.gsm || 0, 
-        weightKg: roll.weightKg || 0,
-        purchaseRate: roll.purchaseRate || 0, 
-        receivedDate: roll.receivedDate || "", 
-        dateOfUsed: roll.dateOfUsed || "", 
-        jobNo: roll.jobNo || "", 
-        jobSize: roll.jobSize || "", 
-        jobName: roll.jobName || "", 
-        lotNo: roll.lotNo || "", 
-        companyRollNo: roll.companyRollNo || "", 
-        remarks: roll.remarks || ""
+        rollNo: roll.rollNo || "", paperCompany: roll.paperCompany || "", paperType: roll.paperType || "", status: roll.status || "Main", 
+        widthMm: roll.widthMm || 0, lengthMeters: roll.lengthMeters || 0, sqm: roll.sqm || 0, gsm: roll.gsm || 0, weightKg: roll.weightKg || 0,
+        purchaseRate: roll.purchaseRate || 0, receivedDate: roll.receivedDate || "", dateOfUsed: roll.dateOfUsed || "", jobNo: roll.jobNo || "", 
+        jobSize: roll.jobSize || "", jobName: roll.jobName || "", lotNo: roll.lotNo || "", companyRollNo: roll.companyRollNo || "", remarks: roll.remarks || ""
       });
       setIsCustomStatus(!STATUS_OPTIONS.some(o => o.value === roll.status));
     } else {
       setEditingRoll(null);
       setIsCustomStatus(false);
-
       let suggestedRollNo = "T-1001";
       if (rolls && rolls.length > 0) {
-        const numericParts = rolls
-          .map(r => r.rollNo)
-          .filter(id => /^T-\d+$/.test(id))
-          .map(id => parseInt(id.split('-')[1]))
-          .filter(num => !isNaN(num));
-
+        const numericParts = rolls.map(r => r.rollNo).filter(id => /^T-\d+$/.test(id)).map(id => parseInt(id.split('-')[1])).filter(num => !isNaN(num));
         if (numericParts.length > 0) {
           const maxVal = Math.max(...numericParts);
           suggestedRollNo = `T-${maxVal + 1}`;
         }
       }
-
       setFormData({
-        rollNo: suggestedRollNo,
-        paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
+        rollNo: suggestedRollNo, paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
         gsm: 0, weightKg: 0, purchaseRate: 0, receivedDate: new Date().toISOString().split('T')[0],
         dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", companyRollNo: "", remarks: ""
       });
@@ -481,167 +400,64 @@ export default function PaperStockPage() {
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
-
     const rollId = formData.rollNo.trim();
-
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
-      setModal({ 
-        isOpen: true, 
-        type: 'ERROR', 
-        title: 'Duplicate Roll ID', 
-        description: `Roll Number "${rollId}" is already assigned to another record. Please use a unique ID.` 
-      });
+      setModal({ isOpen: true, type: 'ERROR', title: 'Duplicate Roll ID', description: `Roll Number "${rollId}" is already assigned.` });
       return;
     }
-
     setIsProcessing(true);
-    const finalData = { 
-      ...formData, 
-      sqm: calculatedSqm, 
-      updatedAt: serverTimestamp(), 
-      updatedById: user.uid 
-    };
-
+    const finalData = { ...formData, sqm: calculatedSqm, updatedAt: serverTimestamp(), updatedById: user.uid };
     try {
-      if (editingRoll) {
-        await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true });
-        setIsDialogOpen(false); 
-        setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' });
-      } else {
-        await setDoc(doc(firestore, 'paper_stock', rollId), { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid });
-        setIsDialogOpen(false); 
-        setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' });
-      }
-    } catch (error: any) { 
-      setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); 
-    } finally { 
-      setIsProcessing(false); 
-    }
+      if (editingRoll) { await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' }); }
+      else { await setDoc(doc(firestore, 'paper_stock', rollId), { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' }); }
+    } catch (error: any) { setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); } finally { setIsProcessing(false); }
   };
-
-  const handleBulkDelete = async () => {
-    if (!firestore || selectedIds.size === 0) return;
-    if (!confirm(`Permanently delete ${selectedIds.size} rolls?`)) return;
-    
-    setIsProcessing(true);
-    try {
-      const batch = writeBatch(firestore);
-      selectedIds.forEach(id => {
-        batch.delete(doc(firestore, 'paper_stock', id));
-      });
-      await batch.commit();
-      setSelectedIds(new Set());
-      setModal({ isOpen: true, type: 'SUCCESS', title: 'Batch Delete Complete' });
-    } catch (e: any) {
-      setModal({ isOpen: true, type: 'ERROR', title: 'Delete Failed', description: e.message });
-    } finally {
-      setIsProcessing(false);
-    }
-  }
-
-  const handleBulkPrint = () => {
-    if (selectedIds.size === 0) return;
-    const selectedRolls = rolls?.filter(r => selectedIds.has(r.id)) || [];
-    setPrintingRolls(selectedRolls);
-    setIsPrintOpen(true);
-  }
 
   const startScanner = () => {
     setIsScannerOpen(true);
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
       scanner.render((decodedText) => {
-        const rollId = decodedText;
-        const match = rolls?.find(r => r.rollNo === rollId);
-        if (match) {
-          setHighlightedId(match.id);
-          setViewingRoll(match);
-          setIsViewOpen(true);
-          scanner.clear();
-          setIsScannerOpen(false);
-        }
-      }, (error) => {});
+        const match = rolls?.find(r => r.rollNo === decodedText);
+        if (match) { setHighlightedId(match.id); setViewingRoll(match); setIsViewOpen(true); scanner.clear(); setIsScannerOpen(false); }
+      }, () => {});
     }, 500);
   };
 
   const handleCreateManualJobCard = async () => {
     if (!firestore || !user || !manualParentRoll || manualChildRolls.length === 0) return;
-    
     setIsProcessing(true);
     const jobId = `JJC-MANUAL-${Date.now().toString().slice(-6)}`;
-    const jobRef = doc(firestore, 'jumbo_job_cards', jobId);
-
     try {
-      await setDoc(jobRef, {
-        id: jobId,
-        job_card_no: jobId,
-        parent_roll: manualParentRoll,
-        child_rolls: manualChildRolls,
-        status: "PENDING",
-        createdAt: new Date().toISOString(),
-        createdById: user.uid,
-        createdByName: user.displayName || user.email,
-        type: "MANUAL",
-        machine: manualMachine || "MANUAL",
-        operator: manualOperator || user.displayName || user.email
+      await setDoc(doc(firestore, 'jumbo_job_cards', jobId), {
+        id: jobId, job_card_no: jobId, parent_roll: manualParentRoll, child_rolls: manualChildRolls, status: "PENDING",
+        createdAt: new Date().toISOString(), createdById: user.uid, type: "MANUAL", machine: manualMachine || "MANUAL", operator: manualOperator || user.displayName || user.email
       });
       setIsManualJobCardOpen(false);
-      toast({ title: "Manual Job Card Created", description: `Referenced ${manualChildRolls.length} output units.` });
+      toast({ title: "Manual Job Card Created" });
       router.push('/production/jobcards/jumbo-job');
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Error", description: e.message });
-    } finally {
-      setIsProcessing(false);
-    }
+    } catch (e: any) { toast({ variant: "destructive", title: "Error", description: e.message }); } finally { setIsProcessing(false); }
   }
 
   const SortableHeader = ({ label, field, className = "", stickLeft }: { label: string, field: string, className?: string, stickLeft?: string }) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
-
     return (
-      <TableHead 
-        className={cn(
-          "transition-colors border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30]", 
-          isActive && "bg-slate-200", 
-          stickLeft && "z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]",
-          className
-        )}
-        style={stickLeft ? { left: stickLeft } : {}}
-      >
+      <TableHead className={cn("transition-colors border-r border-b sticky top-0 bg-slate-100 p-0 h-10 z-[30]", isActive && "bg-slate-200", stickLeft && "z-[40] shadow-[2px_0_5px_rgba(0,0,0,0.1)]", className)} style={stickLeft ? { left: stickLeft } : {}}>
         <div className="flex items-center justify-between h-full px-2 gap-1 group/header">
-          <div 
-            className="flex items-center gap-1.5 flex-1 justify-center cursor-pointer h-full" 
-            onClick={() => requestSort(field)}
-          >
+          <div className="flex items-center gap-1.5 flex-1 justify-center cursor-pointer h-full" onClick={() => requestSort(field)}>
             <span className="font-semibold text-[11px] uppercase text-slate-700 tracking-tight">{label}</span>
-            {isActive ? (
-              sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />
-            ) : (
-              <ArrowUpDown className="h-2.5 w-2.5 opacity-30 group-hover/header:opacity-100 transition-opacity" />
-            )}
+            {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />) : (<ArrowUpDown className="h-2.5 w-2.5 opacity-30 group-hover/header:opacity-100 transition-opacity" />)}
           </div>
           {filterMode === 'advanced' && (
-            <ColumnHeaderFilter 
-              columnKey={field}
-              label={label}
-              data={rolls || []}
-              selectedValues={headerFilters[field] || []}
-              onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))}
-            />
+            <ColumnHeaderFilter columnKey={field} label={label} data={rolls || []} selectedValues={headerFilters[field] || []} onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))} />
           )}
         </div>
       </TableHead>
     );
   };
 
-  const handleResetAll = () => {
-    setFilters(initialFilters);
-    setHeaderFilters({});
-    setSortConfig({ key: 'rollNo', direction: 'desc' });
-    setCurrentPage(1);
-    setSelectedIds(new Set());
-  }
+  const handleResetAll = () => { setFilters(initialFilters); setHeaderFilters({}); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); setSelectedIds(new Set()); }
 
   if (!isMounted) return null;
 
@@ -652,114 +468,47 @@ export default function PaperStockPage() {
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-[28px] font-semibold tracking-tight">Paper Stock Details</h1>
-          <p className="text-sm font-normal text-muted-foreground">
-            Master inventory of all parent and child paper rolls including width, length, stock status, and job allocation.
-          </p>
+          <p className="text-sm font-normal text-muted-foreground">Master inventory of all parent and child paper rolls.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Button 
-            variant="outline" 
-            onClick={() => setIsReportOpen(true)}
-            className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
-          >
+          <Button variant="outline" onClick={() => setIsReportOpen(true)} className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
             <FileText className="h-4 w-4 mr-2 text-primary" /> Print Stock Report
           </Button>
-
-          <Button 
-            variant="outline" 
-            onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
-            className={cn(
-              "h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl transition-all",
-              filterMode === 'advanced' ? "bg-primary text-white border-primary" : "border-slate-200 text-slate-600"
-            )}
-          >
-            {filterMode === 'quick' ? (
-              <><Settings2 className="h-4 w-4 mr-2" /> Advance Filter</>
-            ) : (
-              <><FilterX className="h-4 w-4 mr-2" /> Back to Quick Filter</>
-            )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
+                <Settings2 className="h-4 w-4 mr-2" /> Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 z-[100]">
+              <DropdownMenuLabel className="text-[10px] uppercase font-black">Visibility Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {COLUMN_KEYS.map((col) => (
+                <DropdownMenuCheckboxItem key={col.id} checked={visibleColumns[col.id]} onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))} className="text-xs font-bold">
+                  {col.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setVisibleColumns(defaultVisibleColumns)} className="text-[10px] font-black uppercase text-primary justify-center">
+                <RotateCcw className="h-3 w-3 mr-2" /> Reset Columns
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="outline" onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')} className={cn("h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl transition-all", filterMode === 'advanced' ? "bg-primary text-white border-primary" : "border-slate-200 text-slate-600")}>
+            {filterMode === 'quick' ? <><Settings2 className="h-4 w-4 mr-2" /> Advance Filter</> : <><FilterX className="h-4 w-4 mr-2" /> Back to Quick Filter</>}
           </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleResetAll} 
-            className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4 border-2 rounded-xl border-destructive/20 hover:bg-destructive/5"
-          >
-            <FilterX className="h-4 w-4 mr-1.5" /> Reset Filters
-          </Button>
+          <Button variant="outline" size="sm" onClick={handleResetAll} className="text-[10px] font-black uppercase text-destructive tracking-widest h-10 px-4 border-2 rounded-xl border-destructive/20 hover:bg-destructive/5"><FilterX className="h-4 w-4 mr-1.5" /> Reset Filters</Button>
         </div>
       </div>
 
-      {filterMode === 'quick' && (
-        <PaperStockFilters 
-          data={rolls || []} 
-          filters={filters} 
-          setFilters={setFilters} 
-          onReset={handleResetAll} 
-        />
-      )}
+      <PaperStockFilters data={rolls || []} filters={filters} setFilters={setFilters} onReset={handleResetAll} />
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-6">
-            <h2 className="font-semibold text-sm uppercase tracking-wider flex items-center gap-3">
-              <LayoutGrid className="h-5 w-5 text-primary" /> Master Grid
-            </h2>
-            {selectedIds.size > 0 && (
-              <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2">
-                <Badge className="bg-primary text-white font-semibold">{selectedIds.size} SELECTED</Badge>
-                <Button variant="secondary" size="sm" onClick={handleBulkPrint} className="h-8 px-3 rounded-lg font-semibold text-[10px] uppercase tracking-wider bg-white text-slate-900 hover:bg-slate-100">
-                  <Printer className="h-3.5 w-3.5 mr-1.5" /> Print Selected Labels
-                </Button>
-                <Button variant="destructive" size="sm" onClick={handleBulkDelete} className="h-8 px-3 rounded-lg font-semibold text-[10px] uppercase tracking-wider">
-                  <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Bulk Delete
-                </Button>
-              </div>
-            )}
-          </div>
+          <div className="flex items-center gap-6"><h2 className="font-semibold text-sm uppercase tracking-wider flex items-center gap-3"><LayoutGrid className="h-5 w-5 text-primary" /> Master Grid</h2></div>
           <div className="flex items-center gap-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl transition-all"
-                >
-                  <Settings2 className="h-4 w-4 mr-2" /> Columns
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
-                <div className="p-2 border-b mb-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visibility Settings</span>
-                </div>
-                <div className="max-h-[300px] overflow-y-auto industrial-scroll">
-                  {COLUMN_KEYS.map((col) => (
-                    <DropdownMenuCheckboxItem
-                      key={col.id}
-                      checked={visibleColumns[col.id]}
-                      onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))}
-                      className="font-medium text-xs py-2 rounded-lg"
-                    >
-                      {col.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  className="font-black text-[10px] uppercase text-primary justify-center py-2 cursor-pointer hover:bg-primary/5 rounded-lg"
-                  onClick={() => setVisibleColumns(defaultVisibleColumns)}
-                >
-                  <RotateCcw className="h-3.5 w-3.5 mr-2" /> Reset Columns
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
-            <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl transition-all">
-              <QrCode className="h-4 w-4 mr-2" /> Live Scanner
-            </Button>
-            <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}>
-              <Plus className="h-4 w-4 mr-2" /> Add Roll
-            </Button>
+            <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl"><QrCode className="h-4 w-4 mr-2" /> Live Scanner</Button>
+            <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}><Plus className="h-4 w-4 mr-2" /> Add Roll</Button>
           </div>
         </div>
 
@@ -768,9 +517,7 @@ export default function PaperStockPage() {
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
                 <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
-                  <div className="flex items-center justify-center h-full">
-                    <Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} />
-                  </div>
+                  <div className="flex items-center justify-center h-full"><Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} /></div>
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
                 <SortableHeader label="Roll No" field="rollNo" className="w-[200px]" stickLeft="100px" />
@@ -800,33 +547,13 @@ export default function PaperStockPage() {
               ) : paginatedRows.map((j, i) => {
                 const statusInfo = STATUS_OPTIONS.find(o => o.value === j.status) || { color: "bg-slate-500", rowBg: "bg-slate-100" };
                 const isHighlighted = highlightedId === j.id;
-                const canSlit = ["Main", "Stock", "Slitting", "Available"].includes(j.status);
                 const isParent = !j.rollNo.includes('-');
-                
                 return (
-                  <TableRow 
-                    id={`row-${j.id}`} 
-                    key={j.id} 
-                    onDoubleClick={() => handleOpenDialog(j)}
-                    className={cn("h-12 group transition-all text-center cursor-pointer select-none", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")}
-                  >
-                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
-                      <Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} />
-                    </TableCell>
+                  <TableRow key={j.id} className={cn("h-12 group transition-all text-center cursor-pointer select-none", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")} onDoubleClick={() => handleOpenDialog(j)}>
+                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} /></TableCell>
                     <TableCell className={cn("text-center font-bold text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
-                      <div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>
-                        {j.level > 0 && (
-                          <span className="text-slate-400 font-mono font-bold mr-1">
-                            {j.isLast ? '└' : '├'}
-                          </span>
-                        )}
-                        {j.rollNo}
-                      </div>
-                    </TableCell>
-                    <TableCell className="border-r border-b text-center">
-                      <Badge className={cn("text-[10px] font-semibold text-white px-2", statusInfo.color)}>{j.status}</Badge>
-                    </TableCell>
+                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>{j.level > 0 && <span className="text-slate-400 font-mono font-bold mr-1">{j.isLast ? '└' : '├'}</span>}{j.rollNo}</div></TableCell>
+                    <TableCell className="border-r border-b text-center"><Badge className={cn("text-[10px] font-semibold text-white px-2", statusInfo.color)}>{j.status}</Badge></TableCell>
                     {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-medium border-r border-b px-3 text-center">{j.paperCompany}</TableCell>}
                     {visibleColumns['paperType'] && <TableCell className="text-[13px] font-medium border-r border-b px-3 text-center">{j.paperType}</TableCell>}
                     {visibleColumns['widthMm'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.widthMm}</TableCell>}
@@ -843,74 +570,14 @@ export default function PaperStockPage() {
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
-                      <div className="flex items-center justify-center gap-1.5 px-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm"
-                          onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}
-                          title="View Specs"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white shadow-sm"
-                          onClick={() => handleOpenDialog(j)}
-                          title="Edit Record"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm"
-                          onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}
-                          title="Slitting Operations"
-                        >
-                          <Scissors className="h-4 w-4" />
-                        </Button>
-
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white shadow-sm"
-                          onClick={() => {
-                            setManualParentRoll(isParent ? j.rollNo : j.rollNo.split('-')[0]);
-                            const children = rolls?.filter(r => r.rollNo.startsWith(j.rollNo + '-') && r.rollNo !== j.rollNo).map(r => r.rollNo) || [];
-                            setManualChildRolls(children);
-                            setIsManualJobCardOpen(true);
-                          }}
-                          title="Create Job Card"
-                        >
-                          <IdCard className="h-4 w-4" />
-                        </Button>
-
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white shadow-sm"
-                          onClick={() => { setPrintingRolls([j]); setIsPrintOpen(true); }}
-                          title="Print Label"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white shadow-sm"
-                          onClick={() => { if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}
-                          title="Delete Entry"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white shadow-sm" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm" onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}><Scissors className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white shadow-sm" onClick={() => { setManualParentRoll(isParent ? j.rollNo : j.rollNo.split('-')[0]); const children = rolls?.filter(r => r.rollNo.startsWith(j.rollNo + '-') && r.rollNo !== j.rollNo).map(r => r.rollNo) || []; setManualChildRolls(children); setIsManualJobCardOpen(true); }}><IdCard className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-600 hover:text-white shadow-sm" onClick={() => { setPrintingRolls([j]); setIsPrintOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white shadow-sm" onClick={() => { if(confirm('Delete permanently?')) deleteDoc(doc(firestore!, 'paper_stock', j.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                    </div></TableCell>
                   </TableRow>
                 );
               })}
@@ -918,363 +585,111 @@ export default function PaperStockPage() {
           </Table>
         </div>
 
-        <div className="bg-slate-50 p-4 border-t flex items-center justify-between shrink-0 px-8 rounded-b-2xl print:hidden">
-          <div className="flex items-center gap-4">
-            <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
-              <SelectTrigger className="h-9 w-[120px] bg-white text-[12px] font-semibold uppercase rounded-xl border-none shadow-sm"><SelectValue /></SelectTrigger>
-              <SelectContent className="z-[100] border-none shadow-2xl rounded-xl">
-                {[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <span className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">Showing {filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredRows.length)} of {filteredRows.length} Rolls</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button>
-            <span className="text-[12px] font-bold bg-white border-2 border-slate-200 h-9 w-12 flex items-center justify-center rounded-xl shadow-inner">{currentPage}</span>
-            <Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button>
-          </div>
+        <div className="bg-slate-50 p-4 border-t flex items-center justify-between shrink-0 px-8 rounded-b-2xl">
+          <div className="flex items-center gap-4"><Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}><SelectTrigger className="h-9 w-[120px] bg-white text-[12px] font-semibold uppercase rounded-xl border-none shadow-sm"><SelectValue /></SelectTrigger><SelectContent className="z-[100] border-none shadow-2xl rounded-xl">{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent></Select><span className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">Showing {filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredRows.length)} of {filteredRows.length} Rolls</span></div>
+          <div className="flex items-center gap-3"><Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button><span className="text-[12px] font-bold bg-white border-2 border-slate-200 h-9 w-12 flex items-center justify-center rounded-xl shadow-inner">{currentPage}</span><Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button></div>
         </div>
       </Card>
 
-      {/* ROLL VIEW DIALOG - Sized to match Edit/Add modals */}
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
-          <div className="bg-slate-900 text-white p-8">
-            <div className="flex justify-between items-start">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <DialogTitle className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
-                    <Package className="h-4 w-4" /> Technical Profile
-                  </DialogTitle>
-                  <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
-                </div>
-                
-                <div className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800 animate-in zoom-in-95 duration-300">
-                  <QRCodeSVG 
-                    value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.rollNo}` : (viewingRoll?.rollNo || "")} 
-                    size={120} 
-                  />
-                </div>
+      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
+            <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Audit Preview</DialogTitle>
+            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
+          </div>
+          <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
+            <div className="border-b-4 border-black pb-6 flex justify-between items-end">
+              <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Industrial Technical Registry Report</p></div>
+              <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
+            </div>
+            <div className="mt-8 grid grid-cols-3 gap-4 no-print">
+              <div className="p-4 bg-slate-100 rounded-lg border">
+                <p className="text-[9px] font-black uppercase opacity-50 mb-1">Active Filter Scope</p>
+                <p className="text-xs font-bold truncate">{activeFiltersSummary}</p>
               </div>
-              <Badge className={cn("px-4 py-1.5 rounded-full font-semibold text-[10px] uppercase shadow-lg", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>
-                {viewingRoll?.status}
-              </Badge>
+              <div className="p-4 bg-slate-100 rounded-lg border text-center">
+                <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
+                <p className="text-xl font-black text-primary">{filteredRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
+              </div>
+              <div className="p-4 bg-slate-100 rounded-lg border text-center">
+                <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
+                <p className="text-xl font-black">{filteredRows.length}</p>
+              </div>
             </div>
+            <Table className="mt-10 border-2 border-black">
+              <TableHeader className="bg-slate-100"><TableRow className="border-b-2 border-black h-10"><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black">Roll No</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black">Company</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black">Type</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">Width</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">Length</TableHead><TableHead className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">SQM</TableHead><TableHead className="font-black text-black text-[9px] uppercase text-center">Status</TableHead></TableRow></TableHeader>
+              <TableBody>{filteredRows.slice(0, 100).map((r) => (<TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8"><TableCell className="font-bold border-r border-black/10 text-[10px]">{r.rollNo}</TableCell><TableCell className="border-r border-black/10 text-[9px]">{r.paperCompany}</TableCell><TableCell className="border-r border-black/10 text-[9px]">{r.paperType}</TableCell><TableCell className="border-r border-black/10 text-center text-[9px]">{r.widthMm}mm</TableCell><TableCell className="border-r border-black/10 text-center text-[9px]">{r.lengthMeters}m</TableCell><TableCell className="border-r border-black/10 text-center font-black text-[9px]">{r.sqm}</TableCell><TableCell className="text-center font-black text-[8px] uppercase">{r.status}</TableCell></TableRow>))}</TableBody>
+            </Table>
           </div>
-          <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-50 industrial-scroll overflow-y-auto max-h-[70vh]">
-            <div className="space-y-6 text-left">
-              <h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2">
-                <Info className="h-3 w-3 text-primary" /> Basic Details
-              </h4>
-              <ProfileField icon={Hash} label="Roll No" value={viewingRoll?.rollNo} highlight />
-              <ProfileField icon={Building2} label="Paper Company" value={viewingRoll?.paperCompany} />
-              <ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} />
-              <ProfileField icon={Layers} label="Company Roll No" value={viewingRoll?.companyRollNo} />
-            </div>
-            <div className="space-y-6 text-left">
-              <h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2">
-                <Maximize2 className="h-3 w-3 text-primary" /> Size Details
-              </h4>
-              <ProfileField icon={Ruler} label="Width (MM)" value={viewingRoll?.widthMm} />
-              <ProfileField icon={ArrowRightLeft} label="Length (MTR)" value={viewingRoll?.lengthMeters} />
-              <ProfileField icon={Layers} label="SQM" value={viewingRoll?.sqm} highlight />
-              <ProfileField icon={Weight} label="GSM" value={viewingRoll?.gsm} />
-              <ProfileField icon={Scale} label="Weight (KG)" value={viewingRoll?.weightKg} />
-            </div>
-            <div className="space-y-6 text-left">
-              <h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2">
-                <CircleDollarSign className="h-3 w-3 text-primary" /> Info & Jobs
-              </h4>
-              <ProfileField icon={CircleDollarSign} label="Purchase Rate" value={`₹${viewingRoll?.purchaseRate || 0}`} />
-              <ProfileField icon={Calendar} label="Received Date" value={viewingRoll?.receivedDate} />
-              <ProfileField icon={CalendarDays} label="Job No" value={viewingRoll?.jobNo} highlight />
-              <ProfileField icon={History} label="Lot No" value={viewingRoll?.lotNo} />
-              <ProfileField icon={MessageSquare} label="Remarks" value={viewingRoll?.remarks} />
-            </div>
-          </div>
-          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsViewOpen(false)}>Close</Button>
-            <Button className="flex-1 h-12 rounded-xl bg-slate-800 hover:bg-slate-900 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setPrintingRolls([viewingRoll]); setIsPrintOpen(true); }}>
-              <Printer className="h-4 w-4 mr-2" /> Print Label
-            </Button>
-            <Button className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setEditingRoll(viewingRoll); setFormData({...viewingRoll}); setIsViewOpen(false); setIsDialogOpen(true); }}>
-              <Pencil className="h-4 w-4 mr-2" /> Edit Roll
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* EDIT/ADD ROLL DIALOG */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-8"><div className="flex justify-between items-start"><div className="space-y-4"><div className="space-y-1"><DialogTitle className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2"><Package className="h-4 w-4" /> Technical Profile</DialogTitle><p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p></div><div className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.rollNo}` : (viewingRoll?.rollNo || "")} size={120} /></div></div><Badge className={cn("px-4 py-1.5 rounded-full font-semibold text-[10px] uppercase shadow-lg", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>{viewingRoll?.status}</Badge></div></div>
+          <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-50 industrial-scroll overflow-y-auto max-h-[70vh]">
+            <div className="space-y-6 text-left"><h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2"><Info className="h-3 w-3 text-primary" /> Basic Details</h4><ProfileField icon={Hash} label="Roll No" value={viewingRoll?.rollNo} highlight /><ProfileField icon={Building2} label="Paper Company" value={viewingRoll?.paperCompany} /><ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} /><ProfileField icon={Layers} label="Company Roll No" value={viewingRoll?.companyRollNo} /></div>
+            <div className="space-y-6 text-left"><h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2"><Maximize2 className="h-3 w-3 text-primary" /> Size Details</h4><ProfileField icon={Ruler} label="Width (MM)" value={viewingRoll?.widthMm} /><ProfileField icon={ArrowRightLeft} label="Length (MTR)" value={viewingRoll?.lengthMeters} /><ProfileField icon={Layers} label="SQM" value={viewingRoll?.sqm} highlight /><ProfileField icon={Weight} label="GSM" value={viewingRoll?.gsm} /><ProfileField icon={Scale} label="Weight (KG)" value={viewingRoll?.weightKg} /></div>
+            <div className="space-y-6 text-left"><h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2"><CircleDollarSign className="h-3 w-3 text-primary" /> Info & Jobs</h4><ProfileField icon={CircleDollarSign} label="Purchase Rate" value={`₹${viewingRoll?.purchaseRate || 0}`} /><ProfileField icon={Calendar} label="Received Date" value={viewingRoll?.receivedDate} /><ProfileField icon={CalendarDays} label="Job No" value={viewingRoll?.jobNo} highlight /><ProfileField icon={History} label="Lot No" value={viewingRoll?.lotNo} /><ProfileField icon={MessageSquare} label="Remarks" value={viewingRoll?.remarks} /></div>
+          </div>
+          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3"><Button variant="outline" className="flex-1 h-12 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsViewOpen(false)}>Close</Button><Button className="flex-1 h-12 rounded-xl bg-slate-800 hover:bg-slate-900 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setPrintingRolls([viewingRoll]); setIsPrintOpen(true); }}><Printer className="h-4 w-4 mr-2" /> Print Label</Button><Button className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setEditingRoll(viewingRoll); setFormData({...viewingRoll}); setIsViewOpen(false); setIsDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" /> Edit Roll</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white">
           <form onSubmit={handleSave}>
-            <div className="bg-slate-900 text-white p-6">
-              <DialogTitle className="text-xl font-semibold uppercase tracking-wider flex items-center gap-3">
-                {editingRoll ? <Pencil className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
-                {editingRoll ? 'EDIT TECHNICAL MASTER RECORD' : 'Add New Master Roll Entry'}
-              </DialogTitle>
-              <DialogDescription className="text-slate-400 font-medium uppercase text-[10px] mt-1 tracking-wider">Enterprise Technical Inventory Registry System</DialogDescription>
-            </div>
+            <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xl font-semibold uppercase tracking-wider flex items-center gap-3">{editingRoll ? <Pencil className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}{editingRoll ? 'EDIT TECHNICAL MASTER RECORD' : 'Add New Master Roll Entry'}</DialogTitle><DialogDescription className="text-slate-400 font-medium uppercase text-[10px] mt-1 tracking-wider">Enterprise Technical Inventory Registry System</DialogDescription></div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 max-h-[75vh] overflow-y-auto bg-slate-50 industrial-scroll text-left">
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4>
-                <div className="space-y-2">
-                  <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label>
-                  <Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} />
-                </div>
-                <div className="space-y-2 text-left">
-                  <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label>
-                  <Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}>
-                    <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger>
-                    <SelectContent className="z-[100] border-none shadow-2xl rounded-xl">
-                      {STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}
-                      <SelectSeparator />
-                      <SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}
-                </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Company</Label><Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Type</Label><Input list="types-list" value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Company Roll No</Label><Input list="mfr-rolls-list" value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Lot / Batch No</Label><Input list="lots-list" value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Technical Specs</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
-                </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Calculated SQM (system)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-semibold text-primary">{calculatedSqm}</div></div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">GSM</Label><Input list="gsms-list" type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
-                </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Purchase Rate</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
-              </div>
-              <div className="space-y-4">
-                <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Workflow & History</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
-                </div>
-                <div className="space-y-2 text-left">
-                  <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Technical Remarks</Label>
-                  <Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" />
-                </div>
-              </div>
+              <div className="space-y-4"><h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} /></div><div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label><Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger><SelectContent className="z-[100] border-none shadow-2xl rounded-xl">{STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}<SelectSeparator /><SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem></SelectContent></Select>{isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}</div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Company</Label><Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Type</Label><Input list="types-list" value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Company Roll No</Label><Input list="mfr-rolls-list" value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Lot / Batch No</Label><Input list="lots-list" value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div>
+              <div className="space-y-4"><h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Technical Specs</h4><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Calculated SQM (system)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-semibold text-primary">{calculatedSqm}</div></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">GSM</Label><Input list="gsms-list" type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Purchase Rate</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div>
+              <div className="space-y-4"><h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Workflow & History</h4><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div><div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" /></div></div>
             </div>
-            <DialogFooter className="p-6 bg-white border-t">
-              <Button type="button" variant="outline" className="h-12 px-8 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider shadow-xl">
-                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                {editingRoll ? 'Update Master Record' : 'Initialize Roll Record'}
-              </Button>
-            </DialogFooter>
+            <DialogFooter className="p-6 bg-white border-t"><Button type="button" variant="outline" className="h-12 px-8 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsDialogOpen(false)}>Cancel</Button><Button type="submit" disabled={isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}{editingRoll ? 'Update Master Record' : 'Initialize Roll Record'}</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <datalist id="companies-list">
-        {suggestions.companies.map(c => <option key={c} value={c}>{`🏭 ${c}`}</option>)}
-      </datalist>
-      <datalist id="types-list">
-        {suggestions.types.map(t => <option key={t} value={t}>{`📄 ${t}`}</option>)}
-      </datalist>
-      <datalist id="gsms-list">
-        {suggestions.gsms.map(g => <option key={g} value={g}>{`⚖️ ${g} GSM`}</option>)}
-      </datalist>
-      <datalist id="lots-list">
-        {suggestions.lots.map(l => <option key={l} value={l}>{`📦 ${l}`}</option>)}
-      </datalist>
-      <datalist id="mfr-rolls-list">
-        {suggestions.mfrRolls.map(m => <option key={m} value={m}>{`🆔 ${m}`}</option>)}
-      </datalist>
-
-      {/* MANUAL JOB CARD DIALOG - IMPROVED */}
       <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
         <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-6">
-            <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-              <IdCard className="h-5 w-5 text-primary" /> Create Manual Job Card
-            </DialogTitle>
-            <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">
-              Select a parent roll and multiple child units to initialize a job card.
-            </DialogDescription>
-          </div>
+          <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3"><IdCard className="h-5 w-5 text-primary" /> Create Manual Job Card</DialogTitle><DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Select a parent roll and multiple child units to initialize a job card.</DialogDescription></div>
           <div className="p-8 space-y-6 bg-slate-50">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase opacity-50">Select Parent Roll</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input 
-                  placeholder="Search Parent Roll..." 
-                  className="pl-9 h-11 rounded-xl border-2 bg-white font-bold mb-2"
-                  value={parentSearch}
-                  onChange={(e) => setParentSearch(e.target.value)}
-                />
+                <Input placeholder="Search Parent Roll..." className="pl-9 h-11 rounded-xl border-2 bg-white font-bold mb-2" value={parentSearch} onChange={(e) => setParentSearch(e.target.value)} />
               </div>
-              <Select 
-                value={manualParentRoll} 
-                onValueChange={(val) => {
-                  setManualParentRoll(val);
-                  const children = rolls?.filter(r => r.rollNo.startsWith(val + '-') && r.rollNo !== val).map(r => r.rollNo) || [];
-                  setManualChildRolls(children);
-                }}
-              >
-                <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold">
-                  <SelectValue placeholder="Choose Parent..." />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  {searchedParentRolls.map(r => (
-                    <SelectItem key={r.id} value={r.rollNo} className="font-bold">{r.rollNo} - {r.paperType}</SelectItem>
-                  ))}
-                  {searchedParentRolls.length === 0 && <SelectItem value="none" disabled>No parent rolls found</SelectItem>}
-                </SelectContent>
+              <Select value={manualParentRoll} onValueChange={(val) => { setManualParentRoll(val); const children = rolls?.filter(r => r.rollNo.startsWith(val + '-') && r.rollNo !== val).map(r => r.rollNo) || []; setManualChildRolls(children); }}>
+                <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Choose Parent..." /></SelectTrigger>
+                <SelectContent className="z-[100]">{searchedParentRolls.map(r => (<SelectItem key={r.id} value={r.rollNo} className="font-bold">{r.rollNo} - {r.paperType}</SelectItem>))}</SelectContent>
               </Select>
             </div>
-
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase opacity-50">Select Machine</Label>
-                <Select value={manualMachine} onValueChange={setManualMachine}>
-                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold">
-                    <SelectValue placeholder="Select Machine" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[100]">
-                    {machines?.map(m => (
-                      <SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase opacity-50">Select Operator</Label>
-                <Select value={manualOperator} onValueChange={setManualOperator}>
-                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold">
-                    <SelectValue placeholder="Select Operator" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[100]">
-                    {operators.map(o => (
-                      <SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Select Machine</Label><Select value={manualMachine} onValueChange={setManualMachine}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Select Machine" /></SelectTrigger><SelectContent className="z-[100]">{machines?.map(m => (<SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>))}</SelectContent></Select></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Select Operator</Label><Select value={manualOperator} onValueChange={setManualOperator}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Select Operator" /></SelectTrigger><SelectContent className="z-[100]">{operators.map(o => (<SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>))}</SelectContent></Select></div>
             </div>
-
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <Label className="text-[10px] font-black uppercase opacity-50">Available Child Rolls</Label>
-                <Badge className="bg-primary text-white text-[9px] h-5">{manualChildRolls.length} SELECTED</Badge>
-              </div>
-              <div className="bg-white border-2 rounded-2xl p-4 h-[250px] overflow-y-auto industrial-scroll space-y-2">
-                {filteredChildRollsManual.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3">
-                    <Package className="h-8 w-8" />
-                    <p className="text-[10px] font-bold uppercase">No child units found for this parent</p>
-                  </div>
-                ) : filteredChildRollsManual.map(r => (
-                  <div 
-                    key={r.id} 
-                    className={cn(
-                      "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between",
-                      manualChildRolls.includes(r.rollNo) ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20"
-                    )}
-                    onClick={() => {
-                      const next = manualChildRolls.includes(r.rollNo)
-                        ? manualChildRolls.filter(id => id !== r.rollNo)
-                        : [...manualChildRolls, r.rollNo];
-                      setManualChildRolls(next);
-                    }}
-                  >
-                    <div className="flex flex-col">
-                      <span className="text-xs font-black text-primary">{r.rollNo}</span>
-                      <span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span>
-                    </div>
-                    {manualChildRolls.includes(r.rollNo) && <CheckCircle2 className="h-4 w-4 text-primary" />}
-                  </div>
-                ))}
-              </div>
+              <div className="flex justify-between items-center"><Label className="text-[10px] font-black uppercase opacity-50">Available Child Rolls</Label><Badge className="bg-primary text-white text-[9px] h-5">{manualChildRolls.length} SELECTED</Badge></div>
+              <div className="bg-white border-2 rounded-2xl p-4 h-[250px] overflow-y-auto industrial-scroll space-y-2">{filteredChildRollsManual.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3"><Package className="h-8 w-8" /><p className="text-[10px] font-bold uppercase">No child units found</p></div>) : filteredChildRollsManual.map(r => (<div key={r.id} className={cn("p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between", manualChildRolls.includes(r.rollNo) ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20")} onClick={() => { const next = manualChildRolls.includes(r.rollNo) ? manualChildRolls.filter(id => id !== r.rollNo) : [...manualChildRolls, r.rollNo]; setManualChildRolls(next); }}><div className="flex flex-col"><span className="text-xs font-black text-primary">{r.rollNo}</span><span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span></div>{manualChildRolls.includes(r.rollNo) && <CheckCircle2 className="h-4 w-4 text-primary" />}</div>))}</div>
             </div>
           </div>
-          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3">
-            <Button type="button" variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
-            <Button 
-              onClick={handleCreateManualJobCard} 
-              disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} 
-              className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl"
-            >
-              {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-              Confirm & Create Job Card
-            </Button>
-          </DialogFooter>
+          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3"><Button type="button" variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button><Button onClick={handleCreateManualJobCard} disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}Confirm & Create Job Card</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
+      <datalist id="companies-list">{suggestions.companies.map(c => <option key={c} value={c} />)}</datalist>
+      <datalist id="types-list">{suggestions.types.map(t => <option key={t} value={t} />)}</datalist>
+      <datalist id="gsms-list">{suggestions.gsms.map(g => <option key={g} value={g} />)}</datalist>
+      <datalist id="lots-list">{suggestions.lots.map(l => <option key={l} value={l} />)}</datalist>
+      <datalist id="mfr-rolls-list">{suggestions.mfrRolls.map(m => <option key={m} value={m} />)}</datalist>
+
       <style jsx global>{`
         @media print {
-          html, body {
-            height: auto !important;
-            overflow: visible !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-          }
-          body > * { display: none !important; }
-          body > [data-radix-portal] { display: block !important; }
-          .print-dialog-content {
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: auto !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            background: white !important;
-            box-shadow: none !important;
-            max-width: none !important;
-            max-height: none !important;
-            transform: none !important;
-            display: block !important;
-            overflow: visible !important;
-          }
-          .print-dialog-content > div:first-child,
-          .print-dialog-content button[aria-label="Close"] { display: none !important; }
+          body * { visibility: hidden !important; }
+          #print-area-rendered, #print-area-rendered * { visibility: visible !important; }
+          #print-area-rendered { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; background: white !important; }
           .no-print { display: none !important; }
-          .print-container {
-            padding: 0 !important;
-            margin: 0 !important;
-            background: white !important;
-            overflow: visible !important;
-          }
-          #stock-report-print {
-            width: 210mm !important;
-            margin: 0 auto !important;
-            padding: 10mm !important;
-            box-shadow: none !important;
-            display: block !important;
-            position: relative !important;
-          }
-          #stock-report-print table { width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
-          #stock-report-print thead { display: table-header-group !important; }
-          #stock-report-print tr { page-break-inside: avoid !important; }
-          #stock-report-print th, #stock-report-print td { border: 1px solid #000 !important; padding: 4px !important; font-size: 8px !important; }
-          #print-area { display: block !important; width: 100% !important; }
-          .label-page {
-            page-break-after: always;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-            min-height: 100vh !important;
-          }
-          @page { size: A4 portrait; margin: 0; }
         }
       `}</style>
     </div>
@@ -1287,10 +702,7 @@ function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: a
       <Label className="text-[10px] uppercase font-semibold text-slate-400 flex items-center gap-1.5 transition-colors group-hover:text-primary block text-left">
         <Icon className="h-3 w-3" /> {label}
       </Label>
-      <div className={cn(
-        "text-sm font-semibold tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm text-left",
-        highlight ? "text-primary text-base border-primary/20 bg-primary/5" : "text-slate-800"
-      )}>
+      <div className={cn("text-sm font-semibold tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm text-left", highlight ? "text-primary text-base border-primary/20 bg-primary/5" : "text-slate-800")}>
         {value || "—"}
       </div>
     </div>
