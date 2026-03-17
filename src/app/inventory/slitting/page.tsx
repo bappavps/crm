@@ -87,6 +87,11 @@ const getChildSuffix = (parentRollNo: string, index: number): string => {
   }
 };
 
+/**
+ * Normalizes material names for matching (e.g., "PP WHITE" and "PP-WHITE" become "ppwhite")
+ */
+const normalizeMaterial = (m: string) => String(m || "").toLowerCase().replace(/[\s-]/g, '').trim();
+
 function SlittingHubContent() {
   const { toast } = useToast()
   const router = useRouter()
@@ -153,14 +158,14 @@ function SlittingHubContent() {
 
     const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
     const targetWidth = parseInt(String(rawWidth).replace(/[^0-9]/g, '')) || 0;
-    const jobMaterial = String(selectedPlanningJob.values.material || "").toLowerCase().trim();
+    const jobMaterial = normalizeMaterial(selectedPlanningJob.values.material);
     const jobLengthRequired = Number(selectedPlanningJob.values.allocate_mtrs) || 0;
 
     if (targetWidth <= 0) return [];
 
-    // Filter by material
+    // Filter by material (normalized comparison)
     const matchingStock = stockData.filter(roll => 
-      String(roll.paperType || "").toLowerCase().trim() === jobMaterial &&
+      normalizeMaterial(roll.paperType) === jobMaterial &&
       (Number(roll.widthMm) || 0) >= targetWidth
     );
 
@@ -1008,7 +1013,7 @@ function SlittingHubContent() {
             <CardFooter className="bg-slate-50 p-6 border-t flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-white border-2 rounded-xl flex items-center gap-3">
-                  <History className="h-4 w-4 text-slate-400" />
+                  <History className="h-4 w-4 text-primary" />
                   <span className="text-[10px] font-semibold uppercase text-slate-500">
                     Mode: {calculation.mode === 'WIDTH' ? 'Width Slitting' : 'Length Split / Rewind'}
                   </span>
