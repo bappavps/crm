@@ -69,7 +69,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from "@/firebase"
 import { collection, doc, serverTimestamp, setDoc, deleteDoc, query, orderBy, writeBatch } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
@@ -78,8 +78,8 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.0)
- * Industrial Designer with Layer Management, Rotation, and Custom Paper Sizes.
+ * PRINT TEMPLATE STUDIO (V8.1)
+ * Industrial Designer with Layer Management, Rotation, and Firestore Data Integrity Fixes.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -94,7 +94,7 @@ interface TemplateElement {
   rotate: number;
   content?: string;
   placeholder?: string;
-  barcodeType?: 'CODE128' | 'CODE39' | 'EAN13' | 'UPC';
+  barcodeType?: 'CODE128' | 'CODE39' | 'EAN13' | 'UPC' | null;
   style: {
     fontSize: number;
     fontWeight: string;
@@ -274,7 +274,8 @@ export default function PrintTemplateStudio() {
     }
 
     try {
-      await setDoc(doc(firestore, 'print_templates', newTemplate.id), {
+      const docRef = doc(firestore, 'print_templates', newTemplate.id);
+      await setDoc(docRef, {
         ...newTemplate,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -283,8 +284,13 @@ export default function PrintTemplateStudio() {
       setIsNewDialogOpen(false)
       setIsEditorOpen(true)
       toast({ title: "Template Created", description: "Design canvas initialized." })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Creation Failed" })
+    } catch (e: any) {
+      const permissionError = new FirestorePermissionError({
+        path: 'print_templates',
+        operation: 'create',
+        requestResourceData: newTemplate
+      });
+      errorEmitter.emit('permission-error', permissionError);
     }
   }
 
@@ -310,8 +316,12 @@ export default function PrintTemplateStudio() {
             setCurrentTemplate(null)
           }
           setModal(p => ({ ...p, isOpen: false }))
-        } catch (e) {
-          toast({ variant: "destructive", title: "Delete Failed" })
+        } catch (e: any) {
+          const permissionError = new FirestorePermissionError({
+            path: `print_templates/${templateId}`,
+            operation: 'delete'
+          });
+          errorEmitter.emit('permission-error', permissionError);
         }
       }
     })
@@ -332,8 +342,13 @@ export default function PrintTemplateStudio() {
     try {
       await setDoc(doc(firestore, 'print_templates', newId), newTemplate)
       toast({ title: "Template Cloned", description: "Created editable copy of layout." })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Duplication Failed" })
+    } catch (e: any) {
+      const permissionError = new FirestorePermissionError({
+        path: `print_templates/${newId}`,
+        operation: 'create',
+        requestResourceData: newTemplate
+      });
+      errorEmitter.emit('permission-error', permissionError);
     }
   }
 
@@ -344,14 +359,24 @@ export default function PrintTemplateStudio() {
       return;
     }
     setIsSaving(true)
+    
+    // FIRESTORE COMPATIBILITY FIX: Sanitize object by removing undefined values
+    const cleanedTemplate = JSON.parse(JSON.stringify(currentTemplate));
+    const docRef = doc(firestore, 'print_templates', currentTemplate.id);
+
     try {
-      await setDoc(doc(firestore, 'print_templates', currentTemplate.id), {
-        ...currentTemplate,
+      await setDoc(docRef, {
+        ...cleanedTemplate,
         updatedAt: serverTimestamp()
       }, { merge: true })
       toast({ title: "Template Saved", description: "Changes synced to ERP registry." })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Save Error" })
+    } catch (e: any) {
+      const permissionError = new FirestorePermissionError({
+        path: docRef.path,
+        operation: 'update',
+        requestResourceData: cleanedTemplate
+      });
+      errorEmitter.emit('permission-error', permissionError);
     } finally {
       setIsSaving(false)
     }
@@ -388,8 +413,12 @@ export default function PrintTemplateStudio() {
       }
       await batch.commit()
       toast({ title: "System Sync Complete", description: "Default layouts restored." })
-    } catch (e) {
-      toast({ variant: "destructive", title: "Import Failed" })
+    } catch (e: any) {
+      const permissionError = new FirestorePermissionError({
+        path: 'print_templates',
+        operation: 'create'
+      });
+      errorEmitter.emit('permission-error', permissionError);
     } finally {
       setIsSeeding(false)
     }
@@ -408,7 +437,7 @@ export default function PrintTemplateStudio() {
       rotate: 0,
       content: content || (placeholder ? "" : (type === 'text' || type === 'title' ? "New Element" : "")),
       placeholder: placeholder || "",
-      barcodeType: type === 'barcode' ? 'CODE128' : undefined,
+      barcodeType: type === 'barcode' ? 'CODE128' : null,
       style: {
         fontSize: type === 'title' ? 24 : 14,
         fontWeight: type === 'title' ? 'bold' : 'normal',
@@ -610,7 +639,7 @@ export default function PrintTemplateStudio() {
                   Save Layout
                 </Button>
               ) : (
-                <Button onClick={() => handleDuplicateTemplate(currentTemplate)} className="font-black h-10 px-8 bg-slate-900 text-white shadow-lg">
+                <Button onClick={() => handleDuplicateTemplate(currentTemplate!)} className="font-black h-10 px-8 bg-slate-900 text-white shadow-lg">
                   <Copy className="h-4 w-4 mr-2" /> Duplicate to Edit
                 </Button>
               )}
@@ -886,7 +915,7 @@ export default function PrintTemplateStudio() {
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Symbology</Label>
                       <div className="space-y-1.5">
                         <Label className="text-[9px] uppercase font-bold text-slate-400">Encoding Type</Label>
-                        <Select value={selectedElement.barcodeType} onValueChange={(v: any) => updateElement(selectedElement.id, { barcodeType: v })} disabled={currentTemplate?.isSystemTemplate}>
+                        <Select value={selectedElement.barcodeType || 'CODE128'} onValueChange={(v: any) => updateElement(selectedElement.id, { barcodeType: v })} disabled={currentTemplate?.isSystemTemplate}>
                           <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
                           <SelectContent className="z-[200]">
                             <SelectItem value="CODE128">Code 128 (Alpha-Numeric)</SelectItem>
@@ -943,13 +972,13 @@ export default function PrintTemplateStudio() {
                               value={[(currentTemplate.background.opacity || 1) * 100]} 
                               min={0} max={100} step={1} 
                               onValueChange={(v) => setCurrentTemplate({
-                                ...currentTemplate,
-                                background: { ...currentTemplate.background!, opacity: v[0] / 100 }
+                                ...currentTemplate!,
+                                background: { ...currentTemplate!.background!, opacity: v[0] / 100 }
                               })} 
                               disabled={currentTemplate?.isSystemTemplate}
                             />
                           </div>
-                          <Button variant="ghost" size="sm" className="w-full text-destructive text-[10px] font-black uppercase" onClick={() => setCurrentTemplate({ ...currentTemplate, background: { ...currentTemplate.background!, image: "" } })} disabled={currentTemplate?.isSystemTemplate}><Eraser className="h-3 w-3 mr-2" /> Remove Overlay</Button>
+                          <Button variant="ghost" size="sm" className="w-full text-destructive text-[10px] font-black uppercase" onClick={() => setCurrentTemplate({ ...currentTemplate!, background: { ...currentTemplate!.background!, image: "" } })} disabled={currentTemplate?.isSystemTemplate}><Eraser className="h-3 w-3 mr-2" /> Remove Overlay</Button>
                         </div>
                       )}
                     </div>
