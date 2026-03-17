@@ -70,7 +70,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, errorEmitter, FirestorePermissionError } from "@/firebase"
-import { collection, doc, serverTimestamp, setDoc, deleteDoc, query, orderBy, writeBatch } from "firebase/firestore"
+import { collection, doc, serverTimestamp, setDoc, deleteDoc, query, orderBy, writeBatch, where } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { QRCodeSVG } from 'qrcode.react'
@@ -78,8 +78,8 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.1)
- * Industrial Designer with Layer Management, Rotation, and Firestore Data Integrity Fixes.
+ * PRINT TEMPLATE STUDIO (V8.2)
+ * Enhanced with Dynamic Placeholder Support and standard placeholder mappings.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -132,9 +132,8 @@ interface PrintTemplate {
 const PAPER_SIZES = [
   { id: 'A4', name: 'A4 Paper', w: 210, h: 297 },
   { id: 'A5', name: 'A5 Paper', w: 148, h: 210 },
-  { id: 'Thermal80', name: 'Thermal 80mm', w: 80, h: 200 },
-  { id: 'Label150x100', name: 'Label 150x100mm', w: 150, h: 100 },
-  { id: 'Label100x50', name: 'Label 100x50mm', w: 100, h: 50 },
+  { id: 'Thermal150x100', name: 'Label 150x100mm', w: 150, h: 100 },
+  { id: 'Thermal100x50', name: 'Label 100x50mm', w: 100, h: 50 },
   { id: 'Custom', name: 'Custom Label Size', w: 100, h: 100 },
 ];
 
@@ -153,23 +152,19 @@ const FONT_FAMILIES = [
 const PLACEHOLDERS = {
   GENERAL: [
     { key: '{{company_name}}', label: 'Company Name', icon: Building2, preview: 'Shree Label Creation' },
-    { key: '{{date}}', label: 'Current Date', icon: CalendarDays, preview: new Date().toLocaleDateString() },
+    { key: '{{current_date}}', label: 'Current Date', icon: CalendarDays, preview: new Date().toLocaleDateString() },
+  ],
+  INVENTORY: [
+    { key: '{{parent_roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
+    { key: '{{paper_type}}', label: 'Paper Type', icon: FileText, preview: 'Chromo' },
+    { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
+    { key: '{{length}}', label: 'Length (MTR)', icon: ArrowRightLeft, preview: '3000' },
+    { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
   ],
   PRODUCTION: [
     { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
     { key: '{{machine_name}}', label: 'Machine Name', icon: Wrench, preview: 'Jumbo Slitter A1' },
     { key: '{{operator_name}}', label: 'Operator', icon: User, preview: 'Rahul Sharma' },
-    { key: '{{job_qr_code}}', label: 'Job QR Identity', icon: QrCode, preview: 'QR_DATA' },
-  ],
-  PARENT_ROLL: [
-    { key: '{{parent_roll}}', label: 'Parent Roll No', icon: Box, preview: 'T-1001' },
-    { key: '{{parent_width}}', label: 'Parent Width', icon: Maximize2, preview: '1020' },
-    { key: '{{paper_type}}', label: 'Paper Type', icon: FileText, preview: 'Chromo' },
-  ],
-  INVENTORY: [
-    { key: '{{roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
-    { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
-    { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
   ]
 };
 
@@ -192,7 +187,6 @@ export default function PrintTemplateStudio() {
   const [showGuidelines, setShowGuidelines] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string>("All")
 
-  // Modal State for app-styled popups
   const [modal, setModal] = useState<{
     isOpen: boolean;
     type: ModalType;
@@ -283,7 +277,7 @@ export default function PrintTemplateStudio() {
       setCurrentTemplate(newTemplate)
       setIsNewDialogOpen(false)
       setIsEditorOpen(true)
-      toast({ title: "Template Created", description: "Design canvas initialized." })
+      toast({ title: "Template Created" })
     } catch (e: any) {
       const permissionError = new FirestorePermissionError({
         path: 'print_templates',
@@ -297,7 +291,7 @@ export default function PrintTemplateStudio() {
   const handleDeleteTemplate = (templateId: string) => {
     const tpl = templates?.find(t => t.id === templateId);
     if (tpl?.isSystemTemplate) {
-      toast({ variant: "destructive", title: "Access Denied", description: "System default templates are protected." });
+      toast({ variant: "destructive", title: "Access Denied", description: "System templates are protected." });
       return;
     }
 
@@ -305,7 +299,7 @@ export default function PrintTemplateStudio() {
       isOpen: true,
       type: 'CONFIRMATION',
       title: 'Delete Template?',
-      description: 'This layout will be permanently removed from the studio gallery.',
+      description: 'This action is permanent.',
       onConfirm: async () => {
         if (!firestore) return
         try {
@@ -341,7 +335,7 @@ export default function PrintTemplateStudio() {
     }
     try {
       await setDoc(doc(firestore, 'print_templates', newId), newTemplate)
-      toast({ title: "Template Cloned", description: "Created editable copy of layout." })
+      toast({ title: "Template Cloned" })
     } catch (e: any) {
       const permissionError = new FirestorePermissionError({
         path: `print_templates/${newId}`,
@@ -355,12 +349,11 @@ export default function PrintTemplateStudio() {
   const handleSaveTemplate = async () => {
     if (!firestore || !currentTemplate) return
     if (currentTemplate.isSystemTemplate) {
-      toast({ variant: "destructive", title: "Read Only", description: "System templates cannot be modified. Please duplicate to edit." });
+      toast({ variant: "destructive", title: "Read Only", description: "System templates cannot be modified." });
       return;
     }
     setIsSaving(true)
     
-    // FIRESTORE COMPATIBILITY FIX: Sanitize object by removing undefined values
     const cleanedTemplate = JSON.parse(JSON.stringify(currentTemplate));
     const docRef = doc(firestore, 'print_templates', currentTemplate.id);
 
@@ -369,7 +362,7 @@ export default function PrintTemplateStudio() {
         ...cleanedTemplate,
         updatedAt: serverTimestamp()
       }, { merge: true })
-      toast({ title: "Template Saved", description: "Changes synced to ERP registry." })
+      toast({ title: "Template Saved" })
     } catch (e: any) {
       const permissionError = new FirestorePermissionError({
         path: docRef.path,
@@ -399,9 +392,9 @@ export default function PrintTemplateStudio() {
         elements: [
           { id: 'title', type: 'title', x: 40, y: 40, width: 600, height: 50, rotate: 0, content: 'SHREE LABEL CREATION', style: { fontSize: 32, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
           { id: 'subtitle', type: 'text', x: 40, y: 90, width: 400, height: 30, rotate: 0, content: 'JUMBO SLITTING INSTRUCTION SHEET', style: { fontSize: 14, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#666666', borderRadius: 0, opacity: 1 } },
-          { id: 'jobid', type: 'field', x: 550, y: 40, width: 200, height: 40, rotate: 0, placeholder: '{{job_card_id}}', style: { fontSize: 18, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#E4892B', borderRadius: 0, opacity: 1 } },
+          { id: 'jobid', type: 'text', x: 550, y: 40, width: 200, height: 40, rotate: 0, content: '{{job_card_id}}', style: { fontSize: 18, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#E4892B', borderRadius: 0, opacity: 1 } },
           { id: 'line1', type: 'line', x: 40, y: 130, width: 710, height: 2, rotate: 0, style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 2, borderColor: '#000000', opacity: 1 } },
-          { id: 'table_label', type: 'text', x: 40, y: 400, width: 300, height: 30, rotate: 0, content: 'SLITTING OUTPUT PLAN (DYNAMIC)', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
+          { id: 'table_label', type: 'text', x: 40, y: 400, width: 300, height: 30, rotate: 0, content: 'SLITTING OUTPUT PLAN', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
           { id: 'output_table', type: 'table', x: 40, y: 440, width: 710, height: 300, rotate: 0, placeholder: 'SLIT_ROLLS', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 1, borderColor: '#ccc', opacity: 1 } }
         ]
       }
@@ -412,13 +405,9 @@ export default function PrintTemplateStudio() {
         batch.set(doc(firestore, 'print_templates', s.id), { ...s, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
       }
       await batch.commit()
-      toast({ title: "System Sync Complete", description: "Default layouts restored." })
+      toast({ title: "System Sync Complete" })
     } catch (e: any) {
-      const permissionError = new FirestorePermissionError({
-        path: 'print_templates',
-        operation: 'create'
-      });
-      errorEmitter.emit('permission-error', permissionError);
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'print_templates', operation: 'create' }));
     } finally {
       setIsSeeding(false)
     }
@@ -544,7 +533,7 @@ export default function PrintTemplateStudio() {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Print Template Studio</h2>
-              <p className="text-muted-foreground font-medium text-sm">Industrial document & label designer for Shree Label ERP.</p>
+              <p className="text-muted-foreground font-medium text-sm">Industrial document & label designer.</p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={handleSeedSamples} disabled={isSeeding} className="h-12 border-primary/20 hover:bg-primary/5">
@@ -673,7 +662,7 @@ export default function PrintTemplateStudio() {
                           {fields.map(p => (
                             <button 
                               key={p.key}
-                              onClick={() => addElement('field', p.key)}
+                              onClick={() => addElement('text', undefined, p.key)}
                               className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-primary/5 transition-all text-left group"
                             >
                               <p.icon className="h-3 w-3 text-slate-300 group-hover:text-primary" />
@@ -791,8 +780,8 @@ export default function PrintTemplateStudio() {
                   <div className="space-y-6">
                     <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Dimension</Label>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">X Position</Label><Input type="number" value={selectedElement.x} onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Y Position</Label><Input type="number" value={selectedElement.y} onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">X Pos</Label><Input type="number" value={selectedElement.x} onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Y Pos</Label><Input type="number" value={selectedElement.y} onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
                       <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Width</Label><Input type="number" value={selectedElement.width} onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
                       <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Height</Label><Input type="number" value={selectedElement.height} onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
                     </div>
@@ -872,10 +861,15 @@ export default function PrintTemplateStudio() {
                   {(['text', 'title', 'field', 'table'].includes(selectedElement.type)) && (
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Typography</Label>
-                      {selectedElement.type !== 'field' && selectedElement.type !== 'table' && (
+                      {selectedElement.type !== 'table' && (
                         <div className="space-y-1.5">
                           <Label className="text-[9px] uppercase font-bold text-slate-400">Content</Label>
-                          <Input value={selectedElement.content} onChange={e => updateElement(selectedElement.id, { content: e.target.value })} className="h-10 text-xs font-bold" disabled={currentTemplate?.isSystemTemplate} />
+                          <Input 
+                            value={selectedElement.type === 'field' ? selectedElement.placeholder : selectedElement.content} 
+                            onChange={e => selectedElement.type === 'field' ? updateElement(selectedElement.id, { placeholder: e.target.value }) : updateElement(selectedElement.id, { content: e.target.value })} 
+                            className="h-10 text-xs font-bold" 
+                            disabled={currentTemplate?.isSystemTemplate} 
+                          />
                         </div>
                       )}
                       <div className="space-y-1.5">
@@ -910,21 +904,32 @@ export default function PrintTemplateStudio() {
                   )}
 
                   {/* IDENTIFICATION SECTION */}
-                  {selectedElement.type === 'barcode' && (
+                  {(selectedElement.type === 'barcode' || selectedElement.type === 'qr') && (
                     <div className="space-y-6">
-                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Symbology</Label>
+                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Binding</Label>
                       <div className="space-y-1.5">
-                        <Label className="text-[9px] uppercase font-bold text-slate-400">Encoding Type</Label>
-                        <Select value={selectedElement.barcodeType || 'CODE128'} onValueChange={(v: any) => updateElement(selectedElement.id, { barcodeType: v })} disabled={currentTemplate?.isSystemTemplate}>
-                          <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
-                          <SelectContent className="z-[200]">
-                            <SelectItem value="CODE128">Code 128 (Alpha-Numeric)</SelectItem>
-                            <SelectItem value="CODE39">Code 39 (Standard)</SelectItem>
-                            <SelectItem value="EAN13">EAN-13 (Product)</SelectItem>
-                            <SelectItem value="UPC">UPC (Retail)</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Label className="text-[9px] uppercase font-bold text-slate-400">Placeholder Binding</Label>
+                        <Input 
+                          value={selectedElement.placeholder} 
+                          onChange={e => updateElement(selectedElement.id, { placeholder: e.target.value })} 
+                          placeholder="{{roll_no}}" 
+                          className="h-10 text-xs font-bold" 
+                        />
                       </div>
+                      {selectedElement.type === 'barcode' && (
+                        <div className="space-y-1.5">
+                          <Label className="text-[9px] uppercase font-bold text-slate-400">Symbology</Label>
+                          <Select value={selectedElement.barcodeType || 'CODE128'} onValueChange={(v: any) => updateElement(selectedElement.id, { barcodeType: v })} disabled={currentTemplate?.isSystemTemplate}>
+                            <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
+                            <SelectContent className="z-[200]">
+                              <SelectItem value="CODE128">Code 128 (Alpha-Numeric)</SelectItem>
+                              <SelectItem value="CODE39">Code 39 (Standard)</SelectItem>
+                              <SelectItem value="EAN13">EAN-13 (Product)</SelectItem>
+                              <SelectItem value="UPC">UPC (Retail)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -990,7 +995,7 @@ export default function PrintTemplateStudio() {
                     <div className="h-16 w-16 bg-white rounded-full flex items-center justify-center shadow-sm">
                       <MousePointerSquareDashed className="h-6 w-6 opacity-20" />
                     </div>
-                    <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Select canvas element to configure specific properties</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-50">Select element to configure</p>
                   </div>
                 </div>
               )}
@@ -1135,6 +1140,23 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
 
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
 
+  /**
+   * DESIGNER PREVIEW: Simulates dynamic replacement within the editor.
+   */
+  const previewData = Object.values(PLACEHOLDERS).flat().reduce((acc, p) => {
+    const key = p.key.replace(/[{}]/g, '');
+    acc[key] = p.preview;
+    return acc;
+  }, {} as Record<string, any>);
+
+  const processText = (text: string) => {
+    if (!text) return "";
+    return text.replace(/\{\{(.+?)\}\}/g, (match, key) => {
+      const cleanKey = key.trim();
+      return previewData[cleanKey] !== undefined ? String(previewData[cleanKey]) : match;
+    });
+  };
+
   const renderContent = () => {
     const commonStyle = {
       width: '100%',
@@ -1163,14 +1185,13 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       case 'title':
         return (
           <div style={{ ...commonStyle, padding: '4px' }}>
-            <span style={textStyle}>{element.content}</span>
+            <span style={textStyle}>{processText(element.content || "")}</span>
           </div>
         );
       case 'field': 
-        const previewVal = Object.values(PLACEHOLDERS).flat().find(p => p.key === element.placeholder)?.preview || "VALUE";
         return (
           <div style={{ ...commonStyle, padding: '4px' }}>
-            <span style={textStyle}>{previewVal}</span>
+            <span style={textStyle}>{processText(element.placeholder || "")}</span>
           </div>
         );
       case 'table':
@@ -1187,7 +1208,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
           </div>
         );
       case 'barcode': 
-        const barcodePreviewVal = (element.barcodeType === 'EAN13' || element.barcodeType === 'UPC') ? "123456789012" : "PREVIEW";
+        const barcodePreviewVal = (element.barcodeType === 'EAN13' || element.barcodeType === 'UPC') ? "123456789012" : processText(element.placeholder || "PREVIEW");
         return (
           <div style={commonStyle}>
             <div style={{ transform: `scale(${Math.min(1, element.width / 150)})`, transformOrigin: 'center' }}>
@@ -1196,7 +1217,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
           </div>
         );
       case 'qr': 
-        return <div style={commonStyle}><QRCodeSVG value="PREVIEW" size={Math.min(element.width, element.height) - 10} /></div>;
+        return <div style={commonStyle}><QRCodeSVG value={processText(element.placeholder || "PREVIEW")} size={Math.min(element.width, element.height) - 10} /></div>;
       case 'rectangle': 
       case 'circle': 
         return <div style={commonStyle} />;
@@ -1206,7 +1227,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
         return element.content ? (
           <img src={element.content} alt="Element" style={{ width: '100%', height: '100%', objectFit: 'contain', opacity: element.style.opacity, borderRadius: commonStyle.borderRadius }} />
         ) : (
-          <div className="w-full h-full border-2 border-dashed flex items-center justify-center text-[8px] uppercase font-bold opacity-30">No Image Asset</div>
+          <div className="w-full h-full border-2 border-dashed flex items-center justify-center text-[8px] uppercase font-bold opacity-30">No Asset</div>
         );
       default: return null;
     }

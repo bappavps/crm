@@ -224,7 +224,10 @@ function JumboJobCardContent() {
       parent_roll: job?.parent_roll,
       parent_width: parentRollData?.widthMm || "—",
       paper_type: parentRollData?.paperType || "—",
-      SLIT_ROLLS: children
+      SLIT_ROLLS: children,
+      // Generic mappings
+      company_name: "Shree Label Creation",
+      current_date: new Date().toLocaleDateString()
     };
   };
 
@@ -236,7 +239,12 @@ function JumboJobCardContent() {
     length: roll.lengthMeters,
     gsm: roll.gsm,
     company: roll.paperCompany,
-    date: roll.receivedDate
+    date: roll.receivedDate,
+    // Add specific keys for advanced placeholder mapping
+    company_name: roll.paperCompany,
+    current_date: roll.receivedDate,
+    parent_roll_no: roll.rollNo,
+    lengthMtr: roll.lengthMeters
   });
 
   return (

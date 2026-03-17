@@ -47,10 +47,16 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
   const paperWidth = template.paperWidth || 210;
   const paperHeight = template.paperHeight || 297;
 
-  const getVal = (key: string) => {
-    if (!key) return "";
-    const cleanKey = key.replace(/[{}]/g, '');
-    return String(data[cleanKey] || "");
+  /**
+   * REPLACEMENT ENGINE: Detects {{placeholder}} and replaces with live data.
+   * Supports embedded text: "Width: {{width}} MM" -> "Width: 1020 MM"
+   */
+  const processText = (text: string) => {
+    if (!text) return "";
+    return text.replace(/\{\{(.+?)\}\}/g, (match, key) => {
+      const cleanKey = key.trim();
+      return data[cleanKey] !== undefined ? String(data[cleanKey]) : match;
+    });
   };
 
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
@@ -89,17 +95,19 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
       case 'title':
         return (
           <div style={style}>
-            <span style={textStyle}>{el.content}</span>
+            <span style={textStyle}>{processText(el.content || "")}</span>
           </div>
         );
       case 'field':
+        // Support legacy field elements by processing their placeholder as a key
         return (
           <div style={style}>
-            <span style={textStyle}>{getVal(el.placeholder || "")}</span>
+            <span style={textStyle}>{processText(el.placeholder || "")}</span>
           </div>
         );
       case 'table':
-        const tableData = data[el.placeholder || ""] || [];
+        const tableKey = (el.placeholder || "").replace(/[{}]/g, '');
+        const tableData = data[tableKey] || [];
         return (
           <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
             <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
@@ -119,7 +127,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
           </div>
         );
       case 'barcode':
-        const barcodeVal = getVal(el.placeholder || "") || "123456789012";
+        const barcodeVal = processText(el.placeholder || "") || "123456789012";
         return (
           <div style={style}>
             <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'center' }}>
@@ -137,7 +145,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
       case 'qr':
         return (
           <div style={style}>
-            <QRCodeSVG value={getVal(el.placeholder || "") || "NA"} size={Math.min(el.width, el.height) - 5} />
+            <QRCodeSVG value={processText(el.placeholder || "") || "NA"} size={Math.min(el.width, el.height) - 5} />
           </div>
         );
       case 'rectangle':

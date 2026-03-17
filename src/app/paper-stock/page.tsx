@@ -533,7 +533,12 @@ export default function PaperStockPage() {
     length: roll.lengthMeters,
     gsm: roll.gsm,
     company: roll.paperCompany,
-    date: roll.receivedDate
+    date: roll.receivedDate,
+    // Add specific keys requested for advanced placeholder mapping
+    company_name: roll.paperCompany,
+    current_date: roll.receivedDate,
+    parent_roll_no: roll.rollNo,
+    lengthMtr: roll.lengthMeters
   });
 
   if (!isMounted) return null;
