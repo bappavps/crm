@@ -100,7 +100,6 @@ function SlittingHubContent() {
   // 1. Fetch Planning Jobs for Auto Planner
   const planningJobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    // We target label-printing as requested in instructions
     return query(collection(firestore, 'planning_tables/label-printing/rows'), where('values.printing_planning', '!=', 'Completed'));
   }, [firestore]);
   const { data: planningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
@@ -129,13 +128,14 @@ function SlittingHubContent() {
     }
   }, [initialRollData]);
 
-  // --- REVISED ANALYSIS ENGINE (ALGORITHM V2) ---
+  // --- REVISED ANALYSIS ENGINE (ALGORITHM V3 - LENGTH AWARE) ---
   useEffect(() => {
     if (selectedPlanningJob && stockData) {
       // Extract target width from planning job
       const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
       const targetWidth = parseInt(String(rawWidth).replace(/[^0-9]/g, '')) || 0;
       const jobMaterial = String(selectedPlanningJob.values.material || "").toLowerCase().trim();
+      const jobLengthRequired = Number(selectedPlanningJob.values.allocate_mtrs) || 0;
       
       if (targetWidth <= 0) return;
 
@@ -149,10 +149,17 @@ function SlittingHubContent() {
       // 2. Analyze and Rank
       const analyzed = candidates.map(roll => {
         const rw = Number(roll.widthMm);
+        const rl = Number(roll.lengthMeters) || 0;
+        
         const splits = Math.floor(rw / targetWidth);
         const waste = rw % targetWidth;
         const efficiency = (splits * targetWidth) / rw;
         
+        // Calculate requirement based on length
+        const usableLengthPerRoll = rl * splits;
+        const requiredRolls = usableLengthPerRoll > 0 ? Math.ceil(jobLengthRequired / usableLengthPerRoll) : 1;
+        const totalOutput = usableLengthPerRoll * requiredRolls;
+
         const isExact = rw === targetWidth;
         const isJumbo = rw >= 1000;
 
@@ -170,7 +177,10 @@ function SlittingHubContent() {
           splits,
           waste,
           efficiency,
-          priority
+          priority,
+          requiredRolls,
+          totalOutput,
+          rollLength: rl
         };
       });
 
@@ -193,7 +203,7 @@ function SlittingHubContent() {
 
   const handleAcceptPlan = () => {
     if (!plannerRecommendation) return;
-    const { roll, targetWidth, splits } = plannerRecommendation;
+    const { roll, targetWidth, requiredRolls } = plannerRecommendation;
     
     setSelectedParent(roll);
     setSlitRuns([{ 
@@ -203,10 +213,10 @@ function SlittingHubContent() {
       jobSize: selectedPlanningJob.values.size || "",
       widthMm: targetWidth, 
       lengthMeters: roll.lengthMeters, 
-      parts: splits 
+      parts: requiredRolls 
     }]);
 
-    toast({ title: "Plan Accepted", description: "Source roll and run specs pre-filled based on optimal efficiency." });
+    toast({ title: "Plan Accepted", description: `Pre-filled ${requiredRolls} rolls of ${targetWidth}mm based on job length requirements.` });
     setRecommendation(null);
     setSelectedJob(null);
     setPlannerSearch("");
@@ -446,7 +456,7 @@ function SlittingHubContent() {
               <CardTitle className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
                 <Sparkles className="h-5 w-5 text-primary" /> Auto Slitting Planner
               </CardTitle>
-              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest"> Intelligent Stock Analysis Engine (V2.0)</CardDescription>
+              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest"> Intelligent Stock Analysis Engine (V3.0 - Length Aware)</CardDescription>
             </div>
             <Badge className="bg-primary/20 text-primary border-primary/30 font-black text-[9px] px-3 py-1 uppercase tracking-tighter">Powered by CRM Intelligence</Badge>
           </div>
@@ -488,7 +498,7 @@ function SlittingHubContent() {
                         <p className="text-sm font-black uppercase tracking-tight">{job.values.name}</p>
                         <div className="flex gap-3 text-[9px] font-bold text-slate-400 uppercase">
                           <span className="flex items-center gap-1"><Maximize2 className="h-3 w-3" /> {job.values.paper_size || job.values.size}</span>
-                          <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> {job.values.material}</span>
+                          <span className="flex items-center gap-1"><ArrowRightLeft className="h-3 w-3" /> {job.values.allocate_mtrs} MTR</span>
                         </div>
                       </div>
                     </div>
@@ -525,16 +535,29 @@ function SlittingHubContent() {
                       <p className="text-[9px] font-black uppercase text-primary tracking-[0.2em]">Optimal Source Selection</p>
                       <h3 className="text-4xl font-black tracking-tighter">{plannerRecommendation.roll.rollNo}</h3>
                       <p className="text-[10px] font-bold uppercase opacity-50">{plannerRecommendation.roll.paperType} • {plannerRecommendation.roll.paperCompany}</p>
+                      <p className="text-[10px] font-bold uppercase opacity-50">Source Specs: {plannerRecommendation.roll.widthMm}mm x {plannerRecommendation.rollLength}m</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-8 border-t border-white/10 pt-8">
-                      <div className="space-y-1">
-                        <p className="text-[9px] font-black uppercase opacity-40">Output Potential</p>
-                        <p className="text-2xl font-black">{plannerRecommendation.splits} <small className="text-xs font-medium opacity-60">Slits @ {plannerRecommendation.targetWidth}mm</small></p>
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black uppercase opacity-40">Output Potential</p>
+                          <p className="text-2xl font-black">{plannerRecommendation.splits} <small className="text-xs font-medium opacity-60">Slits per roll</small></p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black uppercase opacity-40">Required Run Count</p>
+                          <p className="text-2xl font-black">{plannerRecommendation.requiredRolls} <small className="text-xs font-medium opacity-60">Rolls</small></p>
+                        </div>
                       </div>
-                      <div className="space-y-1 text-right">
-                        <p className="text-[9px] font-black uppercase opacity-40">Predicted Waste</p>
-                        <p className="text-2xl font-black text-rose-400">{plannerRecommendation.waste} <small className="text-xs font-medium opacity-60">MM</small></p>
+                      <div className="space-y-4 text-right">
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black uppercase opacity-40">Waste Analysis</p>
+                          <p className="text-2xl font-black text-rose-400">{plannerRecommendation.waste} <small className="text-xs font-medium opacity-60">MM Waste</small></p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-[9px] font-black uppercase opacity-40">Total Project Output</p>
+                          <p className="text-2xl font-black text-emerald-400">{plannerRecommendation.totalOutput} <small className="text-xs font-medium opacity-60">MTR</small></p>
+                        </div>
                       </div>
                     </div>
 
