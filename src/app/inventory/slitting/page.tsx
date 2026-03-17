@@ -39,7 +39,8 @@ import {
   Filter,
   Info,
   Layers,
-  ArrowUpRight
+  ArrowUpRight,
+  Settings2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -118,6 +119,8 @@ function SlittingHubContent() {
   const [selectedPlanningJob, setSelectedJob] = useState<any>(null)
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false)
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false)
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [slittingReport, setSlittingReport] = useState<any>(null)
   const [selectedSupplier, setSelectedSupplier] = useState<string>("all")
   const [selectionMap, setSelectionMap] = useState<Record<string, number>>({})
 
@@ -273,7 +276,6 @@ function SlittingHubContent() {
     const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
     if (selectedEntries.length === 0) return;
 
-    // Transition to Summary Modal instead of pre-filling grid
     setIsOptionsModalOpen(false);
     setIsSummaryModalOpen(true);
   };
@@ -305,6 +307,137 @@ function SlittingHubContent() {
     setSlitRuns(runs);
     setIsSummaryModalOpen(false);
     toast({ title: "Terminal Initialized", description: `Pre-filled workspace with ${stats?.totalRolls} source rolls.` });
+  };
+
+  /**
+   * AUTO EXECUTION ENGINE (M9)
+   * Executes slitting for all selected rolls without opening terminal.
+   */
+  const handleAutoExecute = async () => {
+    if (!firestore || !user || !selectedPlanningJob || !stats) return;
+    setIsProcessing(true);
+
+    try {
+      const reportSourceRolls: any[] = [];
+      const reportChildRolls: any[] = [];
+      let totalWasteMm = 0;
+
+      await runTransaction(firestore, async (transaction) => {
+        const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
+        
+        for (const [key, qty] of selectedEntries) {
+          const opt = availableOptions.find((o: any) => o.key === key) as any;
+          const rollsToProcess = opt.rolls.slice(0, qty);
+
+          for (const roll of rollsToProcess) {
+            const parentRef = doc(firestore, 'paper_stock', roll.id);
+            transaction.update(parentRef, { 
+              status: "Consumed", 
+              dateOfUsed: new Date().toISOString().split('T')[0],
+              updatedAt: serverTimestamp() 
+            });
+            
+            reportSourceRolls.push(roll);
+            totalWasteMm += opt.waste;
+
+            let childIdx = 0;
+            const targetWidth = stats.targetWidth;
+            const splits = opt.splits;
+
+            for (let i = 0; i < splits; i++) {
+              const suffix = getChildSuffix(roll.rollNo, childIdx);
+              const childId = `${roll.rollNo}-${suffix}`;
+              const childRef = doc(firestore, 'paper_stock', childId);
+              
+              const childData = {
+                ...roll,
+                id: childId,
+                rollNo: childId,
+                widthMm: targetWidth,
+                lengthMeters: roll.lengthMeters,
+                status: "Job Assign",
+                jobNo: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
+                jobName: selectedPlanningJob.values.name || "",
+                jobSize: selectedPlanningJob.values.size || "",
+                parentRollNo: roll.rollNo,
+                sqm: Number(((targetWidth / 1000) * roll.lengthMeters).toFixed(2)),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdById: user.uid
+              };
+
+              transaction.set(childRef, childData);
+              reportChildRolls.push(childData);
+              childIdx++;
+            }
+
+            if (opt.waste > 0) {
+              const suffix = getChildSuffix(roll.rollNo, childIdx);
+              const remainderId = `${roll.rollNo}-${suffix}`;
+              const remainderRef = doc(firestore, 'paper_stock', remainderId);
+              
+              transaction.set(remainderRef, {
+                ...roll,
+                id: remainderId,
+                rollNo: remainderId,
+                widthMm: opt.waste,
+                lengthMeters: roll.lengthMeters,
+                status: "Stock", 
+                jobNo: "",
+                jobName: "",
+                jobSize: "",
+                parentRollNo: roll.rollNo,
+                sqm: Number(((opt.waste / 1000) * roll.lengthMeters).toFixed(2)),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdById: user.uid,
+                remarks: `Remainder from auto-slitting ${roll.rollNo}`
+              });
+            }
+          }
+        }
+
+        // Generate Job Card Automatically
+        const jobId = `JJC-AUTO-${Date.now().toString().slice(-6)}`;
+        const jobCardRef = doc(firestore, 'jumbo_job_cards', jobId);
+        const firstParent = reportSourceRolls[0];
+        
+        transaction.set(jobCardRef, {
+          id: jobId,
+          job_card_no: jobId,
+          parent_roll: firstParent?.rollNo || "MULTI",
+          child_rolls: reportChildRolls.map(r => r.rollNo),
+          status: "PENDING",
+          createdAt: new Date().toISOString(),
+          createdById: user.uid,
+          createdByName: user.displayName || user.email,
+          type: "AUTO_PLANNER",
+          machine: "AUTO",
+          operator: user.displayName || user.email,
+          target_job_no: String(selectedPlanningJob.values.sn || selectedPlanningJob.id)
+        });
+      });
+
+      setSlittingReport({
+        jobName: selectedPlanningJob.values.name,
+        material: selectedPlanningJob.values.material,
+        targetWidth: stats.targetWidth,
+        producedLength: stats.produced,
+        remainingRequirement: stats.remaining,
+        sourceRolls: reportSourceRolls,
+        childRolls: reportChildRolls,
+        totalWaste: totalWasteMm
+      });
+
+      setIsSummaryModalOpen(false);
+      setIsReportModalOpen(true);
+      toast({ title: "Auto Slitting Successful", description: "Paper stock updated and Job Card generated." });
+
+    } catch (e: any) {
+      setModal({ isOpen: true, type: 'ERROR', title: 'Execution Failed', description: e.message });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleSearch = async () => {
@@ -941,10 +1074,73 @@ function SlittingHubContent() {
           <div className="shrink-0 bg-slate-50 border-t p-8">
             <div className="flex gap-4">
               <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-[11px] tracking-widest border-2" onClick={() => setIsSummaryModalOpen(false)}>Discard Plan</Button>
-              <Button onClick={handleInitializeTerminal} className="flex-[2] h-14 rounded-2xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[11px] tracking-widest shadow-2xl">
-                Initialize Slitting Terminal <ArrowUpRight className="ml-2 h-5 w-5 text-primary" />
+              <Button variant="outline" onClick={handleInitializeTerminal} className="flex-1 h-14 rounded-2xl font-black uppercase text-[11px] tracking-widest border-2">
+                Manual Terminal <Settings2 className="ml-2 h-4 w-4" />
+              </Button>
+              <Button onClick={handleAutoExecute} disabled={isProcessing} className="flex-[2] h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[11px] tracking-widest shadow-2xl">
+                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <Scissors className="mr-2 h-5 w-5" />}
+                Confirm & Execute Slitting
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- M9: SLITTING TRANSACTION REPORT MODAL --- */}
+      <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
+        <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-white flex flex-col max-h-[90vh]">
+          <div className="bg-emerald-600 text-white p-8 shrink-0">
+            <div className="flex justify-between items-center">
+              <div className="space-y-1">
+                <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5" /> Slitting Transaction Report
+                </DialogTitle>
+                <DialogDescription className="text-emerald-100 text-[10px] font-bold uppercase tracking-tighter">Execution completed successfully</DialogDescription>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setIsReportModalOpen(false)} className="text-white hover:bg-white/10"><X className="h-5 w-5" /></Button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto industrial-scroll p-8 space-y-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 bg-slate-50 p-6 rounded-2xl border-2 border-slate-100">
+              <SummaryField label="Job Name" value={slittingReport?.jobName} />
+              <SummaryField label="Material" value={slittingReport?.material} highlight />
+              <SummaryField label="Total Produced" value={slittingReport?.producedLength?.toLocaleString() + " mtr"} />
+              <SummaryField label="Child Units" value={slittingReport?.childRolls?.length} />
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900 border-b pb-2 flex items-center gap-2">
+                <Package className="h-4 w-4 text-primary" /> Generated Child Rolls
+              </h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                {slittingReport?.childRolls.slice(0, 15).map((roll: any) => (
+                  <div key={roll.rollNo} className="p-3 border rounded-xl bg-white shadow-sm flex flex-col gap-1">
+                    <span className="text-[10px] font-black text-primary font-mono">{roll.rollNo}</span>
+                    <span className="text-[9px] font-bold opacity-50 uppercase">{roll.widthMm}mm x {roll.lengthMeters}m</span>
+                  </div>
+                ))}
+                {slittingReport?.childRolls.length > 15 && (
+                  <div className="p-3 border rounded-xl bg-slate-50 flex items-center justify-center italic text-[9px] font-bold opacity-40">
+                    + {slittingReport.childRolls.length - 15} more units
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-6 bg-amber-50/50 rounded-2xl border-2 border-amber-100">
+              <div className="flex items-center gap-3 mb-2">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                <span className="text-[11px] font-black uppercase text-amber-700">Production Waste Summary</span>
+              </div>
+              <p className="text-xs font-bold text-amber-800">Total Material Waste: {slittingReport?.totalWaste} mm (Width Cumulative)</p>
+            </div>
+          </div>
+
+          <div className="shrink-0 bg-slate-50 border-t p-8">
+            <Button onClick={() => setIsReportModalOpen(false)} className="w-full h-14 rounded-2xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[11px] tracking-widest shadow-xl">
+              Close Report & Return to Terminal
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
