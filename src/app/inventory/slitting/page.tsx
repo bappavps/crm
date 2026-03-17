@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -99,6 +100,7 @@ function SlittingHubContent() {
   // 1. Fetch Planning Jobs for Auto Planner
   const planningJobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
+    // We target label-printing as requested in instructions
     return query(collection(firestore, 'planning_tables/label-printing/rows'), where('values.printing_planning', '!=', 'Completed'));
   }, [firestore]);
   const { data: planningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
@@ -127,44 +129,60 @@ function SlittingHubContent() {
     }
   }, [initialRollData]);
 
-  // --- ANALYSIS ENGINE ---
+  // --- REVISED ANALYSIS ENGINE (ALGORITHM V2) ---
   useEffect(() => {
     if (selectedPlanningJob && stockData) {
-      // Extract target width from planning job (e.g., "165 mm" -> 165)
+      // Extract target width from planning job
       const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
       const targetWidth = parseInt(String(rawWidth).replace(/[^0-9]/g, '')) || 0;
+      const jobMaterial = String(selectedPlanningJob.values.material || "").toLowerCase().trim();
       
       if (targetWidth <= 0) return;
 
-      const results = stockData
-        .filter(roll => {
-          const rw = Number(roll.widthMm) || 0;
-          return rw >= targetWidth;
-        })
-        .map(roll => {
-          const rw = Number(roll.widthMm);
-          const splits = Math.floor(rw / targetWidth);
-          const waste = rw % targetWidth;
-          const isChild = roll.rollNo.includes('-');
-          const isJumbo = rw >= 999;
+      // 1. Filter candidates by material and status
+      const candidates = stockData.filter(roll => {
+        const rollMaterial = String(roll.paperType || "").toLowerCase().trim();
+        const rw = Number(roll.widthMm) || 0;
+        return rollMaterial === jobMaterial && rw >= targetWidth;
+      });
 
-          // Efficiency Scoring
-          let score = (splits * targetWidth / rw) * 100;
-          if (isChild) score += 20; // Bonus for using remnants
-          if (isJumbo) score -= 50; // Penalty for using full jumbos if others exist
+      // 2. Analyze and Rank
+      const analyzed = candidates.map(roll => {
+        const rw = Number(roll.widthMm);
+        const splits = Math.floor(rw / targetWidth);
+        const waste = rw % targetWidth;
+        const efficiency = (splits * targetWidth) / rw;
+        
+        const isExact = rw === targetWidth;
+        const isJumbo = rw >= 1000;
 
-          return {
-            roll,
-            targetWidth,
-            splits,
-            waste,
-            score
-          };
-        })
-        .sort((a, b) => b.score - a.score);
+        // Priority Logic:
+        // 1: Exact Match
+        // 2: Child Roll (< 1000mm)
+        // 3: Jumbo Roll (>= 1000mm)
+        let priority = 3;
+        if (isExact) priority = 1;
+        else if (!isJumbo) priority = 2;
 
-      if (results.length > 0) {
-        setRecommendation(results[0]);
+        return {
+          roll,
+          targetWidth,
+          splits,
+          waste,
+          efficiency,
+          priority
+        };
+      });
+
+      // 3. Sort by Priority, then Waste (lower is better), then Efficiency (higher is better)
+      analyzed.sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        if (a.waste !== b.waste) return a.waste - b.waste;
+        return b.efficiency - a.efficiency;
+      });
+
+      if (analyzed.length > 0) {
+        setRecommendation(analyzed[0]);
       } else {
         setRecommendation(null);
       }
@@ -188,7 +206,7 @@ function SlittingHubContent() {
       parts: splits 
     }]);
 
-    toast({ title: "Plan Accepted", description: "Source roll and run specs pre-filled." });
+    toast({ title: "Plan Accepted", description: "Source roll and run specs pre-filled based on optimal efficiency." });
     setRecommendation(null);
     setSelectedJob(null);
     setPlannerSearch("");
@@ -420,7 +438,7 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- NEW: AUTO SLITTING PLANNER --- */}
+      {/* --- AUTO SLITTING PLANNER --- */}
       <Card className="shadow-2xl border-none rounded-3xl overflow-hidden bg-white">
         <CardHeader className="bg-slate-900 text-white p-8">
           <div className="flex items-center justify-between">
@@ -428,7 +446,7 @@ function SlittingHubContent() {
               <CardTitle className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
                 <Sparkles className="h-5 w-5 text-primary" /> Auto Slitting Planner
               </CardTitle>
-              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest"> Intelligent Stock Analysis Engine (V1.0)</CardDescription>
+              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest"> Intelligent Stock Analysis Engine (V2.0)</CardDescription>
             </div>
             <Badge className="bg-primary/20 text-primary border-primary/30 font-black text-[9px] px-3 py-1 uppercase tracking-tighter">Powered by CRM Intelligence</Badge>
           </div>
@@ -492,10 +510,19 @@ function SlittingHubContent() {
               ) : plannerRecommendation ? (
                 <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
                   <div className="p-8 bg-slate-900 rounded-[2rem] text-white space-y-8 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4"><Badge className="bg-emerald-500 font-black">98% Match</Badge></div>
+                    <div className="absolute top-0 right-0 p-4">
+                      <Badge className={cn(
+                        "font-black border-none",
+                        plannerRecommendation.priority === 1 ? "bg-emerald-500" : 
+                        plannerRecommendation.priority === 2 ? "bg-blue-500" : "bg-orange-500"
+                      )}>
+                        {plannerRecommendation.priority === 1 ? 'EXACT MATCH' : 
+                         plannerRecommendation.priority === 2 ? 'CHILD ROLL' : 'JUMBO ROLL'}
+                      </Badge>
+                    </div>
                     
                     <div className="space-y-1">
-                      <p className="text-[9px] font-black uppercase text-primary tracking-[0.2em]">Recommended Source Roll</p>
+                      <p className="text-[9px] font-black uppercase text-primary tracking-[0.2em]">Optimal Source Selection</p>
                       <h3 className="text-4xl font-black tracking-tighter">{plannerRecommendation.roll.rollNo}</h3>
                       <p className="text-[10px] font-bold uppercase opacity-50">{plannerRecommendation.roll.paperType} • {plannerRecommendation.roll.paperCompany}</p>
                     </div>
@@ -516,10 +543,12 @@ function SlittingHubContent() {
                         {Array.from({ length: plannerRecommendation.splits }).map((_, i) => (
                           <div key={i} className="h-full border-r border-slate-900/50 bg-primary" style={{ width: `${(plannerRecommendation.targetWidth / plannerRecommendation.roll.widthMm) * 100}%` }} />
                         ))}
-                        <div className="h-full bg-rose-500/40" style={{ width: `${(plannerRecommendation.waste / plannerRecommendation.roll.widthMm) * 100}%` }} />
+                        {plannerRecommendation.waste > 0 && (
+                          <div className="h-full bg-rose-500/40" style={{ width: `${(plannerRecommendation.waste / plannerRecommendation.roll.widthMm) * 100}%` }} />
+                        )}
                       </div>
                       <div className="flex justify-between mt-2 text-[8px] font-black uppercase tracking-widest opacity-40">
-                        <span>Layout Visualization</span>
+                        <span>Efficiency: {(plannerRecommendation.efficiency * 100).toFixed(1)}%</span>
                         <span>Width: {plannerRecommendation.roll.widthMm}mm</span>
                       </div>
                     </div>
@@ -536,8 +565,10 @@ function SlittingHubContent() {
                 <div className="h-[300px] bg-rose-50 border-2 border-rose-100 rounded-[2rem] flex flex-col items-center justify-center text-center p-8 gap-4">
                   <AlertTriangle className="h-10 w-10 text-rose-500" />
                   <div className="space-y-1">
-                    <p className="text-sm font-black uppercase text-rose-900">No Compatible Stock</p>
-                    <p className="text-[10px] font-bold uppercase text-rose-600 max-w-[200px]">We couldn't find a roll wide enough for this job in the active registry.</p>
+                    <p className="text-sm font-black uppercase text-rose-900">No Matching Stock</p>
+                    <p className="text-[10px] font-bold uppercase text-rose-600 max-w-[200px]">
+                      No rolls found matching material "{selectedPlanningJob.values.material}" with required width.
+                    </p>
                   </div>
                 </div>
               )}
@@ -547,6 +578,7 @@ function SlittingHubContent() {
       </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 print:hidden">
+        {/* EXISTING Source Roll Selection */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="shadow-xl border-none rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-900 text-white p-6">
@@ -606,6 +638,7 @@ function SlittingHubContent() {
             </CardContent>
           </Card>
 
+          {/* EXISTING Summary */}
           <Card className={cn("shadow-2xl border-none rounded-3xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold opacity-90">
@@ -652,6 +685,7 @@ function SlittingHubContent() {
         </div>
 
         <div className="lg:col-span-3 space-y-6">
+          {/* EXISTING Slitting Run Specification */}
           <Card className="shadow-xl border-none rounded-3xl overflow-hidden flex flex-col bg-white">
             <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between p-6">
               <div className="space-y-1">
@@ -778,6 +812,7 @@ function SlittingHubContent() {
             </CardFooter>
           </Card>
 
+          {/* EXISTING Slitting Layout Preview */}
           <Card className="shadow-xl border-none rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-50 border-b py-6 px-8">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
