@@ -1157,10 +1157,12 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
           </div>
         );
       case 'barcode': 
+        // formats like EAN13 and UPC are strict about numeric input and length
+        const barcodePreviewVal = (element.barcodeType === 'EAN13' || element.barcodeType === 'UPC') ? "123456789012" : "PREVIEW";
         return (
           <div style={commonStyle}>
             <div style={{ transform: `scale(${Math.min(1, element.width / 150)})`, transformOrigin: 'center' }}>
-              <Barcode format={element.barcodeType as any || 'CODE128'} value="PREVIEW" height={element.height - 20} width={1.5} fontSize={10} />
+              <Barcode format={element.barcodeType as any || 'CODE128'} value={barcodePreviewVal} height={element.height - 20} width={1.5} fontSize={10} />
             </div>
           </div>
         );
