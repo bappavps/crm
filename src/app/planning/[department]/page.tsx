@@ -55,8 +55,8 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
 /**
- * DYNAMIC PRODUCTION PLANNING BOARD
- * Supports flexible columns, departmental routing, and automated hold sections.
+ * DYNAMIC PRODUCTION PLANNING BOARD (V3)
+ * Enhanced height for 15+ job visibility and robust initial seeding.
  */
 
 const STATUS_COLORS: Record<string, string> = {
@@ -126,56 +126,65 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
 
   // 3. Initialize Department with Default Sheet Data
   useEffect(() => {
-    if (isMounted && firestore && !tableLoading && !tableDef && department === 'label-printing') {
+    if (isMounted && firestore && !tableLoading && department === 'label-printing') {
       const initTable = async () => {
-        await setDoc(doc(firestore, 'planning_tables', 'label-printing'), {
-          id: 'label-printing',
-          department: 'Label Printing',
-          columns: DEFAULT_LABEL_COLUMNS,
-          created_at: serverTimestamp()
-        });
-        
-        const batch = writeBatch(firestore);
-        
-        // MAIN PRODUCTION ROWS (User Requested 6 Rows)
-        const mainRows = [
-          { sn: 1, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Running", plate_no: "1052", name: "YaisnaCookies", size: "75mm X 90mm", repeat: "3.133 mm", material: "Chromo", paper_size: "165 mm", die: "Rotary", allocate_mtrs: 4000, qty_pcs: 82000, core_size: "1 inch", qty_per_roll: "500", roll_direction: "Anticlock", remarks: "" },
-          { sn: 2, order_date: "2026-03-10", dispatch_date: "2026-03-20", printing_planning: "Pending", plate_no: "938", name: "Blue 1ltr", size: "158mm X 34mm", repeat: "3.306 mm", material: "PP White", paper_size: "172mm", die: "Rotary", allocate_mtrs: 2500, qty_pcs: 60000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
-          { sn: 3, order_date: "2026-03-10", dispatch_date: "2026-03-20", printing_planning: "Pending", plate_no: "939", name: "Blue 500ml", size: "117.5mm X 27mm", repeat: "2.63mm", material: "PP White", paper_size: "130mm", die: "Rotary", allocate_mtrs: 11000, qty_pcs: 360000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
-          { sn: 4, order_date: "2026-03-10", dispatch_date: "2026-03-20", printing_planning: "Pending", plate_no: "940", name: "Blue 200ml", size: "80mm X 20mm", repeat: "2.578mm", material: "PP White", paper_size: "175mm", die: "Rotary", allocate_mtrs: 3000, qty_pcs: 240000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
-          { sn: 5, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "516", name: "Dabur", size: "20mm X 50mm", repeat: "3.34 mm", material: "Transparent Paper Release", paper_size: "145mm", die: "Rotary", allocate_mtrs: 20000, qty_pcs: 2000000, core_size: "", qty_per_roll: "", roll_direction: "Sheet Form", remarks: "" },
-          { sn: 6, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "871", name: "Amrit 750ml", size: "100mm X 35mm", repeat: "3.1mm", material: "Silver Metalic", paper_size: "220mm", die: "Rotary", allocate_mtrs: 20000, qty_pcs: 1000000, core_size: "3 inc", qty_per_roll: "7000", roll_direction: "Left First", remarks: "" }
-        ];
-
-        mainRows.forEach(sr => {
-          const rowId = crypto.randomUUID();
-          batch.set(doc(firestore, `planning_tables/label-printing/rows`, rowId), {
-            id: rowId,
-            section: SECTIONS.MAIN,
-            data_source: "manual",
-            values: sr,
+        // Only run if table definition doesn't exist
+        if (!tableDef) {
+          await setDoc(doc(firestore, 'planning_tables', 'label-printing'), {
+            id: 'label-printing',
+            department: 'Label Printing',
+            columns: DEFAULT_LABEL_COLUMNS,
             created_at: serverTimestamp()
           });
-        });
+        }
 
-        // ADDITIONAL HOLD ROWS FOR VISUAL CONSISTENCY
-        const holdRows = [
-          { sn: 7, order_date: "2026-02-23", dispatch_date: "2026-03-03", printing_planning: "Hold", plate_no: "1046", name: "AMD Clot Activator", size: "45mm x 17mm", repeat: "3.32mm", material: "Chromo (70gsm)", paper_size: "155mm", die: "Flat Bed", allocate_mtrs: 0, qty_pcs: "sampling", core_size: "3 inch", qty_per_roll: "3000", roll_direction: "Bottom First", remarks: "Rotary die not recv." },
-          { sn: 8, order_date: "2026-03-13", dispatch_date: "2026-03-23", printing_planning: "Hold", plate_no: "1057", name: "Trinity", size: "80mm x 35mm", repeat: "3.1mm", material: "PP White", paper_size: "176mm", die: "Flat Bed", allocate_mtrs: 3000, qty_pcs: 150000, core_size: "3 inch", qty_per_roll: "5000", roll_direction: "Left First", remarks: "Plate sent to make" }
-        ];
+        // If table exists but has no rows, seed the default production data
+        const rowsSnap = await getDocs(query(collection(firestore, `planning_tables/label-printing/rows`), limit(1)));
+        if (rowsSnap.empty) {
+          const batch = writeBatch(firestore);
+          
+          // MAIN PRODUCTION ROWS
+          const mainRows = [
+            { sn: 1, order_date: "11.03.26", dispatch_date: "21.03.26", printing_planning: "Running", plate_no: "1052", name: "YaisnaCookies", size: "75mm X 90mm", repeat: "3.133 mm", material: "Chromo", paper_size: "165 mm", die: "Rotary", allocate_mtrs: 4000, qty_pcs: 82000, core_size: "1 inch", qty_per_roll: "500", roll_direction: "Anticlock", remarks: "" },
+            { sn: 2, order_date: "10.03.26", dispatch_date: "20.03.26", printing_planning: "Pending", plate_no: "938", name: "Blue 1ltr", size: "158mm X 34mm", repeat: "3.306 mm", material: "PP White", paper_size: "172mm", die: "Rotary", allocate_mtrs: 2500, qty_pcs: 60000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
+            { sn: 3, order_date: "10.03.26", dispatch_date: "20.03.26", printing_planning: "Pending", plate_no: "939", name: "Blue 500ml", size: "117.5mm X 27mm", repeat: "2.63mm", material: "PP White", paper_size: "130mm", die: "Rotary", allocate_mtrs: 11000, qty_pcs: 360000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
+            { sn: 4, order_date: "10.03.26", dispatch_date: "20.03.26", printing_planning: "Pending", plate_no: "940", name: "Blue 200ml", size: "80mm X 20mm", repeat: "2.578mm", material: "PP White", paper_size: "175mm", die: "Rotary", allocate_mtrs: 3000, qty_pcs: 240000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
+            { sn: 5, order_date: "11.03.26", dispatch_date: "21.03.26", printing_planning: "Pending", plate_no: "516", name: "Dabur", size: "20mm X 50mm", repeat: "3.34 mm", material: "Transparent Paper Release", paper_size: "145mm", die: "Rotary", allocate_mtrs: 20000, qty_pcs: 2000000, core_size: "", qty_per_roll: "", roll_direction: "Sheet Form", remarks: "" },
+            { sn: 6, order_date: "11.03.26", dispatch_date: "21.03.26", printing_planning: "Pending", plate_no: "871", name: "Amrit 750ml", size: "100mm X 35mm", repeat: "3.1mm", material: "Silver Metalic", paper_size: "220mm", die: "Rotary", allocate_mtrs: 20000, qty_pcs: 1000000, core_size: "3 inc", qty_per_roll: "7000", roll_direction: "Left First", remarks: "" }
+          ];
 
-        holdRows.forEach(sr => {
-          const rowId = crypto.randomUUID();
-          batch.set(doc(firestore, `planning_tables/label-printing/rows`, rowId), {
-            id: rowId,
-            section: SECTIONS.HOLD_MATERIAL,
-            data_source: "manual",
-            values: sr,
-            created_at: serverTimestamp()
+          mainRows.forEach(sr => {
+            const rowId = crypto.randomUUID();
+            batch.set(doc(firestore, `planning_tables/label-printing/rows`, rowId), {
+              id: rowId,
+              section: SECTIONS.MAIN,
+              data_source: "manual",
+              values: sr,
+              created_at: serverTimestamp()
+            });
           });
-        });
 
-        await batch.commit();
+          // HOLD ROWS
+          const holdRows = [
+            { sn: 7, order_date: "23/2/2026", dispatch_date: "03.03.26", printing_planning: "Hold", plate_no: "1046", name: "AMD Clot Activator", size: "45mm x 17mm", repeat: "3.32mm", material: "Chromo (70gsm)", paper_size: "155mm", die: "Flat Bed", allocate_mtrs: 0, qty_pcs: "sampling", core_size: "3 inch", qty_per_roll: "3000", roll_direction: "Bottom First", remarks: "Rotary die not recv." },
+            { sn: 8, order_date: "13.03.26", dispatch_date: "23.03.26", printing_planning: "Hold", plate_no: "1057", name: "Trinity", size: "80mm x 35mm", repeat: "3.1mm", material: "PP White", paper_size: "176mm", die: "Flat Bed", allocate_mtrs: 3000, qty_pcs: 150000, core_size: "3 inch", qty_per_roll: "5000", roll_direction: "Left First", remarks: "Plate sent to make" },
+            { sn: 9, order_date: "16.03.26", dispatch_date: "26.03.26", printing_planning: "Hold", plate_no: "1058", name: "Mewa laya", size: "90mm x 149mm", repeat: "3.4mm", material: "Silver Paper", paper_size: "195mm", die: "Flat Bed", allocate_mtrs: 4000, qty_pcs: 45000, core_size: "1 inch", qty_per_roll: "500 / OD 4.5 in", roll_direction: "Left First", remarks: "" }
+          ];
+
+          holdRows.forEach(sr => {
+            const rowId = crypto.randomUUID();
+            batch.set(doc(firestore, `planning_tables/label-printing/rows`, rowId), {
+              id: rowId,
+              section: SECTIONS.HOLD_MATERIAL,
+              data_source: "manual",
+              values: sr,
+              created_at: serverTimestamp()
+            });
+          });
+
+          await batch.commit();
+          toast({ title: "Production Data Seeded" });
+        }
       };
       initTable();
     }
@@ -445,7 +454,7 @@ function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel,
         </CardHeader>
       )}
       <CardContent className="p-0">
-        <div className="overflow-x-auto industrial-scroll">
+        <div className="overflow-x-auto industrial-scroll min-h-[750px]">
           <Table className="min-w-[2500px] border-separate border-spacing-0">
             <TableHeader className="sticky top-0 z-20">
               <TableRow className="h-12">
