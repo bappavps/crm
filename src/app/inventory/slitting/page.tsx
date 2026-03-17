@@ -208,9 +208,18 @@ function SlittingHubContent() {
     });
 
     return Object.values(groups).sort((a: any, b: any) => {
-      // Priority: 1. Exact match, 2. Efficiency, 3. Waste
+      // Priority Logic:
+      // 1. Exact width rolls first
       if (a.width === targetWidth && b.width !== targetWidth) return -1;
       if (b.width === targetWidth && a.width !== targetWidth) return 1;
+      
+      // 2. Child rolls (< 1000) over Jumbos (>= 1000)
+      const isAChild = a.width < 1000;
+      const isBChild = b.width < 1000;
+      if (isAChild && !isBChild) return -1;
+      if (!isAChild && isBChild) return 1;
+
+      // 3. Within tiers, prioritize higher efficiency
       return b.efficiency - a.efficiency;
     });
   }, [selectedPlanningJob, stockData]);
@@ -660,7 +669,8 @@ function SlittingHubContent() {
               <Table>
                 <TableHeader className="bg-slate-100/50">
                   <TableRow className="h-12 border-none">
-                    <TableHead className="font-black text-[9px] uppercase pl-6 rounded-l-2xl">Roll Specs</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase pl-6 rounded-l-2xl">Roll ID</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase">Roll Specs</TableHead>
                     <TableHead className="font-black text-[9px] uppercase">Company</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-center">Output Potential</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-center">Waste Analysis</TableHead>
@@ -671,7 +681,7 @@ function SlittingHubContent() {
                 </TableHeader>
                 <TableBody>
                   {filteredOptions.length === 0 ? (
-                    <TableRow><TableCell colSpan={7} className="py-20 text-center opacity-30 font-black uppercase text-[10px]">No compatible rolls found for this supplier</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="py-20 text-center opacity-30 font-black uppercase text-[10px]">No compatible rolls found for this supplier</TableCell></TableRow>
                   ) : filteredOptions.map((opt: any, i: number) => {
                     const isSystemRecommended = i === 0 && selectedSupplier === 'all';
                     const isSelected = (selectionMap[opt.key] || 0) > 0;
@@ -686,7 +696,8 @@ function SlittingHubContent() {
                           isDisabled && "opacity-30 pointer-events-none grayscale"
                         )}
                       >
-                        <TableCell className="pl-6">
+                        <TableCell className="pl-6 font-black text-xs text-primary font-mono">{opt.exampleId}</TableCell>
+                        <TableCell>
                           <div className="flex flex-col">
                             <span className="font-black text-sm">{opt.width}mm x {opt.length}m</span>
                             <span className="text-[9px] font-bold text-slate-400 uppercase">{opt.material}</span>
@@ -843,7 +854,8 @@ function SlittingHubContent() {
                   <Table>
                     <TableHeader className="bg-slate-50">
                       <TableRow className="h-10 border-none">
-                        <TableHead className="font-bold text-[9px] uppercase pl-6">Dimension</TableHead>
+                        <TableHead className="font-bold text-[9px] uppercase pl-6">Roll ID</TableHead>
+                        <TableHead className="font-bold text-[9px] uppercase">Dimension</TableHead>
                         <TableHead className="font-bold text-[9px] uppercase">Company</TableHead>
                         <TableHead className="font-bold text-[9px] uppercase text-center">Allocated Qty</TableHead>
                         <TableHead className="font-bold text-[9px] uppercase text-right pr-6">Yield Potential</TableHead>
@@ -855,7 +867,8 @@ function SlittingHubContent() {
                         if (!opt || qty <= 0) return null;
                         return (
                           <TableRow key={key} className="h-12 border-b last:border-none">
-                            <TableCell className="pl-6 font-bold text-xs">{opt.width}mm x {opt.length}m</TableCell>
+                            <TableCell className="pl-6 font-bold text-xs font-mono text-primary">{opt.exampleId}</TableCell>
+                            <TableCell className="font-bold text-xs">{opt.width}mm x {opt.length}m</TableCell>
                             <TableCell><Badge variant="outline" className="text-[8px] font-black">{opt.company}</Badge></TableCell>
                             <TableCell className="text-center font-black text-primary">{qty} ROLLS</TableCell>
                             <TableCell className="text-right pr-6 font-bold text-xs">{(opt.length * opt.splits * qty).toLocaleString()} mtr</TableCell>
