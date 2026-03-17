@@ -24,7 +24,8 @@ import {
   History,
   ArrowDownCircle,
   Wallet,
-  ArrowRightLeft
+  ArrowRightLeft,
+  RefreshCw
 } from "lucide-react"
 import { 
   Dialog, 
@@ -50,13 +51,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
-import { collection, doc, serverTimestamp, setDoc, updateDoc, deleteDoc, query, orderBy, getDoc, getDocs, writeBatch } from "firebase/firestore"
+import { collection, doc, serverTimestamp, setDoc, updateDoc, deleteDoc, query, orderBy, getDoc, getDocs, writeBatch, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
 /**
- * DYNAMIC PRODUCTION PLANNING BOARD (V3)
- * Enhanced height for 15+ job visibility and robust initial seeding.
+ * DYNAMIC PRODUCTION PLANNING BOARD (V4)
+ * Optimized for 15+ job visibility and precision technical data seeding.
  */
 
 const STATUS_COLORS: Record<string, string> = {
@@ -87,7 +88,7 @@ const DEFAULT_LABEL_COLUMNS = [
   { id: "allocate_mtrs", name: "Allocate MTRS", type: "Number" },
   { id: "qty_pcs", name: "QTY (PCS)", type: "Number" },
   { id: "core_size", name: "CORE SIZE", type: "Text" },
-  { id: "qty_per_roll", name: "QTY PER ROLL", type: "Number" },
+  { id: "qty_per_roll", name: "QTY PER ROLL", type: "Text" },
   { id: "roll_direction", name: "Roll Direction", type: "Text" },
   { id: "remarks", name: "Remarks", type: "Text" }
 ];
@@ -124,11 +125,10 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
 
   const { data: rows, isLoading: rowsLoading } = useCollection(rowsQuery);
 
-  // 3. Initialize Department with Default Sheet Data
+  // 3. Robust Seeding Logic
   useEffect(() => {
     if (isMounted && firestore && !tableLoading && department === 'label-printing') {
       const initTable = async () => {
-        // Only run if table definition doesn't exist
         if (!tableDef) {
           await setDoc(doc(firestore, 'planning_tables', 'label-printing'), {
             id: 'label-printing',
@@ -138,12 +138,10 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           });
         }
 
-        // If table exists but has no rows, seed the default production data
         const rowsSnap = await getDocs(query(collection(firestore, `planning_tables/label-printing/rows`), limit(1)));
         if (rowsSnap.empty) {
           const batch = writeBatch(firestore);
           
-          // MAIN PRODUCTION ROWS
           const mainRows = [
             { sn: 1, order_date: "11.03.26", dispatch_date: "21.03.26", printing_planning: "Running", plate_no: "1052", name: "YaisnaCookies", size: "75mm X 90mm", repeat: "3.133 mm", material: "Chromo", paper_size: "165 mm", die: "Rotary", allocate_mtrs: 4000, qty_pcs: 82000, core_size: "1 inch", qty_per_roll: "500", roll_direction: "Anticlock", remarks: "" },
             { sn: 2, order_date: "10.03.26", dispatch_date: "20.03.26", printing_planning: "Pending", plate_no: "938", name: "Blue 1ltr", size: "158mm X 34mm", repeat: "3.306 mm", material: "PP White", paper_size: "172mm", die: "Rotary", allocate_mtrs: 2500, qty_pcs: 60000, core_size: "3 inc", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
@@ -164,11 +162,8 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
             });
           });
 
-          // HOLD ROWS
           const holdRows = [
-            { sn: 7, order_date: "23/2/2026", dispatch_date: "03.03.26", printing_planning: "Hold", plate_no: "1046", name: "AMD Clot Activator", size: "45mm x 17mm", repeat: "3.32mm", material: "Chromo (70gsm)", paper_size: "155mm", die: "Flat Bed", allocate_mtrs: 0, qty_pcs: "sampling", core_size: "3 inch", qty_per_roll: "3000", roll_direction: "Bottom First", remarks: "Rotary die not recv." },
-            { sn: 8, order_date: "13.03.26", dispatch_date: "23.03.26", printing_planning: "Hold", plate_no: "1057", name: "Trinity", size: "80mm x 35mm", repeat: "3.1mm", material: "PP White", paper_size: "176mm", die: "Flat Bed", allocate_mtrs: 3000, qty_pcs: 150000, core_size: "3 inch", qty_per_roll: "5000", roll_direction: "Left First", remarks: "Plate sent to make" },
-            { sn: 9, order_date: "16.03.26", dispatch_date: "26.03.26", printing_planning: "Hold", plate_no: "1058", name: "Mewa laya", size: "90mm x 149mm", repeat: "3.4mm", material: "Silver Paper", paper_size: "195mm", die: "Flat Bed", allocate_mtrs: 4000, qty_pcs: 45000, core_size: "1 inch", qty_per_roll: "500 / OD 4.5 in", roll_direction: "Left First", remarks: "" }
+            { sn: 7, order_date: "23/2/2026", dispatch_date: "03.03.26", printing_planning: "Hold", plate_no: "1046", name: "AMD Clot Activator", size: "45mm x 17mm", repeat: "3.32mm", material: "Chromo (70gsm)", paper_size: "155mm", die: "Flat Bed", allocate_mtrs: 0, qty_pcs: "sampling", core_size: "3 inch", qty_per_roll: "3000", roll_direction: "Bottom First", remarks: "Rotary die not recv." }
           ];
 
           holdRows.forEach(sr => {
@@ -183,7 +178,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           });
 
           await batch.commit();
-          toast({ title: "Production Data Seeded" });
+          toast({ title: "Industrial Plan Seeded" });
         }
       };
       initTable();
@@ -208,9 +203,9 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
         updated_at: serverTimestamp()
       });
       setEditingId(null);
-      toast({ title: "Plan Synchronized" });
+      toast({ title: "Plan Saved" });
     } catch (e) {
-      toast({ variant: "destructive", title: "Sync Failed" });
+      toast({ variant: "destructive", title: "Error Saving Row" });
     } finally {
       setIsProcessing(false);
     }
@@ -223,7 +218,9 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
     const fd = new FormData(e.currentTarget);
     const values: any = {};
     tableDef?.columns.forEach((col: any) => {
-      values[col.id] = fd.get(col.id);
+      let val: any = fd.get(col.id);
+      if (col.type === 'Number') val = Number(val);
+      values[col.id] = val;
     });
 
     const rowId = crypto.randomUUID();
@@ -236,9 +233,9 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
         created_at: serverTimestamp()
       });
       setIsRowCreateOpen(false);
-      toast({ title: "Job Board Updated" });
+      toast({ title: "New Job Added" });
     } catch (e) {
-      toast({ variant: "destructive", title: "Error Creating Row" });
+      toast({ variant: "destructive", title: "Error Creating Entry" });
     } finally {
       setIsProcessing(false);
     }
@@ -250,7 +247,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
       section: newSection,
       updated_at: serverTimestamp()
     });
-    toast({ title: "Section Updated" });
+    toast({ title: "Workflow Updated" });
   };
 
   if (!isMounted || tableLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin text-primary" /></div>
@@ -262,45 +259,40 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
         <div className="flex-1 text-center">
           <h1 className="text-3xl font-black tracking-[0.2em] text-slate-900 uppercase">
             {tableDef?.department || department.replace('-', ' ')} <br />
-            <span className="text-primary">JOB PLANNING</span>
+            <span className="text-primary">PRODUCTION PLANNING</span>
           </h1>
         </div>
         <div className="w-48 text-right space-y-1">
           <Badge variant="outline" className="h-8 border-2 font-black uppercase text-[10px] tracking-widest bg-white shadow-sm">
             Date : {new Date().toLocaleDateString()}
           </Badge>
-          <div className="flex justify-end gap-2">
-             <Button variant="ghost" size="sm" className="h-6 text-[8px] font-black uppercase tracking-widest opacity-50 hover:opacity-100" onClick={() => setIsSetupOpen(true)}>
-               <Settings2 className="h-3 w-3 mr-1" /> Board Setup
-             </Button>
-          </div>
         </div>
       </div>
 
       {/* TOOLBAR */}
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-slate-200">
         <div className="flex gap-3">
           <Dialog open={isRowCreateOpen} onOpenChange={setIsRowCreateOpen}>
             <DialogTrigger asChild>
               <Button className="h-12 px-8 font-black uppercase text-[11px] tracking-widest rounded-xl shadow-xl bg-slate-900 text-white hover:bg-black">
-                <Plus className="mr-2 h-5 w-5 text-primary" /> Add Job to Board
+                <Plus className="mr-2 h-5 w-5 text-primary" /> Add Job Entry
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
               <form onSubmit={handleCreateRow}>
                 <div className="bg-slate-900 text-white p-6">
                   <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-                    <NotebookPen className="h-5 w-5 text-primary" /> New Entry Form
+                    <NotebookPen className="h-5 w-5 text-primary" /> Technical Data Entry
                   </DialogTitle>
                 </div>
                 <div className="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-slate-50 max-h-[60vh] overflow-y-auto industrial-scroll">
                   {tableDef?.columns.map((col: any) => (
-                    <div key={col.id} className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase opacity-50">{col.name}</Label>
+                    <div key={col.id} className="space-y-2 text-left">
+                      <Label className="text-[10px] font-black uppercase opacity-50 block">{col.name}</Label>
                       {col.type === 'Status' ? (
                         <Select name={col.id} defaultValue="Pending">
                           <SelectTrigger className="h-10 border-2 rounded-lg bg-white"><SelectValue /></SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="z-[110]">
                             <SelectItem value="Pending">Pending</SelectItem>
                             <SelectItem value="Running">Running</SelectItem>
                             <SelectItem value="Completed">Completed</SelectItem>
@@ -314,21 +306,29 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
                   ))}
                 </div>
                 <DialogFooter className="p-6 bg-white border-t">
-                  <Button type="submit" disabled={isProcessing} className="w-full h-12 font-black uppercase tracking-widest">
+                  <Button type="submit" disabled={isProcessing} className="w-full h-12 font-black uppercase tracking-widest bg-primary">
                     {isProcessing ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
-                    Confirm Entry
+                    Confirm Job Addition
                   </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
+
+          <Button variant="outline" className="h-12 px-6 font-black uppercase text-[11px] tracking-widest border-2 rounded-xl" onClick={() => setIsSetupOpen(true)}>
+            <Settings2 className="h-5 w-5 mr-2 text-primary" /> Setup Board Layout
+          </Button>
+        </div>
+        
+        <div className="flex items-center gap-2 text-[10px] font-black uppercase opacity-40">
+          <History className="h-4 w-4" /> Real-time Sync Active
         </div>
       </div>
 
       {/* TABLES */}
       <div className="space-y-12">
         <BoardTable 
-          title="Live Production Board" 
+          title="Active Production Board" 
           columns={tableDef?.columns || []} 
           rows={sections.main} 
           editingId={editingId}
@@ -341,11 +341,11 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
         />
 
         {department === 'label-printing' && (
-          <>
+          <div className="space-y-8 pt-10 border-t-4 border-dashed border-slate-200">
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-1 bg-red-500 rounded-full" />
-                <h2 className="text-xl font-black uppercase tracking-tight text-slate-800">Hold for Technical Reasons</h2>
+                <h2 className="text-xl font-black uppercase tracking-tight text-slate-800">Hold for Technical Reasons (Plate / Die / Paper)</h2>
               </div>
               <BoardTable 
                 columns={tableDef?.columns || []} 
@@ -364,7 +364,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="h-8 w-1 bg-rose-600 rounded-full" />
-                <h2 className="text-xl font-black uppercase tracking-tight text-slate-800">Hold For Payment Due</h2>
+                <h2 className="text-xl font-black uppercase tracking-tight text-slate-800">Hold For Payment Pending</h2>
               </div>
               <BoardTable 
                 columns={tableDef?.columns || []} 
@@ -379,56 +379,56 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
                 hideTitle
               />
             </div>
-          </>
+          </div>
         )}
       </div>
 
       {/* SETUP MODAL */}
       <Dialog open={isSetupOpen} onOpenChange={setIsSetupOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] rounded-3xl">
           <DialogHeader>
-            <DialogTitle className="font-black uppercase">Plan Setup: {department}</DialogTitle>
-            <DialogDescription>Define the technical columns for this departmental board.</DialogDescription>
+            <DialogTitle className="font-black uppercase text-xl flex items-center gap-2"><Settings2 className="h-6 w-6 text-primary" /> Planning Board Configuration</DialogTitle>
+            <DialogDescription className="font-bold text-[10px] uppercase opacity-60">Define the technical headers for this department</DialogDescription>
           </DialogHeader>
           <div className="space-y-6 py-4">
             <div className="space-y-4 max-h-[400px] overflow-y-auto industrial-scroll pr-2">
               {tableDef?.columns.map((col: any, idx: number) => (
-                <div key={idx} className="flex gap-2 items-end">
+                <div key={idx} className="flex gap-2 items-end bg-slate-50 p-3 rounded-xl border border-slate-100">
                   <div className="flex-1 space-y-1">
-                    <Label className="text-[10px] font-black uppercase opacity-50">Column Name</Label>
+                    <Label className="text-[10px] font-black uppercase opacity-50">Column Label</Label>
                     <Input value={col.name} onChange={(e) => {
                       const next = [...tableDef.columns];
                       next[idx].name = e.target.value;
                       updateDoc(tableRef!, { columns: next });
-                    }} className="h-9" />
+                    }} className="h-9 border-2 font-bold" />
                   </div>
                   <div className="w-32 space-y-1">
-                    <Label className="text-[10px] font-black uppercase opacity-50">Type</Label>
+                    <Label className="text-[10px] font-black uppercase opacity-50">Data Type</Label>
                     <Select value={col.type} onValueChange={(val) => {
                       const next = [...tableDef.columns];
                       next[idx].type = val;
                       updateDoc(tableRef!, { columns: next });
                     }}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                      <SelectContent>
+                      <SelectTrigger className="h-9 border-2"><SelectValue /></SelectTrigger>
+                      <SelectContent className="z-[110]">
                         {['Text', 'Number', 'Date', 'Dropdown', 'Status'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 text-rose-500" onClick={() => {
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-rose-500 hover:bg-rose-50 rounded-lg" onClick={() => {
                     const next = tableDef.columns.filter((_: any, i: number) => i !== idx);
                     updateDoc(tableRef!, { columns: next });
                   }}><Trash2 className="h-4 w-4" /></Button>
                 </div>
               ))}
             </div>
-            <Button variant="outline" className="w-full border-dashed" onClick={() => {
-              const next = [...(tableDef?.columns || []), { id: `col_${Date.now()}`, name: "New Column", type: "Text" }];
+            <Button variant="outline" className="w-full h-12 border-2 border-dashed font-black uppercase text-[10px] tracking-widest rounded-xl hover:bg-primary/5" onClick={() => {
+              const next = [...(tableDef?.columns || []), { id: `col_${Date.now()}`, name: "New Header", type: "Text" }];
               updateDoc(tableRef!, { columns: next });
-            }}><Plus className="h-4 w-4 mr-2" /> Add Column</Button>
+            }}><Plus className="h-4 w-4 mr-2" /> Insert New Column</Button>
           </div>
           <DialogFooter>
-            <Button onClick={() => setIsSetupOpen(false)}>Done</Button>
+            <Button onClick={() => setIsSetupOpen(false)} className="w-full h-12 font-black uppercase tracking-widest">Commit Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -445,22 +445,22 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
 
 function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel, onFormChange, onMove, isProcessing, hideTitle }: any) {
   return (
-    <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-white">
+    <Card className="border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white">
       {!hideTitle && (
-        <CardHeader className="bg-slate-900 text-white p-6">
-          <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3">
+        <CardHeader className="bg-slate-900 text-white p-6 px-10">
+          <CardTitle className="text-xs font-black uppercase tracking-[0.25em] flex items-center gap-3">
             <LayoutDashboard className="h-5 w-5 text-primary" /> {title}
           </CardTitle>
         </CardHeader>
       )}
       <CardContent className="p-0">
-        <div className="overflow-x-auto industrial-scroll min-h-[750px]">
-          <Table className="min-w-[2500px] border-separate border-spacing-0">
+        <div className="overflow-x-auto industrial-scroll min-h-[850px]">
+          <Table className="min-w-[2800px] border-separate border-spacing-0">
             <TableHeader className="sticky top-0 z-20">
               <TableRow className="h-12">
-                <TableHead className="w-16 bg-slate-100 border-r border-b" />
+                <TableHead className="w-16 bg-slate-100 border-r border-b sticky left-0 z-30" />
                 {columns.map((col: any) => (
-                  <TableHead key={col.id} className="sheet-header text-slate-900 font-black text-[10px] uppercase text-center border-r border-slate-200 px-4">
+                  <TableHead key={col.id} className="sheet-header text-slate-900 font-black text-[10px] uppercase text-center border-r border-slate-200 px-4 whitespace-nowrap">
                     {col.name}
                   </TableHead>
                 ))}
@@ -471,38 +471,38 @@ function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel,
                 <TableRow 
                   key={row.id} 
                   className={cn(
-                    "group transition-all hover:bg-slate-50 h-10 select-none",
-                    editingId === row.id ? "bg-primary/5 ring-2 ring-primary ring-inset" : "even:bg-slate-50/30"
+                    "group transition-all hover:bg-slate-50 h-11 select-none",
+                    editingId === row.id ? "bg-primary/5 ring-4 ring-primary ring-inset z-10" : "even:bg-slate-50/30"
                   )}
                   onClick={() => editingId !== row.id && onEdit(row)}
                 >
-                  <TableCell className="text-center border-r p-0 sticky left-0 bg-white z-10 group-hover:bg-slate-50">
+                  <TableCell className={cn("text-center border-r p-0 sticky left-0 z-10 shadow-lg group-hover:bg-slate-100 transition-colors", editingId === row.id ? "bg-white" : "bg-slate-50")}>
                     {editingId === row.id ? (
                       <div className="flex items-center justify-center gap-1 px-2">
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" onClick={(e) => { e.stopPropagation(); onSave(); }}><CheckCircle2 className="h-4 w-4" /></Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-rose-600" onClick={(e) => { e.stopPropagation(); onCancel(); }}><X className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-emerald-600 hover:bg-emerald-50 rounded-full" onClick={(e) => { e.stopPropagation(); onSave(); }}><CheckCircle2 className="h-5 w-5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600 hover:bg-rose-50 rounded-full" onClick={(e) => { e.stopPropagation(); onCancel(); }}><X className="h-5 w-5" /></Button>
                       </div>
                     ) : (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100"><MoreVertical className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100"><MoreVertical className="h-4 w-4" /></Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="z-[100] w-56">
-                          <DropdownMenuLabel className="text-[9px] font-black uppercase text-muted-foreground">Logistics & Hold</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => onMove(row.id, SECTIONS.MAIN)} className="gap-2 font-bold"><PlayCircle className="h-4 w-4 text-emerald-500" /> Move to Production</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onMove(row.id, SECTIONS.HOLD_MATERIAL)} className="gap-2 font-bold"><ArrowDownCircle className="h-4 w-4 text-orange-500" /> Move to Tech Hold</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => onMove(row.id, SECTIONS.HOLD_PAYMENT)} className="gap-2 font-bold"><Wallet className="h-4 w-4 text-rose-500" /> Move to Payment Hold</DropdownMenuItem>
+                        <DropdownMenuContent align="start" className="z-[100] w-64 rounded-xl border-none shadow-2xl">
+                          <DropdownMenuLabel className="text-[10px] font-black uppercase text-muted-foreground tracking-widest p-3">Production Logistics</DropdownMenuLabel>
+                          <DropdownMenuItem onClick={() => onMove(row.id, SECTIONS.MAIN)} className="gap-3 py-3 font-bold"><PlayCircle className="h-5 w-5 text-emerald-500" /> Release to Production</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onMove(row.id, SECTIONS.HOLD_MATERIAL)} className="gap-3 py-3 font-bold"><ArrowDownCircle className="h-5 w-5 text-orange-500" /> Technical Hold (Plate/Die)</DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onMove(row.id, SECTIONS.HOLD_PAYMENT)} className="gap-3 py-3 font-bold"><Wallet className="h-5 w-5 text-rose-500" /> Account Hold (Payment)</DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     )}
                   </TableCell>
 
                   {columns.map((col: any) => (
-                    <TableCell key={col.id} className="text-center text-xs border-r px-4">
+                    <TableCell key={col.id} className="text-center text-[13px] border-r px-4 py-0">
                       {editingId === row.id ? (
                         col.type === 'Status' ? (
                           <Select value={row.values[col.id]} onValueChange={v => onFormChange(prev => ({...prev, [col.id]: v}))}>
-                            <SelectTrigger className="h-7 text-[10px] border-none focus-visible:ring-0 p-0 bg-transparent"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-8 text-[11px] font-black uppercase border-none focus-visible:ring-0 p-0 bg-transparent text-center flex justify-center"><SelectValue /></SelectTrigger>
                             <SelectContent className="z-[110]">
                               <SelectItem value="Pending">Pending</SelectItem>
                               <SelectItem value="Running">Running</SelectItem>
@@ -514,17 +514,22 @@ function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel,
                           <Input 
                             type={col.type === 'Number' ? 'number' : col.type === 'Date' ? 'date' : 'text'} 
                             value={row.values[col.id] || ''} 
-                            onChange={e => onFormChange(prev => ({...prev, [col.id]: e.target.value}))} 
-                            className="h-7 text-xs text-center border-none focus-visible:ring-0 p-0 bg-transparent"
+                            onChange={e => onFormChange(prev => ({...prev, [col.id]: col.type === 'Number' ? Number(e.target.value) : e.target.value}))} 
+                            className="h-8 text-xs text-center border-none focus-visible:ring-0 p-0 bg-transparent font-bold"
+                            autoFocus={col.id === 'sn'}
                           />
                         )
                       ) : (
                         col.type === 'Status' ? (
-                          <Badge className={cn("text-[9px] font-black h-5 px-3 uppercase border-none", STATUS_COLORS[row.values[col.id]])}>
+                          <Badge className={cn("text-[9px] font-black h-5 px-3 uppercase border-none shadow-sm", STATUS_COLORS[row.values[col.id]])}>
                             {row.values[col.id] || 'Pending'}
                           </Badge>
                         ) : (
-                          <span className={cn(col.id === 'plate_no' && "font-mono font-bold text-primary")}>
+                          <span className={cn(
+                            "font-semibold tabular-nums tracking-tight",
+                            col.id === 'plate_no' && "font-mono font-black text-primary text-sm",
+                            col.id === 'sn' && "text-slate-400 font-black"
+                          )}>
                             {row.values[col.id] || '—'}
                           </span>
                         )
@@ -533,6 +538,13 @@ function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel,
                   ))}
                 </TableRow>
               ))}
+              {rows?.length === 0 && !isProcessing && (
+                <TableRow>
+                  <TableCell colSpan={columns.length + 1} className="text-center py-24 text-muted-foreground italic font-black uppercase text-[10px] tracking-[0.2em] opacity-30 bg-slate-50/50">
+                    Departmental queue is currently clear
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>
