@@ -77,7 +77,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { 
   collection, 
   doc, 
@@ -912,9 +912,9 @@ export default function PaperStockPage() {
             <div className="flex justify-between items-start">
               <div className="space-y-4">
                 <div className="space-y-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
+                  <DialogTitle className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
                     <Package className="h-4 w-4" /> Technical Profile
-                  </h3>
+                  </DialogTitle>
                   <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
                 </div>
                 
@@ -1149,7 +1149,7 @@ export default function PaperStockPage() {
             <div className="flex items-center gap-3">
               <div className="h-10 w-10 bg-primary/20 rounded-lg flex items-center justify-center"><FileText className="h-5 w-5 text-primary" /></div>
               <div>
-                <h3 className="text-sm font-black uppercase tracking-widest">Stock Report Generator</h3>
+                <DialogTitle className="text-sm font-black uppercase tracking-widest">Stock Report Generator</DialogTitle>
                 <p className="text-[10px] text-slate-400 font-bold uppercase">A4 Industrial Layout • {reportRows.length} Rows</p>
               </div>
             </div>
