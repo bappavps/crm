@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -76,8 +75,9 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V7.0)
+ * PRINT TEMPLATE STUDIO (V7.1)
  * Professional Designer with Custom Paper Sizes, Media Uploads, and Industrial Symbologies.
+ * Fixed: deleteElement ReferenceError.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -181,8 +181,6 @@ export default function PrintTemplateStudio() {
   const [isMounted, setIsMounted] = useState(false)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [isNewDialogOpen, setIsNewDialogOpen] = useState(false)
-  const [isDropDialogOpen, setIsDropDialogOpen] = useState(false)
-  const [droppedImageData, setDroppedImageData] = useState<string | null>(null)
   
   const [currentTemplate, setCurrentTemplate] = useState<PrintTemplate | null>(null)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
@@ -435,6 +433,16 @@ export default function PrintTemplateStudio() {
         el.id === id ? { ...el, style: { ...el.style, ...styleUpdates } } : el
       )
     })
+  }
+
+  const deleteElement = (id: string) => {
+    if (!currentTemplate) return
+    setCurrentTemplate({
+      ...currentTemplate,
+      elements: currentTemplate.elements.filter(el => el.id !== id)
+    })
+    setSelectedElementId(null)
+    toast({ title: "Element Removed" })
   }
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isBackground = false) => {
