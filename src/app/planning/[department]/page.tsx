@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, use } from "react"
@@ -49,7 +48,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, serverTimestamp, setDoc, updateDoc, deleteDoc, query, orderBy, getDoc, getDocs, writeBatch } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
