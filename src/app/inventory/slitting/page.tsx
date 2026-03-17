@@ -27,7 +27,11 @@ import {
   Maximize2,
   LayoutGrid,
   ArrowUpDown,
-  Printer
+  Printer,
+  Sparkles,
+  ChevronDown,
+  ChevronRight,
+  Zap
 } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, query, where, runTransaction, serverTimestamp, limit } from "firebase/firestore"
@@ -80,11 +84,30 @@ function SlittingHubContent() {
     { id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, lengthMeters: 0, parts: 1 }
   ])
 
+  // --- AUTO PLANNER STATE ---
+  const [plannerSearch, setPlannerSearch] = useState("")
+  const [selectedPlanningJob, setSelectedJob] = useState<any>(null)
+  const [plannerRecommendation, setRecommendation] = useState<any>(null)
+
   const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string }>({ 
     isOpen: false, type: 'SUCCESS', title: '' 
   });
 
   useEffect(() => { setIsMounted(true) }, [])
+
+  // 1. Fetch Planning Jobs for Auto Planner
+  const planningJobsQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'planning_tables/label-printing/rows'), where('values.printing_planning', '!=', 'Completed'));
+  }, [firestore]);
+  const { data: planningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
+
+  // 2. Fetch Available Stock for Analysis
+  const stockQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'paper_stock'), where('status', 'in', ["Main", "Stock", "Available", "Slitting"]));
+  }, [firestore]);
+  const { data: stockData } = useCollection(stockQuery);
 
   const rollsQuery = useMemoFirebase(() => {
     if (!firestore || !initialRollNo) return null;
@@ -102,6 +125,73 @@ function SlittingHubContent() {
       })));
     }
   }, [initialRollData]);
+
+  // --- ANALYSIS ENGINE ---
+  useEffect(() => {
+    if (selectedPlanningJob && stockData) {
+      // Extract target width from planning job (e.g., "165 mm" -> 165)
+      const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
+      const targetWidth = parseInt(String(rawWidth).replace(/[^0-9]/g, '')) || 0;
+      
+      if (targetWidth <= 0) return;
+
+      const results = stockData
+        .filter(roll => {
+          const rw = Number(roll.widthMm) || 0;
+          return rw >= targetWidth;
+        })
+        .map(roll => {
+          const rw = Number(roll.widthMm);
+          const splits = Math.floor(rw / targetWidth);
+          const waste = rw % targetWidth;
+          const isChild = roll.rollNo.includes('-');
+          const isJumbo = rw >= 999;
+
+          // Efficiency Scoring
+          let score = (splits * targetWidth / rw) * 100;
+          if (isChild) score += 20; // Bonus for using remnants
+          if (isJumbo) score -= 50; // Penalty for using full jumbos if others exist
+
+          return {
+            roll,
+            targetWidth,
+            splits,
+            waste,
+            score
+          };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      if (results.length > 0) {
+        setRecommendation(results[0]);
+      } else {
+        setRecommendation(null);
+      }
+    } else {
+      setRecommendation(null);
+    }
+  }, [selectedPlanningJob, stockData]);
+
+  const handleAcceptPlan = () => {
+    if (!plannerRecommendation) return;
+    const { roll, targetWidth, splits } = plannerRecommendation;
+    
+    setSelectedParent(roll);
+    setSlitRuns([{ 
+      id: crypto.randomUUID(), 
+      jobNo: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
+      jobName: selectedPlanningJob.values.name || "",
+      jobSize: selectedPlanningJob.values.size || "",
+      widthMm: targetWidth, 
+      lengthMeters: roll.lengthMeters, 
+      parts: splits 
+    }]);
+
+    toast({ title: "Plan Accepted", description: "Source roll and run specs pre-filled." });
+    setRecommendation(null);
+    setSelectedJob(null);
+    setPlannerSearch("");
+  };
 
   const handleSearch = async () => {
     if (!firestore || !searchQuery) return;
@@ -299,6 +389,15 @@ function SlittingHubContent() {
     }
   }
 
+  const filteredPlanningJobs = useMemo(() => {
+    if (!planningJobs) return [];
+    if (!plannerSearch) return planningJobs.slice(0, 5);
+    return planningJobs.filter(j => 
+      String(j.values?.name || "").toLowerCase().includes(plannerSearch.toLowerCase()) ||
+      String(j.values?.sn || "").includes(plannerSearch)
+    );
+  }, [planningJobs, plannerSearch]);
+
   if (!isMounted) return null;
 
   return (
@@ -307,74 +406,148 @@ function SlittingHubContent() {
 
       <div className="flex items-center justify-between print:hidden">
         <div className="space-y-1">
-          <h1 className="text-[28px] font-semibold tracking-tight">Advanced Slitting Features</h1>
-          <p className="text-sm font-normal text-muted-foreground">Precision width conversion and length split engine for converting parent rolls into production-ready job rolls.</p>
+          <h1 className="text-[28px] font-semibold tracking-tight text-slate-900">Advanced Slitting Terminal</h1>
+          <p className="text-sm font-normal text-muted-foreground">Precision conversion engine matching production planning with live substrate inventory.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => window.print()} disabled={!selectedParent} className="font-semibold text-xs h-9 border-2 rounded-xl">
-            <Printer className="mr-2 h-4 w-4" /> Print Job Card
+          <Button variant="outline" onClick={() => window.print()} disabled={!selectedParent} className="font-bold text-[10px] uppercase h-10 px-6 border-2 rounded-xl">
+            <Printer className="mr-2 h-4 w-4" /> Print Slit Sheet
           </Button>
-          <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-semibold text-xs">
-            <ArrowLeft className="mr-2 h-3 w-3" /> Back to Registry
+          <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-bold text-[10px] uppercase h-10 px-6">
+            <ArrowLeft className="mr-2 h-3 w-3" /> Technical Registry
           </Button>
         </div>
       </div>
 
-      {/* --- PRINTABLE JOB CARD AREA --- */}
-      <div id="print-area" className="hidden print:block p-10 bg-white text-black font-mono">
-        <div className="border-4 border-black p-8 space-y-8 min-h-screen">
-          <div className="text-center space-y-2 border-b-4 border-black pb-6">
-            <h1 className="text-4xl font-bold uppercase tracking-tighter">SLITTING JOB CARD</h1>
-            <p className="text-xl">SHREE LABEL CREATION • PRODUCTION DEPARTMENT</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-8 text-xl">
-            <div className="space-y-2">
-              <p><strong>DATE:</strong> {new Date().toLocaleDateString()}</p>
-              <p><strong>SOURCE ROLL:</strong> {selectedParent?.rollNo}</p>
-              <p><strong>MATERIAL:</strong> {selectedParent?.paperType}</p>
+      {/* --- NEW: AUTO SLITTING PLANNER --- */}
+      <Card className="shadow-2xl border-none rounded-3xl overflow-hidden bg-white">
+        <CardHeader className="bg-slate-900 text-white p-8">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <CardTitle className="text-sm font-black uppercase tracking-[0.2em] flex items-center gap-3">
+                <Sparkles className="h-5 w-5 text-primary" /> Auto Slitting Planner
+              </CardTitle>
+              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest"> Intelligent Stock Analysis Engine (V1.0)</CardDescription>
             </div>
-            <div className="text-right space-y-2">
-              <p><strong>PARENT WIDTH:</strong> {selectedParent?.widthMm} MM</p>
-              <p><strong>PARENT LENGTH:</strong> {selectedParent?.lengthMeters} MTR</p>
-              <p><strong>OPERATOR:</strong> _________________</p>
-            </div>
+            <Badge className="bg-primary/20 text-primary border-primary/30 font-black text-[9px] px-3 py-1 uppercase tracking-tighter">Powered by CRM Intelligence</Badge>
           </div>
+        </CardHeader>
+        <CardContent className="p-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Step 1: Select Job */}
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">1. Find Pending Job from Planning</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
+                  <Input 
+                    placeholder="Search by Job Name or SN..." 
+                    className="h-12 pl-10 rounded-2xl border-2 font-bold text-sm bg-slate-50"
+                    value={plannerSearch}
+                    onChange={e => setPlannerSearch(e.target.value)}
+                  />
+                </div>
+              </div>
 
-          <div className="pt-6">
-            <h2 className="text-2xl font-bold mb-4 uppercase border-b-2 border-black pb-2">SLITTING PLAN (OUTPUT ROLLS)</h2>
-            <Table className="border-2 border-black w-full text-xl">
-              <TableHeader className="bg-slate-100">
-                <TableRow className="border-b-2 border-black">
-                  <TableHead className="font-bold text-black border-r-2 border-black px-4 py-2">ROLL NO</TableHead>
-                  <TableHead className="font-bold text-black border-r-2 border-black px-4 py-2">WIDTH</TableHead>
-                  <TableHead className="font-bold text-black border-r-2 border-black px-4 py-2">LENGTH</TableHead>
-                  <TableHead className="font-bold text-black px-4 py-2">JOB / CLIENT</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {previewParts.map((part, idx) => (
-                  <TableRow key={idx} className="border-b-2 border-black last:border-b-0 h-16">
-                    <TableCell className="border-r-2 border-black px-4 font-bold">{part.rollId}</TableCell>
-                    <TableCell className="border-r-2 border-black px-4">{part.width} MM</TableCell>
-                    <TableCell className="border-r-2 border-black px-4">{part.length} MTR</TableCell>
-                    <TableCell className="px-4 font-bold uppercase">{part.isRemainder ? 'STOCK' : (part.jobNo || '-')}</TableCell>
-                  </TableRow>
+              <div className="space-y-3 max-h-[300px] overflow-y-auto industrial-scroll pr-2">
+                {planningLoading ? (
+                  <div className="py-10 text-center"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></div>
+                ) : filteredPlanningJobs.map(job => (
+                  <div 
+                    key={job.id} 
+                    onClick={() => setSelectedJob(job)}
+                    className={cn(
+                      "p-4 rounded-2xl border-2 transition-all cursor-pointer group flex items-center justify-between",
+                      selectedPlanningJob?.id === job.id ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20 hover:bg-slate-50"
+                    )}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 bg-white rounded-xl flex items-center justify-center font-black text-xs shadow-sm border group-hover:text-primary transition-colors">
+                        {job.values.sn || '—'}
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className="text-sm font-black uppercase tracking-tight">{job.values.name}</p>
+                        <div className="flex gap-3 text-[9px] font-bold text-slate-400 uppercase">
+                          <span className="flex items-center gap-1"><Maximize2 className="h-3 w-3" /> {job.values.paper_size || job.values.size}</span>
+                          <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> {job.values.material}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {selectedPlanningJob?.id === job.id ? <CheckCircle2 className="h-5 w-5 text-primary" /> : <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-primary" />}
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
-          </div>
+              </div>
+            </div>
 
-          <div className="pt-20 grid grid-cols-2 gap-20 mt-auto">
-            <div className="border-t-2 border-black text-center pt-2 font-bold">Technician Signature</div>
-            <div className="border-t-2 border-black text-center pt-2 font-bold">Supervisor Approval</div>
+            {/* Step 2: Recommendations */}
+            <div className="space-y-6">
+              <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">2. Smart Stock Recommendation</Label>
+              
+              {!selectedPlanningJob ? (
+                <div className="h-[300px] border-4 border-dashed rounded-[2rem] flex flex-col items-center justify-center text-center p-8 opacity-30 gap-4">
+                  <Zap className="h-12 w-12" />
+                  <p className="text-xs font-black uppercase tracking-widest">Select a job to analyze inventory</p>
+                </div>
+              ) : plannerRecommendation ? (
+                <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+                  <div className="p-8 bg-slate-900 rounded-[2rem] text-white space-y-8 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4"><Badge className="bg-emerald-500 font-black">98% Match</Badge></div>
+                    
+                    <div className="space-y-1">
+                      <p className="text-[9px] font-black uppercase text-primary tracking-[0.2em]">Recommended Source Roll</p>
+                      <h3 className="text-4xl font-black tracking-tighter">{plannerRecommendation.roll.rollNo}</h3>
+                      <p className="text-[10px] font-bold uppercase opacity-50">{plannerRecommendation.roll.paperType} • {plannerRecommendation.roll.paperCompany}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-8 border-t border-white/10 pt-8">
+                      <div className="space-y-1">
+                        <p className="text-[9px] font-black uppercase opacity-40">Output Potential</p>
+                        <p className="text-2xl font-black">{plannerRecommendation.splits} <small className="text-xs font-medium opacity-60">Slits @ {plannerRecommendation.targetWidth}mm</small></p>
+                      </div>
+                      <div className="space-y-1 text-right">
+                        <p className="text-[9px] font-black uppercase opacity-40">Predicted Waste</p>
+                        <p className="text-2xl font-black text-rose-400">{plannerRecommendation.waste} <small className="text-xs font-medium opacity-60">MM</small></p>
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                      <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden flex">
+                        {Array.from({ length: plannerRecommendation.splits }).map((_, i) => (
+                          <div key={i} className="h-full border-r border-slate-900/50 bg-primary" style={{ width: `${(plannerRecommendation.targetWidth / plannerRecommendation.roll.widthMm) * 100}%` }} />
+                        ))}
+                        <div className="h-full bg-rose-500/40" style={{ width: `${(plannerRecommendation.waste / plannerRecommendation.roll.widthMm) * 100}%` }} />
+                      </div>
+                      <div className="flex justify-between mt-2 text-[8px] font-black uppercase tracking-widest opacity-40">
+                        <span>Layout Visualization</span>
+                        <span>Width: {plannerRecommendation.roll.widthMm}mm</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-[11px] tracking-widest border-2" onClick={() => { setSelectedJob(null); setRecommendation(null); }}>Reject Suggestion</Button>
+                    <Button onClick={handleAcceptPlan} className="flex-[2] h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[11px] tracking-widest shadow-2xl">
+                      Accept Plan & Pre-Fill <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-[300px] bg-rose-50 border-2 border-rose-100 rounded-[2rem] flex flex-col items-center justify-center text-center p-8 gap-4">
+                  <AlertTriangle className="h-10 w-10 text-rose-500" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-black uppercase text-rose-900">No Compatible Stock</p>
+                    <p className="text-[10px] font-bold uppercase text-rose-600 max-w-[200px]">We couldn't find a roll wide enough for this job in the active registry.</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 print:hidden">
         <div className="lg:col-span-1 space-y-6">
-          <Card className="shadow-xl border-none rounded-2xl overflow-hidden">
+          <Card className="shadow-xl border-none rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-900 text-white p-6">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Search className="h-4 w-4 text-primary" /> Source Roll Selection
@@ -432,7 +605,7 @@ function SlittingHubContent() {
             </CardContent>
           </Card>
 
-          <Card className={cn("shadow-2xl border-none rounded-2xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
+          <Card className={cn("shadow-2xl border-none rounded-3xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold opacity-90">
                 Slitting Conversion Summary
@@ -478,7 +651,7 @@ function SlittingHubContent() {
         </div>
 
         <div className="lg:col-span-3 space-y-6">
-          <Card className="shadow-xl border-none rounded-2xl overflow-hidden flex flex-col">
+          <Card className="shadow-xl border-none rounded-3xl overflow-hidden flex flex-col bg-white">
             <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between p-6">
               <div className="space-y-1">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -604,7 +777,7 @@ function SlittingHubContent() {
             </CardFooter>
           </Card>
 
-          <Card className="shadow-xl border-none rounded-2xl overflow-hidden bg-white">
+          <Card className="shadow-xl border-none rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-50 border-b py-6 px-8">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <LayoutGrid className="h-4 w-4 text-primary" /> Slitting Layout Preview
@@ -689,7 +862,7 @@ function SlittingHubContent() {
 
 export default function SlittingPage() {
   return (
-    <Suspense fallback={<div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto" /></div>}>
+    <Suspense fallback={<div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>}>
       <SlittingHubContent />
     </Suspense>
   )
