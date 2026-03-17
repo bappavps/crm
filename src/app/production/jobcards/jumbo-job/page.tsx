@@ -58,6 +58,7 @@ import { collection, doc, query, orderBy, serverTimestamp, setDoc, deleteDoc, wh
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { QRCodeSVG } from 'qrcode.react'
+import { TemplateRenderer } from "@/components/printing/template-renderer"
 
 function JumboJobCardContent() {
   const { toast } = useToast()
@@ -74,6 +75,10 @@ function JumboJobCardContent() {
   
   const [selectedJob, setSelectedJob] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Template State
+  const [selectedJobTemplateId, setSelectedJobTemplateId] = useState("default")
+  const [selectedLabelTemplateId, setSelectedLabelTemplateId] = useState("default")
   
   // Create Form State
   const [formData, setFormData] = useState({
@@ -95,7 +100,6 @@ function JumboJobCardContent() {
     return collection(firestore, 'paper_stock');
   }, [firestore]);
 
-  // FIXED: Load only ACTIVE machines from the JUMBO section
   const machinesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(
@@ -110,10 +114,23 @@ function JumboJobCardContent() {
     return collection(firestore, 'users');
   }, [firestore]);
 
+  // Template Queries
+  const jobTemplatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Technical Job Card'));
+  }, [firestore]);
+
+  const labelTemplatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Industrial Label'));
+  }, [firestore]);
+
   const { data: jobs, isLoading: jobsLoading } = useCollection(jobsQuery);
   const { data: allRolls } = useCollection(rollsQuery);
   const { data: machines } = useCollection(machinesQuery);
   const { data: users } = useCollection(usersQuery);
+  const { data: jobTemplates } = useCollection(jobTemplatesQuery);
+  const { data: labelTemplates } = useCollection(labelTemplatesQuery);
 
   const parentRolls = useMemo(() => allRolls?.filter(r => !r.rollNo.includes('-')) || [], [allRolls]);
   const operators = useMemo(() => users?.filter(u => u.roles?.includes('Operator') || u.roles?.includes('Admin')) || [], [users]);
@@ -190,6 +207,37 @@ function JumboJobCardContent() {
       j.parent_roll.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [jobs, searchQuery]);
+
+  // Active Template Renderers
+  const activeJobTemplate = jobTemplates?.find(t => t.id === selectedJobTemplateId);
+  const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
+
+  const prepareJobData = (job: any) => {
+    const parentRollData = allRolls?.find(r => r.rollNo === job?.parent_roll);
+    const children = allRolls?.filter(r => job?.child_rolls?.includes(r.rollNo)) || [];
+    
+    return {
+      ...job,
+      job_card_id: job?.job_card_no,
+      machine_name: job?.machine,
+      operator_name: job?.operator,
+      parent_roll: job?.parent_roll,
+      parent_width: parentRollData?.widthMm || "—",
+      paper_type: parentRollData?.paperType || "—",
+      SLIT_ROLLS: children
+    };
+  };
+
+  const prepareRollData = (roll: any) => ({
+    ...roll,
+    roll_no: roll.rollNo,
+    paper_type: roll.paperType,
+    width: roll.widthMm,
+    length: roll.lengthMeters,
+    gsm: roll.gsm,
+    company: roll.paperCompany,
+    date: roll.receivedDate
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -381,9 +429,22 @@ function JumboJobCardContent() {
 
       {/* VIEW / PRINT DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl print:shadow-none">
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl print:shadow-none">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
-            <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Instruction Sheet</DialogTitle>
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Instruction Sheet</DialogTitle>
+              <Select value={selectedJobTemplateId} onValueChange={setSelectedJobTemplateId}>
+                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
+                  <SelectValue placeholder="Select Template" />
+                </SelectTrigger>
+                <SelectContent className="z-[110]">
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
+                  {jobTemplates?.map(t => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>
                 <Printer className="h-4 w-4 mr-2" /> Print A4 Sheet
@@ -392,119 +453,152 @@ function JumboJobCardContent() {
             </div>
           </div>
           <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans">
-            <div className="flex justify-between items-end border-b-4 border-black pb-6">
-              <div>
-                <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Production Floor: Jumbo Slitting</p>
-              </div>
-              <div className="text-right space-y-1">
-                <Badge className="bg-black text-white px-4 py-1.5 rounded-none font-black text-lg">{selectedJob?.job_card_no}</Badge>
-                <p className="text-[10px] font-bold uppercase pt-2">DATE: {selectedJob?.createdAt ? new Date(selectedJob.createdAt).toLocaleDateString() : '—'}</p>
-              </div>
-            </div>
-
-            <div className="mt-8 grid grid-cols-2 gap-12">
-              <div className="space-y-6">
-                <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Parent Specifications</h3>
-                <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-xs font-bold">
-                  <span className="opacity-50 uppercase">Roll Number:</span><span>{selectedJob?.parent_roll}</span>
-                  <span className="opacity-50 uppercase">Machine:</span><span>{selectedJob?.machine || "—"}</span>
-                  <span className="opacity-50 uppercase">Operator:</span><span>{selectedJob?.operator || "—"}</span>
+            {selectedJobTemplateId === 'default' ? (
+              <>
+                <div className="flex justify-between items-end border-b-4 border-black pb-6">
+                  <div>
+                    <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Production Floor: Jumbo Slitting</p>
+                  </div>
+                  <div className="text-right space-y-1">
+                    <Badge className="bg-black text-white px-4 py-1.5 rounded-none font-black text-lg">{selectedJob?.job_card_no}</Badge>
+                    <p className="text-[10px] font-bold uppercase pt-2">DATE: {selectedJob?.createdAt ? new Date(selectedJob.createdAt).toLocaleDateString() : '—'}</p>
+                  </div>
                 </div>
-              </div>
-              <div className="flex flex-col items-end">
-                <div className="border-2 border-black p-1">
-                  <QRCodeSVG value={selectedJob?.job_card_no || ""} size={80} />
-                </div>
-                <p className="text-[8px] font-black uppercase mt-1">Scan to Update Status</p>
-              </div>
-            </div>
 
-            <div className="mt-10">
-              <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Slitting Plan (All Output Units)</h3>
-              <Table className="border-2 border-black">
-                <TableHeader className="bg-slate-100">
-                  <TableRow className="border-b-2 border-black h-10">
-                    <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Roll Code</TableHead>
-                    <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Width</TableHead>
-                    <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Length</TableHead>
-                    <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Destination</TableHead>
-                    <TableHead className="font-black text-black text-[10px] uppercase px-4">Job Reference</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedJob?.child_rolls?.map((code: string) => {
-                    const roll = allRolls?.find(r => r.rollNo === code);
-                    return (
-                      <TableRow key={code} className="border-b-2 border-black last:border-b-0 h-10">
-                        <TableCell className="font-bold border-r-2 border-black px-4">{code}</TableCell>
-                        <TableCell className="border-r-2 border-black px-4">{roll?.widthMm || "—"} mm</TableCell>
-                        <TableCell className="border-r-2 border-black px-4">{roll?.lengthMeters || "—"} mtr</TableCell>
-                        <TableCell className="border-r-2 border-black px-4 font-black text-[10px]">{roll?.jobNo ? 'JOB' : 'STOCK'}</TableCell>
-                        <TableCell className="px-4 font-black text-[10px]">{roll?.jobNo || "—"}</TableCell>
+                <div className="mt-8 grid grid-cols-2 gap-12">
+                  <div className="space-y-6">
+                    <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Parent Specifications</h3>
+                    <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-xs font-bold">
+                      <span className="opacity-50 uppercase">Roll Number:</span><span>{selectedJob?.parent_roll}</span>
+                      <span className="opacity-50 uppercase">Machine:</span><span>{selectedJob?.machine || "—"}</span>
+                      <span className="opacity-50 uppercase">Operator:</span><span>{selectedJob?.operator || "—"}</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <div className="border-2 border-black p-1">
+                      <QRCodeSVG value={selectedJob?.job_card_no || ""} size={80} />
+                    </div>
+                    <p className="text-[8px] font-black uppercase mt-1">Scan to Update Status</p>
+                  </div>
+                </div>
+
+                <div className="mt-10">
+                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Slitting Plan (All Output Units)</h3>
+                  <Table className="border-2 border-black">
+                    <TableHeader className="bg-slate-100">
+                      <TableRow className="border-b-2 border-black h-10">
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Roll Code</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Width</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Length</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Destination</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase px-4">Job Reference</TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedJob?.child_rolls?.map((code: string) => {
+                        const roll = allRolls?.find(r => r.rollNo === code);
+                        return (
+                          <TableRow key={code} className="border-b-2 border-black last:border-b-0 h-10">
+                            <TableCell className="font-bold border-r-2 border-black px-4">{code}</TableCell>
+                            <TableCell className="border-r-2 border-black px-4">{roll?.widthMm || "—"} mm</TableCell>
+                            <TableCell className="border-r-2 border-black px-4">{roll?.lengthMeters || "—"} mtr</TableCell>
+                            <TableCell className="border-r-2 border-black px-4 font-black text-[10px]">{roll?.jobNo ? 'JOB' : 'STOCK'}</TableCell>
+                            <TableCell className="px-4 font-black text-[10px]">{roll?.jobNo || "—"}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
 
-            <div className="mt-12 grid grid-cols-3 gap-8">
-              <div className="border-2 border-black p-4 space-y-4">
-                <p className="text-[10px] font-black uppercase underline">Machine Log</p>
-                <div className="space-y-2 text-[10px] font-bold">
-                  <p>Start: _______________</p>
-                  <p>End:   _______________</p>
+                <div className="mt-12 grid grid-cols-3 gap-8">
+                  <div className="border-2 border-black p-4 space-y-4">
+                    <p className="text-[10px] font-black uppercase underline">Machine Log</p>
+                    <div className="space-y-2 text-[10px] font-bold">
+                      <p>Start: _______________</p>
+                      <p>End:   _______________</p>
+                    </div>
+                  </div>
+                  <div className="border-2 border-black p-4">
+                    <p className="text-[10px] font-black uppercase underline">Operator Notes</p>
+                  </div>
+                  <div className="border-2 border-black p-4 flex flex-col justify-end">
+                    <div className="border-t-2 border-black text-center pt-2">
+                      <p className="text-[9px] font-black uppercase">Supervisor Sign</p>
+                    </div>
+                  </div>
                 </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center">
+                <TemplateRenderer 
+                  template={activeJobTemplate} 
+                  data={prepareJobData(selectedJob)} 
+                />
               </div>
-              <div className="border-2 border-black p-4">
-                <p className="text-[10px] font-black uppercase underline">Operator Notes</p>
-              </div>
-              <div className="border-2 border-black p-4 flex flex-col justify-end">
-                <div className="border-t-2 border-black text-center pt-2">
-                  <p className="text-[9px] font-black uppercase">Supervisor Sign</p>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
       {/* LABEL PRINT DIALOG */}
       <Dialog open={isLabelOpen} onOpenChange={setIsLabelOpen}>
-        <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
-            <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
+              <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
+                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
+                  <SelectValue placeholder="Select Template" />
+                </SelectTrigger>
+                <SelectContent className="z-[110]">
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
+                  {labelTemplates?.map(t => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
           </div>
-          <div className="p-10 flex flex-col items-center gap-8 max-h-[60vh] overflow-y-auto industrial-scroll">
+          <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="label-batch" className="space-y-10">
               {selectedJob?.child_rolls?.map((code: string) => {
                 const roll = allRolls?.find(r => r.rollNo === code);
                 return (
-                  <div key={code} className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
-                    <div className="border-b-4 border-black pb-4 flex justify-between items-center">
-                      <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
-                      <span className="text-xl font-bold">REEL ID</span>
-                    </div>
-                    <div className="mt-6 flex justify-between gap-6">
-                      <div className="flex-1 space-y-4">
-                        <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{code}</p></div>
-                        <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll?.paperType || "SUBSTRATE"}</p></div>
+                  <div key={code} className="flex flex-col items-center">
+                    {selectedLabelTemplateId === 'default' ? (
+                      <div className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
+                        <div className="border-b-4 border-black pb-4 flex justify-between items-center">
+                          <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
+                          <span className="text-xl font-bold">REEL ID</span>
+                        </div>
+                        <div className="mt-6 flex justify-between gap-6">
+                          <div className="flex-1 space-y-4">
+                            <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{code}</p></div>
+                            <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll?.paperType || "SUBSTRATE"}</p></div>
+                          </div>
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="border-2 border-black p-1"><QRCodeSVG value={code} size={120} /></div>
+                            <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
+                          </div>
+                        </div>
+                        <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
+                          <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll?.widthMm} MM</span></div>
+                          <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll?.lengthMeters} MTR</span></div>
+                        </div>
+                        <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
+                          <span>Dest: {roll?.jobNo ? 'JOB' : 'STOCK'}</span>
+                          <span>Card: {selectedJob?.job_card_no}</span>
+                        </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="border-2 border-black p-1"><QRCodeSVG value={code} size={120} /></div>
-                        <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
-                      </div>
-                    </div>
-                    <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
-                      <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll?.widthMm} MM</span></div>
-                      <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll?.lengthMeters} MTR</span></div>
-                    </div>
-                    <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
-                      <span>Dest: {roll?.jobNo ? 'JOB' : 'STOCK'}</span>
-                      <span>Card: {selectedJob?.job_card_no}</span>
-                    </div>
+                    ) : (
+                      <TemplateRenderer 
+                        template={activeLabelTemplate} 
+                        data={prepareRollData(roll)} 
+                      />
+                    )}
                   </div>
                 );
               })}

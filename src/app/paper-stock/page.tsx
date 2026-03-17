@@ -89,7 +89,8 @@ import {
   setDoc,
   writeBatch,
   where,
-  getDocs
+  getDocs,
+  orderBy
 } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
@@ -99,6 +100,7 @@ import { Html5QrcodeScanner } from "html5-qrcode"
 import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
 import { ColumnHeaderFilter } from "@/components/inventory/column-header-filter"
 import { useToast } from "@/hooks/use-toast"
+import { TemplateRenderer } from "@/components/printing/template-renderer"
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -164,6 +166,10 @@ export default function PaperStockPage() {
   const [isCustomStatus, setIsCustomStatus] = useState(false)
   const [siteOrigin, setSiteOrigin] = useState("")
 
+  // Template Selection State
+  const [selectedLabelTemplateId, setSelectedLabelTemplateId] = useState("default")
+  const [selectedReportTemplateId, setSelectedReportTemplateId] = useState("default")
+
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
   const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
 
@@ -211,6 +217,20 @@ export default function PaperStockPage() {
     rollNo: "", paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0, gsm: 0, weightKg: 0,
     purchaseRate: 0, receivedDate: "", dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", companyRollNo: "", remarks: ""
   })
+
+  // Template Queries
+  const labelTemplatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Industrial Label'));
+  }, [firestore]);
+
+  const reportTemplatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Report'));
+  }, [firestore]);
+
+  const { data: labelTemplates } = useCollection(labelTemplatesQuery);
+  const { data: reportTemplates } = useCollection(reportTemplatesQuery);
 
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -501,6 +521,21 @@ export default function PaperStockPage() {
 
   const handleResetAll = () => { setFilters(initialFilters); setHeaderFilters({}); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); setSelectedIds(new Set()); }
 
+  // Template Mappings
+  const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
+  const activeReportTemplate = reportTemplates?.find(t => t.id === selectedReportTemplateId);
+
+  const prepareRollData = (roll: any) => ({
+    ...roll,
+    roll_no: roll.rollNo,
+    paper_type: roll.paperType,
+    width: roll.widthMm,
+    length: roll.lengthMeters,
+    gsm: roll.gsm,
+    company: roll.paperCompany,
+    date: roll.receivedDate
+  });
+
   if (!isMounted) return null;
 
   return (
@@ -653,86 +688,135 @@ export default function PaperStockPage() {
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
-            <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Audit Preview</DialogTitle>
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Audit Preview</DialogTitle>
+              <Select value={selectedReportTemplateId} onValueChange={setSelectedReportTemplateId}>
+                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
+                  <SelectValue placeholder="Select Template" />
+                </SelectTrigger>
+                <SelectContent className="z-[110]">
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
+                  {reportTemplates?.map(t => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
           </div>
           <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
-            <div className="border-b-4 border-black pb-6 flex justify-between items-end">
-              <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Industrial Technical Registry Report</p></div>
-              <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
-            </div>
-            <div className="mt-8 grid grid-cols-3 gap-4 no-print">
-              <div className="p-4 bg-slate-100 rounded-lg border">
-                <p className="text-[9px] font-black uppercase opacity-50 mb-1">Active Filter Scope</p>
-                <p className="text-xs font-bold truncate">{activeFiltersSummary}</p>
-              </div>
-              <div className="p-4 bg-slate-100 rounded-lg border text-center">
-                <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
-                <p className="text-xl font-black text-primary">{reportRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
-              </div>
-              <div className="p-4 bg-slate-100 rounded-lg border text-center">
-                <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
-                <p className="text-xl font-black">{reportRows.length}</p>
-              </div>
-            </div>
-            <Table className="mt-10 border-2 border-black">
-              <TableHeader className="bg-slate-100">
-                <TableRow className="border-b-2 border-black h-10">
-                  {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                    <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black px-2">
-                      {col.label}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {reportRows.map((r) => (
-                  <TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8">
-                    {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                      <TableCell key={col.id} className={cn("border-r border-black/10 text-[9px] px-2 text-center", col.id === 'rollNo' && "font-bold text-[10px]")}>
-                        {r[col.id] || '-'}
-                      </TableCell>
+            {selectedReportTemplateId === 'default' ? (
+              <>
+                <div className="border-b-4 border-black pb-6 flex justify-between items-end">
+                  <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Industrial Technical Registry Report</p></div>
+                  <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
+                </div>
+                <div className="mt-8 grid grid-cols-3 gap-4 no-print">
+                  <div className="p-4 bg-slate-100 rounded-lg border">
+                    <p className="text-[9px] font-black uppercase opacity-50 mb-1">Active Filter Scope</p>
+                    <p className="text-xs font-bold truncate">{activeFiltersSummary}</p>
+                  </div>
+                  <div className="p-4 bg-slate-100 rounded-lg border text-center">
+                    <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
+                    <p className="text-xl font-black text-primary">{reportRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
+                  </div>
+                  <div className="p-4 bg-slate-100 rounded-lg border text-center">
+                    <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
+                    <p className="text-xl font-black">{reportRows.length}</p>
+                  </div>
+                </div>
+                <Table className="mt-10 border-2 border-black">
+                  <TableHeader className="bg-slate-100">
+                    <TableRow className="border-b-2 border-black h-10">
+                      {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                        <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black px-2">
+                          {col.label}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reportRows.map((r) => (
+                      <TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8">
+                        {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                          <TableCell key={col.id} className={cn("border-r border-black/10 text-[9px] px-2 text-center", col.id === 'rollNo' && "font-bold text-[10px]")}>
+                            {r[col.id] || '-'}
+                          </TableCell>
+                        ))}
+                      </TableRow>
                     ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                  </TableBody>
+                </Table>
+              </>
+            ) : (
+              <div className="flex flex-col items-center">
+                <TemplateRenderer 
+                  template={activeReportTemplate} 
+                  data={{
+                    ROLLS: reportRows,
+                    date: new Date().toLocaleDateString()
+                  }} 
+                />
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
-            <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
+              <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
+                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
+                  <SelectValue placeholder="Select Template" />
+                </SelectTrigger>
+                <SelectContent className="z-[110]">
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
+                  {labelTemplates?.map(t => (
+                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
           </div>
-          <div className="p-10 flex flex-col items-center gap-8 max-h-[60vh] overflow-y-auto industrial-scroll">
+          <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="label-batch" className="space-y-10">
               {printingRolls.map((roll) => (
-                <div key={roll.id} className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
-                  <div className="border-b-4 border-black pb-4 flex justify-between items-center">
-                    <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
-                    <span className="text-xl font-bold">REEL ID</span>
-                  </div>
-                  <div className="mt-6 flex justify-between gap-6">
-                    <div className="flex-1 space-y-4">
-                      <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{roll.rollNo}</p></div>
-                      <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll.paperType || "SUBSTRATE"}</p></div>
+                <div key={roll.id} className="flex flex-col items-center">
+                  {selectedLabelTemplateId === 'default' ? (
+                    <div className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
+                      <div className="border-b-4 border-black pb-4 flex justify-between items-center">
+                        <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
+                        <span className="text-xl font-bold">REEL ID</span>
+                      </div>
+                      <div className="mt-6 flex justify-between gap-6">
+                        <div className="flex-1 space-y-4">
+                          <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{roll.rollNo}</p></div>
+                          <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll.paperType || "SUBSTRATE"}</p></div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.rollNo}` : roll.rollNo} size={120} /></div>
+                          <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
+                        </div>
+                      </div>
+                      <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
+                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll.widthMm} MM</span></div>
+                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll.lengthMeters} MTR</span></div>
+                      </div>
+                      <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
+                        <span>Status: {roll.status}</span>
+                        <span>System ID: {roll.id}</span>
+                      </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.rollNo}` : roll.rollNo} size={120} /></div>
-                      <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
-                    </div>
-                  </div>
-                  <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
-                    <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll.widthMm} MM</span></div>
-                    <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll.lengthMeters} MTR</span></div>
-                  </div>
-                  <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
-                    <span>Status: {roll.status}</span>
-                    <span>System ID: {roll.id}</span>
-                  </div>
+                  ) : (
+                    <TemplateRenderer 
+                      template={activeLabelTemplate} 
+                      data={prepareRollData(roll)} 
+                    />
+                  )}
                 </div>
               ))}
             </div>

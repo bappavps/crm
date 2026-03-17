@@ -120,7 +120,7 @@ interface BackgroundConfig {
 interface PrintTemplate {
   id: string;
   name: string;
-  documentType: 'Tax Invoice' | 'Job Card' | 'Label' | 'Delivery Challan' | 'Purchase Order' | 'Proforma' | 'Internal Audit';
+  documentType: 'Tax Invoice' | 'Technical Job Card' | 'Industrial Label' | 'Delivery Challan' | 'Purchase Order' | 'Proforma' | 'Report';
   paperWidth: number; 
   paperHeight: number; 
   elements: TemplateElement[];
@@ -167,7 +167,7 @@ const PLACEHOLDERS = {
     { key: '{{paper_type}}', label: 'Paper Type', icon: FileText, preview: 'Chromo' },
   ],
   INVENTORY: [
-    { key: '{{roll_number}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
+    { key: '{{roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
     { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
     { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
   ]
@@ -224,8 +224,9 @@ export default function PrintTemplateStudio() {
     if (!templates) return [];
     if (activeCategory === "All") return templates;
     return templates.filter(t => {
-      if (activeCategory === "Job Cards") return t.documentType === 'Job Card';
-      if (activeCategory === "Labels") return t.documentType === 'Label';
+      if (activeCategory === "Job Cards") return t.documentType === 'Technical Job Card';
+      if (activeCategory === "Labels") return t.documentType === 'Industrial Label';
+      if (activeCategory === "Reports") return t.documentType === 'Report';
       if (activeCategory === "Billing") return ['Tax Invoice', 'Proforma', 'Delivery Challan'].includes(t.documentType);
       return true;
     });
@@ -365,7 +366,7 @@ export default function PrintTemplateStudio() {
       {
         id: 'system-jumbo-job-card',
         name: 'Jumbo Job Card - Technical Sheet',
-        documentType: 'Job Card',
+        documentType: 'Technical Job Card',
         paperWidth: 210,
         paperHeight: 297,
         isDefault: true,
@@ -529,7 +530,7 @@ export default function PrintTemplateStudio() {
 
           <Tabs value={activeCategory} onValueChange={setActiveCategory} className="w-full">
             <TabsList className="bg-slate-100 p-1 rounded-xl mb-6">
-              {["All", "Job Cards", "Labels", "Billing"].map(cat => (
+              {["All", "Job Cards", "Labels", "Reports", "Billing"].map(cat => (
                 <TabsTrigger key={cat} value={cat} className="px-8 font-bold text-xs uppercase tracking-widest">{cat}</TabsTrigger>
               ))}
             </TabsList>
@@ -987,12 +988,12 @@ export default function PrintTemplateStudio() {
                   <SelectTrigger className="h-11 rounded-xl border-2 font-bold"><SelectValue placeholder="Select Category" /></SelectTrigger>
                   <SelectContent className="z-[200]">
                     <SelectItem value="Tax Invoice">Tax Invoice</SelectItem>
-                    <SelectItem value="Job Card">Technical Job Card</SelectItem>
-                    <SelectItem value="Label">Industrial Label</SelectItem>
+                    <SelectItem value="Technical Job Card">Technical Job Card</SelectItem>
+                    <SelectItem value="Industrial Label">Industrial Label</SelectItem>
                     <SelectItem value="Delivery Challan">Delivery Challan</SelectItem>
                     <SelectItem value="Purchase Order">Purchase Order</SelectItem>
                     <SelectItem value="Proforma">Proforma Invoice</SelectItem>
-                    <SelectItem value="Internal Audit">Internal Audit Sheet</SelectItem>
+                    <SelectItem value="Report">Report / Audit Sheet</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1157,7 +1158,6 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
           </div>
         );
       case 'barcode': 
-        // formats like EAN13 and UPC are strict about numeric input and length
         const barcodePreviewVal = (element.barcodeType === 'EAN13' || element.barcodeType === 'UPC') ? "123456789012" : "PREVIEW";
         return (
           <div style={commonStyle}>

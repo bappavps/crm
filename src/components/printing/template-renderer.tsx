@@ -16,14 +16,13 @@ interface TemplateElement {
   rotate: number;
   content?: string;
   placeholder?: string;
+  barcodeType?: any;
   style: any;
 }
 
 interface TemplateRendererProps {
-  elements: TemplateElement[];
+  template: any;
   data: Record<string, any>;
-  paperWidth: number;
-  paperHeight: number;
   scale?: number;
 }
 
@@ -32,15 +31,22 @@ const MM_TO_PX = 3.78;
 const FONT_FAMILIES = [
   { id: 'inter', value: 'var(--font-inter), sans-serif' },
   { id: 'roboto', value: "'Roboto', sans-serif" },
-  { id: 'playfair', value: "'Playfair Display', serif" },
   { id: 'montserrat', value: "'Montserrat', sans-serif" },
+  { id: 'poppins', value: "'Poppins', sans-serif" },
   { id: 'oswald', value: "'Oswald', sans-serif" },
+  { id: 'open-sans', value: "'Open Sans', sans-serif" },
+  { id: 'arial', value: "Arial, sans-serif" },
+  { id: 'helvetica', value: "Helvetica, sans-serif" },
   { id: 'mono', value: "ui-monospace, SFMono-Regular, monospace" },
-  { id: 'cursive', value: "cursive" },
 ];
 
-export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scale = 1 }: TemplateRendererProps) {
-  
+export function TemplateRenderer({ template, data, scale = 1 }: TemplateRendererProps) {
+  if (!template) return null;
+
+  const elements = template.elements || [];
+  const paperWidth = template.paperWidth || 210;
+  const paperHeight = template.paperHeight || 297;
+
   const getVal = (key: string) => {
     if (!key) return "";
     const cleanKey = key.replace(/[{}]/g, '');
@@ -64,7 +70,8 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
       display: 'flex',
       alignItems: 'center',
       justifyContent: el.style.textAlign === 'center' ? 'center' : el.style.textAlign === 'right' ? 'flex-end' : 'flex-start',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      zIndex: 10
     };
 
     const textStyle: React.CSSProperties = {
@@ -95,29 +102,35 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
         const tableData = data[el.placeholder || ""] || [];
         return (
           <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
-            {/* Header */}
             <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
               <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
               <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>W (MM)</span>
               <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>L (MTR)</span>
               <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>DEST</span>
             </div>
-            {/* Rows */}
             {tableData.map((row: any, idx: number) => (
               <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
-                <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace' }}>{row.roll_code || row.rollNo}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.width || row.widthMm}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.length || row.lengthMeters}</span>
-                <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>{row.destination || (row.jobNo ? 'JOB' : 'STOCK')}</span>
+                <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace' }}>{row.rollNo || row.roll_code}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.widthMm || row.width}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.lengthMeters || row.length}</span>
+                <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>{row.jobNo ? 'JOB' : 'STOCK'}</span>
               </div>
             ))}
           </div>
         );
       case 'barcode':
+        const barcodeVal = getVal(el.placeholder || "") || "123456789012";
         return (
           <div style={style}>
             <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'center' }}>
-              <Barcode value={getVal(el.placeholder || "") || "SAMPLE"} height={el.height - 20} width={1.5} fontSize={10} displayValue={true} />
+              <Barcode 
+                format={el.barcodeType as any || 'CODE128'} 
+                value={barcodeVal} 
+                height={el.height - 20} 
+                width={1.5} 
+                fontSize={10} 
+                displayValue={true} 
+              />
             </div>
           </div>
         );
@@ -150,31 +163,31 @@ export function TemplateRenderer({ elements, data, paperWidth, paperHeight, scal
               margin: 0;
             }
             body { margin: 0; }
-            #print-area-rendered {
-              width: ${paperWidth}mm !important;
-              height: ${paperHeight}mm !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              overflow: hidden;
-              position: absolute !important;
-              top: 0 !important;
-              left: 0 !important;
+            .print-page-break {
+              page-break-after: always;
             }
           }
         `
       }} />
       
       <div 
-        id="print-area-rendered"
-        className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none overflow-hidden"
+        className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none overflow-hidden print-page-break"
         style={{ 
           width: `${paperWidth * MM_TO_PX}px`, 
           height: `${paperHeight * MM_TO_PX}px`,
           transform: `scale(${scale})`,
-          transformOrigin: 'top center'
+          transformOrigin: 'top center',
+          margin: scale !== 1 ? '0 auto' : '0'
         }}
       >
-        {elements.map(el => (
+        {/* Background Layer */}
+        {template.background?.image && (
+          <div className="absolute inset-0 pointer-events-none z-0" style={{ opacity: template.background.opacity || 1 }}>
+            <img src={template.background.image} className="w-full h-full object-contain" alt="Background" />
+          </div>
+        )}
+
+        {elements.map((el: TemplateElement) => (
           <React.Fragment key={el.id}>
             {renderElement(el)}
           </React.Fragment>
