@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -55,7 +56,9 @@ import {
   Eye,
   Wrench,
   ArrowRightLeft,
-  CornerUpLeft
+  CornerUpLeft,
+  ChevronUp,
+  ChevronDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -75,9 +78,8 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V7.1)
- * Professional Designer with Custom Paper Sizes, Media Uploads, and Industrial Symbologies.
- * Fixed: deleteElement ReferenceError.
+ * PRINT TEMPLATE STUDIO (V8.0)
+ * Industrial Designer with Layer Management, Rotation, and Custom Paper Sizes.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -118,7 +120,7 @@ interface BackgroundConfig {
 interface PrintTemplate {
   id: string;
   name: string;
-  documentType: 'Tax Invoice' | 'Label' | 'Job Card' | 'Delivery Challan' | 'Purchase Order' | 'Proforma' | 'Internal Audit';
+  documentType: 'Tax Invoice' | 'Job Card' | 'Label' | 'Delivery Challan' | 'Purchase Order' | 'Proforma' | 'Internal Audit';
   paperWidth: number; 
   paperHeight: number; 
   elements: TemplateElement[];
@@ -143,10 +145,9 @@ const FONT_FAMILIES = [
   { id: 'poppins', name: 'Poppins', value: "'Poppins', sans-serif" },
   { id: 'oswald', name: 'Oswald', value: "'Oswald', sans-serif" },
   { id: 'open-sans', name: 'Open Sans', value: "'Open Sans', sans-serif" },
-  { id: 'playfair', name: 'Playfair Display', value: "'Playfair Display', serif" },
-  { id: 'mono', name: 'Monospace', value: "ui-monospace, SFMono-Regular, monospace" },
   { id: 'arial', name: 'Arial', value: "Arial, sans-serif" },
   { id: 'helvetica', name: 'Helvetica', value: "Helvetica, sans-serif" },
+  { id: 'mono', name: 'Monospace', value: "ui-monospace, SFMono-Regular, monospace" },
 ];
 
 const PLACEHOLDERS = {
@@ -200,7 +201,18 @@ export default function PrintTemplateStudio() {
     onConfirm?: () => void;
   }>({ isOpen: false, type: 'SUCCESS', title: '' });
 
-  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { 
+    setIsMounted(true);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedElementId && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || "")) {
+          deleteElement(selectedElementId);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedElementId]);
 
   const templatesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -359,12 +371,12 @@ export default function PrintTemplateStudio() {
         isDefault: true,
         isSystemTemplate: true,
         elements: [
-          { id: 'title', type: 'title', x: 40, y: 40, width: 600, height: 50, rotate: 0, content: 'SHREE LABEL CREATION', style: { fontSize: 32, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
-          { id: 'subtitle', type: 'text', x: 40, y: 90, width: 400, height: 30, rotate: 0, content: 'JUMBO SLITTING INSTRUCTION SHEET', style: { fontSize: 14, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#666666', borderRadius: 0 } },
-          { id: 'jobid', type: 'field', x: 550, y: 40, width: 200, height: 40, rotate: 0, placeholder: '{{job_card_id}}', style: { fontSize: 18, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#E4892B', borderRadius: 0 } },
-          { id: 'line1', type: 'line', x: 40, y: 130, width: 710, height: 2, rotate: 0, style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 2, borderColor: '#000000' } },
-          { id: 'table_label', type: 'text', x: 40, y: 400, width: 300, height: 30, rotate: 0, content: 'SLITTING OUTPUT PLAN (DYNAMIC)', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0 } },
-          { id: 'output_table', type: 'table', x: 40, y: 440, width: 710, height: 300, rotate: 0, placeholder: 'SLIT_ROLLS', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 1, borderColor: '#ccc' } }
+          { id: 'title', type: 'title', x: 40, y: 40, width: 600, height: 50, rotate: 0, content: 'SHREE LABEL CREATION', style: { fontSize: 32, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
+          { id: 'subtitle', type: 'text', x: 40, y: 90, width: 400, height: 30, rotate: 0, content: 'JUMBO SLITTING INSTRUCTION SHEET', style: { fontSize: 14, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#666666', borderRadius: 0, opacity: 1 } },
+          { id: 'jobid', type: 'field', x: 550, y: 40, width: 200, height: 40, rotate: 0, placeholder: '{{job_card_id}}', style: { fontSize: 18, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#E4892B', borderRadius: 0, opacity: 1 } },
+          { id: 'line1', type: 'line', x: 40, y: 130, width: 710, height: 2, rotate: 0, style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 2, borderColor: '#000000', opacity: 1 } },
+          { id: 'table_label', type: 'text', x: 40, y: 400, width: 300, height: 30, rotate: 0, content: 'SLITTING OUTPUT PLAN (DYNAMIC)', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
+          { id: 'output_table', type: 'table', x: 40, y: 440, width: 710, height: 300, rotate: 0, placeholder: 'SLIT_ROLLS', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 1, borderColor: '#ccc', opacity: 1 } }
         ]
       }
     ]
@@ -444,6 +456,26 @@ export default function PrintTemplateStudio() {
     setSelectedElementId(null)
     toast({ title: "Element Removed" })
   }
+
+  const moveElement = (direction: 'front' | 'back' | 'forward' | 'backward') => {
+    if (!currentTemplate || !selectedElementId) return;
+    const elements = [...currentTemplate.elements];
+    const index = elements.findIndex(el => el.id === selectedElementId);
+    if (index === -1) return;
+
+    const el = elements.splice(index, 1)[0];
+    if (direction === 'front') {
+      elements.push(el);
+    } else if (direction === 'back') {
+      elements.unshift(el);
+    } else if (direction === 'forward') {
+      elements.splice(Math.min(elements.length, index + 1), 0, el);
+    } else {
+      elements.splice(Math.max(0, index - 1), 0, el);
+    }
+
+    setCurrentTemplate({ ...currentTemplate, elements });
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isBackground = false) => {
     const file = e.target.files?.[0]
@@ -623,6 +655,33 @@ export default function PrintTemplateStudio() {
                     ))}
                   </div>
                 </div>
+
+                <div className="space-y-4">
+                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary">Layers</Label>
+                  <div className="bg-white rounded-2xl border shadow-sm divide-y overflow-hidden">
+                    {currentTemplate?.elements.slice().reverse().map((el, idx) => (
+                      <div 
+                        key={el.id} 
+                        className={cn(
+                          "flex items-center gap-3 p-3 cursor-pointer hover:bg-slate-50 transition-colors",
+                          selectedElementId === el.id && "bg-primary/5"
+                        )}
+                        onClick={() => setSelectedElementId(el.id)}
+                      >
+                        <div className="h-6 w-6 bg-slate-100 rounded flex items-center justify-center text-[10px] font-bold">
+                          {currentTemplate.elements.length - idx}
+                        </div>
+                        <span className="text-[10px] font-black uppercase flex-1 truncate">{el.type} {el.placeholder || el.content?.slice(0, 10)}</span>
+                        {selectedElementId === el.id && (
+                          <div className="flex gap-1">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveElement('forward')}><ChevronUp className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => moveElement('backward')}><ChevronDown className="h-3 w-3" /></Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -707,12 +766,39 @@ export default function PrintTemplateStudio() {
                       <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Width</Label><Input type="number" value={selectedElement.width} onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
                       <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Height</Label><Input type="number" value={selectedElement.height} onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
                     </div>
+                    <div className="space-y-2">
+                      <div className="flex justify-between items-center">
+                        <Label className="text-[10px] font-black uppercase opacity-50">Rotation</Label>
+                        <span className="text-[9px] font-bold">{selectedElement.rotate}°</span>
+                      </div>
+                      <Slider 
+                        value={[selectedElement.rotate]} 
+                        min={0} max={360} step={1} 
+                        onValueChange={v => updateElement(selectedElement.id, { rotate: v[0] })} 
+                        disabled={currentTemplate?.isSystemTemplate}
+                      />
+                    </div>
                   </div>
 
                   {/* APPEARANCE SECTION */}
                   <div className="space-y-6">
                     <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Appearance</Label>
                     
+                    {['rectangle', 'circle', 'text', 'title', 'field', 'table', 'image'].includes(selectedElement.type) && (
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-[10px] font-black uppercase opacity-50">Opacity</Label>
+                          <span className="text-[9px] font-bold">{Math.round((selectedElement.style.opacity || 1) * 100)}%</span>
+                        </div>
+                        <Slider 
+                          value={[(selectedElement.style.opacity || 1) * 100]} 
+                          min={0} max={100} step={1} 
+                          onValueChange={v => updateElementStyle(selectedElement.id, { opacity: v[0] / 100 })} 
+                          disabled={currentTemplate?.isSystemTemplate}
+                        />
+                      </div>
+                    )}
+
                     {['rectangle', 'circle', 'text', 'title', 'field', 'table'].includes(selectedElement.type) && (
                       <div className="space-y-3">
                         <Label className="text-[9px] uppercase font-bold text-slate-400">Fill Color</Label>
@@ -737,9 +823,17 @@ export default function PrintTemplateStudio() {
                     )}
 
                     {selectedElement.type === 'rectangle' && (
-                      <div className="space-y-1.5">
-                        <Label className="text-[9px] uppercase font-bold text-slate-400">Corner Radius</Label>
-                        <Input type="number" value={selectedElement.style.borderRadius || 0} onChange={e => updateElementStyle(selectedElement.id, { borderRadius: Number(e.target.value) })} className="h-9 font-bold" disabled={currentTemplate?.isSystemTemplate} />
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-[10px] font-black uppercase opacity-50">Corner Radius</Label>
+                          <span className="text-[9px] font-bold">{selectedElement.style.borderRadius || 0}px</span>
+                        </div>
+                        <Slider 
+                          value={[selectedElement.style.borderRadius || 0]} 
+                          min={0} max={100} step={1} 
+                          onValueChange={v => updateElementStyle(selectedElement.id, { borderRadius: v[0] })} 
+                          disabled={currentTemplate?.isSystemTemplate}
+                        />
                       </div>
                     )}
                   </div>
@@ -814,6 +908,16 @@ export default function PrintTemplateStudio() {
                       </div>
                     </div>
                   )}
+
+                  <Separator />
+                  
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Arrangement</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" className="text-[9px] font-black uppercase h-9" onClick={() => moveElement('front')}>Bring to Front</Button>
+                      <Button variant="outline" size="sm" className="text-[9px] font-black uppercase h-9" onClick={() => moveElement('back')}>Send to Back</Button>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="p-6 space-y-10 animate-in slide-in-from-right-4 duration-300">
