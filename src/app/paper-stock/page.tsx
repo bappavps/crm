@@ -52,7 +52,8 @@ import {
   MoreHorizontal,
   RotateCcw,
   CheckCircle2,
-  IdCard
+  IdCard,
+  Search
 } from "lucide-react"
 import { 
   Dialog, 
@@ -167,10 +168,9 @@ export default function PaperStockPage() {
   // Manual Job Card State
   const [manualParentRoll, setManualParentRoll] = useState("")
   const [manualChildRolls, setManualChildRolls] = useState<string[]>([])
-
-  // Header Filters State
-  const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
-  const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
+  const [manualMachine, setManualMachine] = useState("")
+  const [manualOperator, setManualOperator] = useState("")
+  const [parentSearch, setParentSearch] = useState("")
 
   const defaultVisibleColumns = useMemo(() => COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {}), []);
 
@@ -222,15 +222,37 @@ export default function PaperStockPage() {
     return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Label'));
   }, [firestore]);
 
+  const machinesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'machines'), where('status', '==', 'Active'));
+  }, [firestore]);
+
+  const usersQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'users');
+  }, [firestore]);
+
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
   const { data: labelTemplates } = useCollection(templatesQuery);
+  const { data: machines } = useCollection(machinesQuery);
+  const { data: users } = useCollection(usersQuery);
 
   const parentRolls = useMemo(() => rolls?.filter(r => !r.rollNo.includes('-')) || [], [rolls]);
   
+  const searchedParentRolls = useMemo(() => {
+    if (!parentSearch) return parentRolls;
+    return parentRolls.filter(r => r.rollNo.toLowerCase().includes(parentSearch.toLowerCase()));
+  }, [parentRolls, parentSearch]);
+
   const filteredChildRollsManual = useMemo(() => {
     if (!manualParentRoll) return [];
     return rolls?.filter(r => r.rollNo.startsWith(manualParentRoll + '-') && r.rollNo !== manualParentRoll) || [];
   }, [rolls, manualParentRoll]);
+
+  const operators = useMemo(() => {
+    if (!users) return [];
+    return users.filter(u => u.roles?.includes('Operator') || u.roles?.includes('Admin'));
+  }, [users]);
 
   const selectedTemplate = useMemo(() => {
     if (selectedTemplateId === "default") return null;
@@ -560,8 +582,8 @@ export default function PaperStockPage() {
         createdById: user.uid,
         createdByName: user.displayName || user.email,
         type: "MANUAL",
-        machine: "MANUAL",
-        operator: user.displayName || user.email
+        machine: manualMachine || "MANUAL",
+        operator: manualOperator || user.displayName || user.email
       });
       setIsManualJobCardOpen(false);
       toast({ title: "Manual Job Card Created", description: `Referenced ${manualChildRolls.length} output units.` });
@@ -643,42 +665,6 @@ export default function PaperStockPage() {
             <FileText className="h-4 w-4 mr-2 text-primary" /> Print Stock Report
           </Button>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
-              >
-                <Settings2 className="h-4 w-4 mr-2" /> Columns
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
-              <div className="p-2 border-b mb-2">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visibility Settings</span>
-              </div>
-              <div className="max-h-[300px] overflow-y-auto industrial-scroll">
-                {COLUMN_KEYS.map((col) => (
-                  <DropdownMenuCheckboxItem
-                    key={col.id}
-                    checked={visibleColumns[col.id]}
-                    onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))}
-                    className="font-medium text-xs py-2 rounded-lg"
-                  >
-                    {col.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem 
-                className="font-black text-[10px] uppercase text-primary justify-center py-2 cursor-pointer hover:bg-primary/5 rounded-lg"
-                onClick={() => setVisibleColumns(defaultVisibleColumns)}
-              >
-                <RotateCcw className="h-3.5 w-3.5 mr-2" /> Reset Columns
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           <Button 
             variant="outline" 
             onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
@@ -732,6 +718,42 @@ export default function PaperStockPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl transition-all"
+                >
+                  <Settings2 className="h-4 w-4 mr-2" /> Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
+                <div className="p-2 border-b mb-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visibility Settings</span>
+                </div>
+                <div className="max-h-[300px] overflow-y-auto industrial-scroll">
+                  {COLUMN_KEYS.map((col) => (
+                    <DropdownMenuCheckboxItem
+                      key={col.id}
+                      checked={visibleColumns[col.id]}
+                      onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))}
+                      className="font-medium text-xs py-2 rounded-lg"
+                    >
+                      {col.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="font-black text-[10px] uppercase text-primary justify-center py-2 cursor-pointer hover:bg-primary/5 rounded-lg"
+                  onClick={() => setVisibleColumns(defaultVisibleColumns)}
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-2" /> Reset Columns
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl transition-all">
               <QrCode className="h-4 w-4 mr-2" /> Live Scanner
             </Button>
@@ -821,9 +843,8 @@ export default function PaperStockPage() {
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>
                       <div className="flex items-center justify-center gap-1.5 px-2">
-                        {/* View Specs */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -834,7 +855,6 @@ export default function PaperStockPage() {
                           <Eye className="h-4 w-4" />
                         </Button>
 
-                        {/* Edit Record */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -845,7 +865,6 @@ export default function PaperStockPage() {
                           <Pencil className="h-4 w-4" />
                         </Button>
 
-                        {/* Slitting Workflow (RESTORED) */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -856,7 +875,6 @@ export default function PaperStockPage() {
                           <Scissors className="h-4 w-4" />
                         </Button>
 
-                        {/* Create Manual Job Card (NEW ICON) */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -872,7 +890,6 @@ export default function PaperStockPage() {
                           <IdCard className="h-4 w-4" />
                         </Button>
 
-                        {/* Print Label */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -883,7 +900,6 @@ export default function PaperStockPage() {
                           <Printer className="h-4 w-4" />
                         </Button>
 
-                        {/* Delete Entry */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -920,9 +936,9 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* ROLL VIEW DIALOG */}
+      {/* ROLL VIEW DIALOG - Sized to match Edit/Add modals */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-8">
             <div className="flex justify-between items-start">
               <div className="space-y-4">
@@ -933,7 +949,6 @@ export default function PaperStockPage() {
                   <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
                 </div>
                 
-                {/* QR CODE ADDITION */}
                 <div className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800 animate-in zoom-in-95 duration-300">
                   <QRCodeSVG 
                     value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.rollNo}` : (viewingRoll?.rollNo || "")} 
@@ -989,6 +1004,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
+      {/* EDIT/ADD ROLL DIALOG */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <form onSubmit={handleSave}>
@@ -1080,187 +1096,7 @@ export default function PaperStockPage() {
         {suggestions.mfrRolls.map(m => <option key={m} value={m}>{`🆔 ${m}`}</option>)}
       </datalist>
 
-      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[700px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
-          <div className="bg-slate-900 text-white p-6">
-            <div className="flex justify-between items-center">
-              <DialogTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Professional Print Engine</DialogTitle>
-              <div className="flex items-center gap-2">
-                <Label className="text-[10px] uppercase font-bold text-slate-400">Layout:</Label>
-                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                  <SelectTrigger className="h-8 w-[200px] bg-white/10 border-none text-[10px] font-bold text-white">
-                    <SelectValue placeholder="Select Template" />
-                  </SelectTrigger>
-                  <SelectContent className="z-[100]">
-                    <SelectItem value="default" className="text-[10px] font-bold">Standard Industrial (150x100)</SelectItem>
-                    {labelTemplates?.map(t => (
-                      <SelectItem key={t.id} value={t.id} className="text-[10px] font-bold">{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-          <div className="p-10 flex flex-col items-center bg-slate-200 overflow-auto max-h-[60vh] industrial-scroll gap-10">
-            <div id="print-area">
-              {printingRolls.map((roll, idx) => (
-                <div key={roll.id} className="label-page">
-                  {selectedTemplate ? (
-                    <TemplateRenderer 
-                      elements={selectedTemplate.elements} 
-                      data={getPrintDataMapping(roll)} 
-                      paperWidth={selectedTemplate.paperWidth} 
-                      paperHeight={selectedTemplate.paperHeight} 
-                    />
-                  ) : (
-                    <div className="bg-white p-8 shadow-2xl border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', color: 'black', fontFamily: 'monospace' }}>
-                      <div className="flex justify-between items-center border-b-4 border-black pb-4 text-left">
-                        <span className="text-3xl font-bold tracking-tighter">SHREE LABEL CREATION</span>
-                        <span className="text-xl font-bold">V2.1</span>
-                      </div>
-                      <div className="mt-6 flex justify-between">
-                        <div className="space-y-2 max-w-[60%] text-left">
-                          <p className="text-[12px] font-bold uppercase opacity-60">Item Name (Substrate)</p>
-                          <p className="text-3xl font-bold leading-none truncate">{roll.paperType}</p>
-                          <p className="text-[12px] font-bold uppercase opacity-60 mt-4">TECHNICAL REEL ID</p>
-                          <p className="text-6xl font-bold tracking-tighter leading-none">{roll.rollNo}</p>
-                        </div>
-                        <div className="flex flex-col items-end gap-4">
-                          <div className="bg-white border-2 border-black p-1">
-                            <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.rollNo}` : roll.rollNo} size={120} />
-                          </div>
-                          <div className="scale-75 origin-right"><Barcode value={roll.rollNo || "00000"} width={2} height={50} fontSize={14} /></div>
-                        </div>
-                      </div>
-                      <div className="mt-8 grid grid-cols-2 gap-x-12 gap-y-4 border-t-4 border-black pt-6">
-                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Width:</span><span className="text-2xl font-bold">{roll.widthMm} mm</span></div>
-                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Length:</span><span className="text-2xl font-bold">{roll.lengthMeters} mtr</span></div>
-                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">GSM:</span><span className="text-2xl font-bold">{roll.gsm}</span></div>
-                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-xl font-bold">Weight:</span><span className="text-2xl font-bold">{roll.weightKg} kg</span></div>
-                      </div>
-                      <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[14px] font-semibold uppercase">
-                        <span>Company: {roll.paperCompany}</span>
-                        <span>Received: {roll.receivedDate}</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-          <DialogFooter className="p-6 bg-white border-t">
-            <Button variant="outline" className="h-12 px-8 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsPrintOpen(false)}>Cancel</Button>
-            <Button className="h-12 px-12 rounded-xl bg-slate-900 hover:bg-black font-semibold uppercase text-[10px] tracking-wider shadow-xl" onClick={() => window.print()}>
-              <Printer className="h-4 w-4 mr-2" /> Execute Print ({printingRolls.length})
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Report Preview Dialog */}
-      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
-        <DialogContent className="sm:max-w-[95vw] h-[95vh] p-0 overflow-hidden bg-slate-100 rounded-none border-none shadow-3xl print-dialog-content">
-          <div className="bg-slate-900 text-white p-4 flex items-center justify-between no-print">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 bg-primary/20 rounded-lg flex items-center justify-center"><FileText className="h-5 w-5 text-primary" /></div>
-              <div>
-                <DialogTitle className="text-sm font-black uppercase tracking-widest">Stock Report Generator</DialogTitle>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">A4 Industrial Layout • {reportRows.length} Rows</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" className="bg-white/10 border-white/20 text-white hover:bg-white/20 h-10 px-6 font-black uppercase text-[10px] tracking-widest" onClick={() => setIsReportOpen(false)}>Close Preview</Button>
-              <Button className="bg-primary hover:bg-primary/90 text-white h-10 px-8 font-black uppercase text-[10px] tracking-widest shadow-xl" onClick={() => window.print()}>
-                <Printer className="h-4 w-4 mr-2" /> Execute A4 Print
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-auto p-10 bg-slate-200 industrial-scroll print-container">
-            <div id="stock-report-print" className="bg-white mx-auto shadow-2xl p-12 min-h-screen text-black font-sans" style={{ width: '210mm' }}>
-              <div className="border-b-4 border-black pb-6 flex justify-between items-end">
-                <div className="space-y-1">
-                  <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
-                  <p className="text-sm font-bold uppercase tracking-widest opacity-70">Industrial Paper Stock Registry</p>
-                </div>
-                <div className="text-right space-y-1">
-                  <h2 className="text-xl font-black uppercase">Technical Report</h2>
-                  <p className="text-xs font-bold">DATE: {new Date().toLocaleDateString()}</p>
-                </div>
-              </div>
-
-              <div className="mt-8 grid grid-cols-1 gap-4 text-[10px] font-bold bg-slate-50 p-4 border rounded-lg">
-                <div className="flex gap-2">
-                  <span className="text-primary uppercase shrink-0">Active Filters:</span>
-                  <span className="opacity-70 font-mono uppercase leading-relaxed">{activeFiltersSummary}</span>
-                </div>
-              </div>
-
-              <table className="w-full mt-8 border-collapse table-fixed">
-                <thead>
-                  <tr className="bg-slate-100 border-y-2 border-black">
-                    {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                      <th key={col.id} className="p-2 text-center text-[8px] font-black uppercase border-r border-black/10 overflow-hidden truncate">
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {reportRows.map((r, i) => (
-                    <tr key={i} className="border-b border-black/10 h-8">
-                      {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                        <td key={col.id} className={cn(
-                          "p-1 text-[8px] border-r border-black/10 text-center overflow-hidden truncate",
-                          col.id === 'rollNo' ? "font-black font-mono text-primary" : "font-medium"
-                        )}>
-                          {r[col.id] || '-'}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <div className="mt-10 grid grid-cols-3 gap-8 p-6 bg-slate-900 text-white rounded-xl shadow-xl">
-                <div className="text-center space-y-1 border-r border-white/10">
-                  <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Inventory Units</p>
-                  <p className="text-2xl font-black">{reportTotals.rolls}</p>
-                </div>
-                <div className="text-center space-y-1 border-r border-white/10">
-                  <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Material Weight</p>
-                  <p className="text-2xl font-black">{reportTotals.weight.toLocaleString()} <small className="text-[10px] font-bold">KG</small></p>
-                </div>
-                <div className="text-center space-y-1">
-                  <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Total Square Meters</p>
-                  <p className="text-2xl font-black">{reportTotals.sqm.toLocaleString()} <small className="text-[10px] font-bold">SQM</small></p>
-                </div>
-              </div>
-
-              <div className="mt-20 flex justify-between pt-10 border-t border-dashed border-black/20 text-[9px] font-black uppercase opacity-50">
-                <p>Generated by {user?.displayName || user?.email}</p>
-                <p>ERP System v3.5 • Confidential Operational Data</p>
-              </div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
-        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
-          <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xs font-semibold uppercase tracking-wider flex items-center gap-2"><Camera className="h-4 w-4 text-primary" /> Technical Intake Scanner</DialogTitle></div>
-          <div className="p-8 space-y-6">
-            <div id="reader" className="rounded-2xl overflow-hidden border-4 border-slate-200 shadow-inner bg-black aspect-square"></div>
-            <div className="p-4 bg-primary/5 border-2 border-dashed border-primary/20 rounded-2xl text-center">
-              <p className="text-[10px] font-semibold uppercase text-primary tracking-wider">Alignment Required</p>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Center the Roll QR within the scan area for automatic detection.</p>
-            </div>
-          </div>
-          <DialogFooter className="p-6 bg-white border-t"><Button variant="outline" className="w-full h-12 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsScannerOpen(false)}>Terminate Camera</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* MANUAL JOB CARD DIALOG */}
+      {/* MANUAL JOB CARD DIALOG - IMPROVED */}
       <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
         <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6">
@@ -1274,6 +1110,15 @@ export default function PaperStockPage() {
           <div className="p-8 space-y-6 bg-slate-50">
             <div className="space-y-2">
               <Label className="text-[10px] font-black uppercase opacity-50">Select Parent Roll</Label>
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <Input 
+                  placeholder="Search Parent Roll..." 
+                  className="pl-9 h-11 rounded-xl border-2 bg-white font-bold mb-2"
+                  value={parentSearch}
+                  onChange={(e) => setParentSearch(e.target.value)}
+                />
+              </div>
               <Select 
                 value={manualParentRoll} 
                 onValueChange={(val) => {
@@ -1286,19 +1131,49 @@ export default function PaperStockPage() {
                   <SelectValue placeholder="Choose Parent..." />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
-                  {parentRolls.map(r => (
+                  {searchedParentRolls.map(r => (
                     <SelectItem key={r.id} value={r.rollNo} className="font-bold">{r.rollNo} - {r.paperType}</SelectItem>
                   ))}
+                  {searchedParentRolls.length === 0 && <SelectItem value="none" disabled>No parent rolls found</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase opacity-50">Select Machine</Label>
+                <Select value={manualMachine} onValueChange={setManualMachine}>
+                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold">
+                    <SelectValue placeholder="Select Machine" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100]">
+                    {machines?.map(m => (
+                      <SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase opacity-50">Select Operator</Label>
+                <Select value={manualOperator} onValueChange={setManualOperator}>
+                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold">
+                    <SelectValue placeholder="Select Operator" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100]">
+                    {operators.map(o => (
+                      <SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <Label className="text-[10px] font-black uppercase opacity-50">Select Output Units</Label>
+                <Label className="text-[10px] font-black uppercase opacity-50">Available Child Rolls</Label>
                 <Badge className="bg-primary text-white text-[9px] h-5">{manualChildRolls.length} SELECTED</Badge>
               </div>
-              <div className="bg-white border-2 rounded-2xl p-4 h-[300px] overflow-y-auto industrial-scroll space-y-2">
+              <div className="bg-white border-2 rounded-2xl p-4 h-[250px] overflow-y-auto industrial-scroll space-y-2">
                 {filteredChildRollsManual.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3">
                     <Package className="h-8 w-8" />
@@ -1344,7 +1219,6 @@ export default function PaperStockPage() {
 
       <style jsx global>{`
         @media print {
-          /* 1. Hide everything by default using display none to prevent empty gaps */
           html, body {
             height: auto !important;
             overflow: visible !important;
@@ -1352,17 +1226,8 @@ export default function PaperStockPage() {
             padding: 0 !important;
             background: white !important;
           }
-
-          body > * { 
-            display: none !important; 
-          }
-          
-          /* 2. Target only the Radix Portal that contains the Dialog we are printing */
-          body > [data-radix-portal] {
-            display: block !important;
-          }
-
-          /* 3. Force the Dialog Content to behave like a standard page, not a modal */
+          body > * { display: none !important; }
+          body > [data-radix-portal] { display: block !important; }
           .print-dialog-content {
             position: absolute !important;
             top: 0 !important;
@@ -1380,25 +1245,15 @@ export default function PaperStockPage() {
             display: block !important;
             overflow: visible !important;
           }
-
-          /* Hide modal background and close buttons */
           .print-dialog-content > div:first-child,
-          .print-dialog-content button[aria-label="Close"] {
-            display: none !important;
-          }
-
-          .no-print { 
-            display: none !important; 
-          }
-          
-          /* 4. Reset Container Constraints */
+          .print-dialog-content button[aria-label="Close"] { display: none !important; }
+          .no-print { display: none !important; }
           .print-container {
             padding: 0 !important;
             margin: 0 !important;
             background: white !important;
             overflow: visible !important;
           }
-
           #stock-report-print {
             width: 210mm !important;
             margin: 0 auto !important;
@@ -1407,34 +1262,11 @@ export default function PaperStockPage() {
             display: block !important;
             position: relative !important;
           }
-
-          /* 5. Table Print Optimization */
-          #stock-report-print table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-            table-layout: fixed !important;
-          }
-
-          #stock-report-print thead {
-            display: table-header-group !important;
-          }
-
-          #stock-report-print tr {
-            page-break-inside: avoid !important;
-          }
-
-          #stock-report-print th, #stock-report-print td {
-            border: 1px solid #000 !important;
-            padding: 4px !important;
-            font-size: 8px !important;
-          }
-
-          /* 6. Label Printing Optimization */
-          #print-area {
-            display: block !important;
-            width: 100% !important;
-          }
-
+          #stock-report-print table { width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
+          #stock-report-print thead { display: table-header-group !important; }
+          #stock-report-print tr { page-break-inside: avoid !important; }
+          #stock-report-print th, #stock-report-print td { border: 1px solid #000 !important; padding: 4px !important; font-size: 8px !important; }
+          #print-area { display: block !important; width: 100% !important; }
           .label-page {
             page-break-after: always;
             display: flex !important;
@@ -1442,11 +1274,7 @@ export default function PaperStockPage() {
             align-items: center !important;
             min-height: 100vh !important;
           }
-
-          @page {
-            size: A4 portrait;
-            margin: 0;
-          }
+          @page { size: A4 portrait; margin: 0; }
         }
       `}</style>
     </div>
