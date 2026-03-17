@@ -31,7 +31,8 @@ import {
   Sparkles,
   ChevronDown,
   ChevronRight,
-  Zap
+  Zap,
+  ArrowRight
 } from "lucide-react"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, query, where, runTransaction, serverTimestamp, limit } from "firebase/firestore"
