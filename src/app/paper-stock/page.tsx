@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -48,7 +49,9 @@ import {
   Settings2,
   FilterX,
   FilePlus,
-  MoreHorizontal
+  MoreHorizontal,
+  RotateCcw,
+  CheckCircle2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -144,6 +147,7 @@ export default function PaperStockPage() {
   const [isPrintOpen, setIsPrintOpen] = useState(false)
   const [isReportOpen, setIsReportOpen] = useState(false)
   const [isScannerOpen, setIsScannerOpen] = useState(false)
+  const [isManualJobCardOpen, setIsManualJobCardOpen] = useState(false)
   
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [viewingRoll, setViewingRoll] = useState<any>(null)
@@ -157,17 +161,23 @@ export default function PaperStockPage() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'rollNo', direction: 'desc' })
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [isCustomStatus, setIsCustomStatus] = useState(false)
+  const [siteOrigin, setSiteOrigin] = useState("")
+
+  // Manual Job Card State
+  const [manualParentRoll, setManualParentRoll] = useState("")
+  const [manualChildRolls, setManualChildRolls] = useState<string[]>([])
 
   // Header Filters State
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
   const [filterMode, setFilterMode] = useState<'quick' | 'advanced'>('quick')
 
-  const defaultVisibleColumns = COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {})
+  const defaultVisibleColumns = useMemo(() => COLUMN_KEYS.reduce((acc, col) => ({ ...acc, [col.id]: true }), {}), []);
 
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(defaultVisibleColumns)
 
   useEffect(() => { 
     setIsMounted(true);
+    setSiteOrigin(window.location.origin);
     const saved = localStorage.getItem('paperStockVisibleColumns')
     if (saved) {
       try { setVisibleColumns(prev => ({ ...prev, ...JSON.parse(saved) })) } catch (e) {}
@@ -211,6 +221,13 @@ export default function PaperStockPage() {
 
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
   const { data: labelTemplates } = useCollection(templatesQuery);
+
+  const parentRolls = useMemo(() => rolls?.filter(r => !r.rollNo.includes('-')) || [], [rolls]);
+  
+  const filteredChildRollsManual = useMemo(() => {
+    if (!manualParentRoll) return [];
+    return rolls?.filter(r => r.rollNo.startsWith(manualParentRoll + '-') && r.rollNo !== manualParentRoll) || [];
+  }, [rolls, manualParentRoll]);
 
   const selectedTemplate = useMemo(() => {
     if (selectedTemplateId === "default") return null;
@@ -522,6 +539,37 @@ export default function PaperStockPage() {
     }, 500);
   };
 
+  const handleCreateManualJobCard = async () => {
+    if (!firestore || !user || !manualParentRoll || manualChildRolls.length === 0) return;
+    
+    setIsProcessing(true);
+    const jobId = `JJC-MANUAL-${Date.now().toString().slice(-6)}`;
+    const jobRef = doc(firestore, 'jumbo_job_cards', jobId);
+
+    try {
+      await setDoc(jobRef, {
+        id: jobId,
+        job_card_no: jobId,
+        parent_roll: manualParentRoll,
+        child_rolls: manualChildRolls,
+        status: "PENDING",
+        createdAt: new Date().toISOString(),
+        createdById: user.uid,
+        createdByName: user.displayName || user.email,
+        type: "MANUAL",
+        machine: "MANUAL",
+        operator: user.displayName || user.email
+      });
+      setIsManualJobCardOpen(false);
+      toast({ title: "Manual Job Card Created", description: `Referenced ${manualChildRolls.length} output units.` });
+      router.push('/production/jobcards/jumbo-job');
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Error", description: e.message });
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   const SortableHeader = ({ label, field, className = "", stickLeft }: { label: string, field: string, className?: string, stickLeft?: string }) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
@@ -591,6 +639,43 @@ export default function PaperStockPage() {
           >
             <FileText className="h-4 w-4 mr-2 text-primary" /> Print Stock Report
           </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                <Settings2 className="h-4 w-4 mr-2" /> Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
+              <div className="p-2 border-b mb-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visibility Settings</span>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto industrial-scroll">
+                {COLUMN_KEYS.map((col) => (
+                  <DropdownMenuCheckboxItem
+                    key={col.id}
+                    checked={visibleColumns[col.id]}
+                    onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))}
+                    className="font-medium text-xs py-2 rounded-lg"
+                  >
+                    {col.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                className="font-black text-[10px] uppercase text-primary justify-center py-2 cursor-pointer hover:bg-primary/5 rounded-lg"
+                onClick={() => setVisibleColumns(defaultVisibleColumns)}
+              >
+                <RotateCcw className="h-3.5 w-3.5 mr-2" /> Reset Columns
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button 
             variant="outline" 
             onClick={() => setFilterMode(filterMode === 'quick' ? 'advanced' : 'quick')}
@@ -644,30 +729,6 @@ export default function PaperStockPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 px-4 bg-transparent border-white/20 text-white hover:bg-white/10 font-semibold uppercase text-[10px] tracking-wider rounded-xl transition-all">
-                  <Settings2 className="h-4 w-4 mr-2" /> Columns
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56 bg-white rounded-xl shadow-2xl border-none p-2 z-[100]">
-                <div className="p-2 border-b mb-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Visibility Settings</span>
-                </div>
-                <div className="max-h-[300px] overflow-y-auto industrial-scroll">
-                  {COLUMN_KEYS.map((col) => (
-                    <DropdownMenuCheckboxItem
-                      key={col.id}
-                      checked={visibleColumns[col.id]}
-                      onCheckedChange={(val) => setVisibleColumns(prev => ({ ...prev, [col.id]: val }))}
-                      className="font-medium text-xs py-2 rounded-lg"
-                    >
-                      {col.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
             <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white hover:bg-primary hover:text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl transition-all">
               <QrCode className="h-4 w-4 mr-2" /> Live Scanner
             </Button>
@@ -781,27 +842,17 @@ export default function PaperStockPage() {
                           <Pencil className="h-4 w-4" />
                         </Button>
 
-                        {/* Create Jumbo Job Card */}
-                        {isParent && (
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
-                            className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm"
-                            onClick={() => router.push(`/production/jobcards/jumbo-job?parentRoll=${j.rollNo}`)}
-                            title="Create Jumbo Job Card"
-                          >
-                            <FilePlus className="h-4 w-4" />
-                          </Button>
-                        )}
-
-                        {/* Open Slitting Hub */}
+                        {/* Create Manual Job Card */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
-                          disabled={!canSlit}
-                          className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white shadow-sm disabled:opacity-30"
-                          onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}
-                          title="Open Slitting Hub"
+                          className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white shadow-sm"
+                          onClick={() => {
+                            setManualParentRoll(isParent ? j.rollNo : j.rollNo.split('-')[0]);
+                            setManualChildRolls(rolls?.filter(r => r.rollNo.startsWith(j.rollNo + '-') && r.rollNo !== j.rollNo).map(r => r.rollNo) || []);
+                            setIsManualJobCardOpen(true);
+                          }}
+                          title="Create Manual Job Card"
                         >
                           <Scissors className="h-4 w-4" />
                         </Button>
@@ -854,15 +905,26 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
+      {/* ROLL VIEW DIALOG */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white [&>button]:opacity-100">
           <div className="bg-slate-900 text-white p-8">
             <div className="flex justify-between items-start">
-              <div className="space-y-1">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
-                  <Package className="h-4 w-4" /> Technical Profile
-                </h3>
-                <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
+                    <Package className="h-4 w-4" /> Technical Profile
+                  </h3>
+                  <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
+                </div>
+                
+                {/* QR CODE ADDITION */}
+                <div className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800 animate-in zoom-in-95 duration-300">
+                  <QRCodeSVG 
+                    value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.rollNo}` : (viewingRoll?.rollNo || "")} 
+                    size={120} 
+                  />
+                </div>
               </div>
               <Badge className={cn("px-4 py-1.5 rounded-full font-semibold text-[10px] uppercase shadow-lg", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>
                 {viewingRoll?.status}
@@ -918,7 +980,7 @@ export default function PaperStockPage() {
             <div className="bg-slate-900 text-white p-6">
               <DialogTitle className="text-xl font-semibold uppercase tracking-wider flex items-center gap-3">
                 {editingRoll ? <Pencil className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
-                {editingRoll ? 'Edit Technical Master Record' : 'Add New Master Roll Entry'}
+                {editingRoll ? 'EDIT TECHNICAL MASTER RECORD' : 'Add New Master Roll Entry'}
               </DialogTitle>
               <DialogDescription className="text-slate-400 font-medium uppercase text-[10px] mt-1 tracking-wider">Enterprise Technical Inventory Registry System</DialogDescription>
             </div>
@@ -952,12 +1014,12 @@ export default function PaperStockPage() {
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Calculated SQM (System)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-semibold text-primary">{calculatedSqm}</div></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Calculated SQM (system)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-semibold text-primary">{calculatedSqm}</div></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">GSM</Label><Input list="gsms-list" type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
                   <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
                 </div>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Purchase Rate (₹)</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Purchase Rate</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
               </div>
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Workflow & History</h4>
@@ -1050,7 +1112,7 @@ export default function PaperStockPage() {
                         </div>
                         <div className="flex flex-col items-end gap-4">
                           <div className="bg-white border-2 border-black p-1">
-                            <QRCodeSVG value={roll.rollNo} size={120} />
+                            <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.rollNo}` : roll.rollNo} size={120} />
                           </div>
                           <div className="scale-75 origin-right"><Barcode value={roll.rollNo || "00000"} width={2} height={50} fontSize={14} /></div>
                         </div>
@@ -1180,6 +1242,88 @@ export default function PaperStockPage() {
             </div>
           </div>
           <DialogFooter className="p-6 bg-white border-t"><Button variant="outline" className="w-full h-12 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsScannerOpen(false)}>Terminate Camera</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MANUAL JOB CARD DIALOG */}
+      <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
+        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6">
+            <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
+              <Scissors className="h-5 w-5 text-primary" /> Create Manual Job Card
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">
+              Select a parent roll and multiple child units to initialize a job card.
+            </DialogDescription>
+          </div>
+          <div className="p-8 space-y-6 bg-slate-50">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase opacity-50">Select Parent Roll</Label>
+              <Select 
+                value={manualParentRoll} 
+                onValueChange={(val) => {
+                  setManualParentRoll(val);
+                  const children = rolls?.filter(r => r.rollNo.startsWith(val + '-') && r.rollNo !== val).map(r => r.rollNo) || [];
+                  setManualChildRolls(children);
+                }}
+              >
+                <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold">
+                  <SelectValue placeholder="Choose Parent..." />
+                </SelectTrigger>
+                <SelectContent className="z-[100]">
+                  {parentRolls.map(r => (
+                    <SelectItem key={r.id} value={r.rollNo} className="font-bold">{r.rollNo} - {r.paperType}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <Label className="text-[10px] font-black uppercase opacity-50">Select Output Units</Label>
+                <Badge className="bg-primary text-white text-[9px] h-5">{manualChildRolls.length} SELECTED</Badge>
+              </div>
+              <div className="bg-white border-2 rounded-2xl p-4 h-[300px] overflow-y-auto industrial-scroll space-y-2">
+                {filteredChildRollsManual.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3">
+                    <Package className="h-8 w-8" />
+                    <p className="text-[10px] font-bold uppercase">No child units found for this parent</p>
+                  </div>
+                ) : filteredChildRollsManual.map(r => (
+                  <div 
+                    key={r.id} 
+                    className={cn(
+                      "p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between",
+                      manualChildRolls.includes(r.rollNo) ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20"
+                    )}
+                    onClick={() => {
+                      const next = manualChildRolls.includes(r.rollNo)
+                        ? manualChildRolls.filter(id => id !== r.rollNo)
+                        : [...manualChildRolls, r.rollNo];
+                      setManualChildRolls(next);
+                    }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-xs font-black text-primary">{r.rollNo}</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span>
+                    </div>
+                    {manualChildRolls.includes(r.rollNo) && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
+            <Button 
+              onClick={handleCreateManualJobCard} 
+              disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} 
+              className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl"
+            >
+              {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+              Confirm & Create Job Card
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
