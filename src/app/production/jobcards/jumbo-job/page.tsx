@@ -179,6 +179,7 @@ function JumboJobCardContent() {
         ...formData,
         id: jobId,
         job_card_no: jobId,
+        parent_rolls: [formData.parent_roll], // Manual flow typically uses one
         status: "PENDING",
         createdAt: new Date().toISOString(),
         createdById: user.uid,
@@ -204,7 +205,7 @@ function JumboJobCardContent() {
     if (!jobs) return [];
     return jobs.filter(j => 
       j.job_card_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      j.parent_roll.toLowerCase().includes(searchQuery.toLowerCase())
+      (j.parent_roll && j.parent_roll.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   }, [jobs, searchQuery]);
 
@@ -287,7 +288,7 @@ function JumboJobCardContent() {
             <TableHeader className="bg-muted/30">
               <TableRow>
                 <TableHead className="font-black text-[10px] uppercase pl-8">Job ID</TableHead>
-                <TableHead className="font-black text-[10px] uppercase">Parent Roll</TableHead>
+                <TableHead className="font-black text-[10px] uppercase">Primary Roll</TableHead>
                 <TableHead className="font-black text-[10px] uppercase">Operator</TableHead>
                 <TableHead className="font-black text-[10px] uppercase text-center">Output Content</TableHead>
                 <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
@@ -300,7 +301,7 @@ function JumboJobCardContent() {
               ) : filteredJobs.map((j) => (
                 <TableRow key={j.id} className="hover:bg-slate-50 transition-colors group">
                   <TableCell className="font-black text-primary font-mono text-xs pl-8">{j.job_card_no}</TableCell>
-                  <TableCell className="font-bold text-sm">{j.parent_roll}</TableCell>
+                  <TableCell className="font-bold text-sm">{j.parent_roll || "MULTI"}</TableCell>
                   <TableCell className="text-[11px] font-bold uppercase text-slate-500">{j.operator || "UNASSIGNED"}</TableCell>
                   <TableCell className="text-center">
                     <div className="flex justify-center gap-2">
@@ -460,7 +461,7 @@ function JumboJobCardContent() {
               <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
             </div>
           </div>
-          <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans">
+          <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans overflow-y-auto max-h-[80vh]">
             {selectedJobTemplateId === 'default' ? (
               <>
                 <div className="flex justify-between items-end border-b-4 border-black pb-6">
@@ -476,9 +477,10 @@ function JumboJobCardContent() {
 
                 <div className="mt-8 grid grid-cols-2 gap-12">
                   <div className="space-y-6">
-                    <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Parent Specifications</h3>
+                    <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Job Information</h3>
                     <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-xs font-bold">
-                      <span className="opacity-50 uppercase">Roll Number:</span><span>{selectedJob?.parent_roll}</span>
+                      <span className="opacity-50 uppercase">Job ID:</span><span className="font-mono">{selectedJob?.target_job_no || "—"}</span>
+                      <span className="opacity-50 uppercase">Job Name:</span><span>{selectedJob?.target_job_name || "—"}</span>
                       <span className="opacity-50 uppercase">Machine:</span><span>{selectedJob?.machine || "—"}</span>
                       <span className="opacity-50 uppercase">Operator:</span><span>{selectedJob?.operator || "—"}</span>
                     </div>
@@ -492,15 +494,38 @@ function JumboJobCardContent() {
                 </div>
 
                 <div className="mt-10">
-                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Slitting Plan (All Output Units)</h3>
+                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Source Rolls Table</h3>
                   <Table className="border-2 border-black">
                     <TableHeader className="bg-slate-100">
                       <TableRow className="border-b-2 border-black h-10">
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Roll Code</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Roll ID</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Dimension (Width × Length)</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase px-4">Company</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(selectedJob?.parent_rolls || [selectedJob?.parent_roll]).filter(Boolean).map((rollId: string) => {
+                        const roll = allRolls?.find(r => r.rollNo === rollId);
+                        return (
+                          <TableRow key={rollId} className="border-b-2 border-black last:border-b-0 h-10">
+                            <TableCell className="font-bold border-r-2 border-black px-4 font-mono">{rollId}</TableCell>
+                            <TableCell className="border-r-2 border-black px-4">{roll?.widthMm}mm × {roll?.lengthMeters}m</TableCell>
+                            <TableCell className="px-4 font-bold uppercase">{roll?.paperCompany || "—"}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="mt-10">
+                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Child Rolls Generated</h3>
+                  <Table className="border-2 border-black">
+                    <TableHeader className="bg-slate-100">
+                      <TableRow className="border-b-2 border-black h-10">
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Child Roll ID</TableHead>
                         <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Width</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Length</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4">Destination</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase px-4">Job Reference</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase px-4">Length</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -508,11 +533,9 @@ function JumboJobCardContent() {
                         const roll = allRolls?.find(r => r.rollNo === code);
                         return (
                           <TableRow key={code} className="border-b-2 border-black last:border-b-0 h-10">
-                            <TableCell className="font-bold border-r-2 border-black px-4">{code}</TableCell>
+                            <TableCell className="font-bold border-r-2 border-black px-4 font-mono">{code}</TableCell>
                             <TableCell className="border-r-2 border-black px-4">{roll?.widthMm || "—"} mm</TableCell>
-                            <TableCell className="border-r-2 border-black px-4">{roll?.lengthMeters || "—"} mtr</TableCell>
-                            <TableCell className="border-r-2 border-black px-4 font-black text-[10px]">{roll?.jobNo ? 'JOB' : 'STOCK'}</TableCell>
-                            <TableCell className="px-4 font-black text-[10px]">{roll?.jobNo || "—"}</TableCell>
+                            <TableCell className="px-4 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
                           </TableRow>
                         );
                       })}

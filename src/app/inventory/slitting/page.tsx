@@ -400,12 +400,12 @@ function SlittingHubContent() {
         // Generate Job Card Automatically
         const jobId = `JJC-AUTO-${Date.now().toString().slice(-6)}`;
         const jobCardRef = doc(firestore, 'jumbo_job_cards', jobId);
-        const firstParent = reportSourceRolls[0];
         
         transaction.set(jobCardRef, {
           id: jobId,
           job_card_no: jobId,
-          parent_roll: firstParent?.rollNo || "MULTI",
+          parent_roll: reportSourceRolls[0]?.rollNo || "MULTI",
+          parent_rolls: reportSourceRolls.map(r => r.rollNo), // Store full list
           child_rolls: reportChildRolls.map(r => r.rollNo),
           status: "PENDING",
           createdAt: new Date().toISOString(),
@@ -414,7 +414,8 @@ function SlittingHubContent() {
           type: "AUTO_PLANNER",
           machine: "AUTO",
           operator: user.displayName || user.email,
-          target_job_no: String(selectedPlanningJob.values.sn || selectedPlanningJob.id)
+          target_job_no: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
+          target_job_name: selectedPlanningJob.values.name || "" // Store job name for card
         });
       });
 
@@ -553,6 +554,7 @@ function SlittingHubContent() {
     setIsProcessing(true);
 
     try {
+      const reportChildRolls: any[] = [];
       await runTransaction(firestore, async (transaction) => {
         const parentRef = doc(firestore, 'paper_stock', selectedParent.id);
         transaction.update(parentRef, { 
@@ -572,7 +574,7 @@ function SlittingHubContent() {
             const finalWidth = calculation.mode === 'WIDTH' ? Number(run.widthMm) : Number(selectedParent.widthMm);
             const finalLength = calculation.mode === 'LENGTH' ? Number(run.lengthMeters) : Number(selectedParent.lengthMeters);
 
-            transaction.set(childRef, {
+            const childData = {
               ...selectedParent,
               id: childId,
               rollNo: childId,
@@ -587,7 +589,10 @@ function SlittingHubContent() {
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               createdById: user.uid
-            });
+            };
+
+            transaction.set(childRef, childData);
+            reportChildRolls.push(childData);
             childIdx++;
           }
         }
@@ -618,6 +623,26 @@ function SlittingHubContent() {
             remarks: `Remainder from slitting ${selectedParent.rollNo}`
           });
         }
+
+        // Generate Job Card for manual run too
+        const jobId = `JJC-MANUAL-${Date.now().toString().slice(-6)}`;
+        const jobCardRef = doc(firestore, 'jumbo_job_cards', jobId);
+        transaction.set(jobCardRef, {
+          id: jobId,
+          job_card_no: jobId,
+          parent_roll: selectedParent.rollNo,
+          parent_rolls: [selectedParent.rollNo],
+          child_rolls: reportChildRolls.map(r => r.rollNo),
+          status: "PENDING",
+          createdAt: new Date().toISOString(),
+          createdById: user.uid,
+          createdByName: user.displayName || user.email,
+          type: "MANUAL",
+          machine: "MANUAL",
+          operator: user.displayName || user.email,
+          target_job_no: slitRuns[0]?.jobNo || "",
+          target_job_name: slitRuns[0]?.jobName || ""
+        });
       });
 
       setModal({ 
@@ -1033,8 +1058,8 @@ function SlittingHubContent() {
                   </div>
                   <div className="bg-rose-50/30 p-6 rounded-2xl border-2 border-rose-100 space-y-4">
                     <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-rose-600/60 uppercase">Side Waste Calculation</span><span className="font-black text-sm text-rose-600">Dynamic per roll</span></div>
-                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-rose-600/60 uppercase">Cumulative Width Loss</span><span className="font-black text-sm text-rose-600">{stats?.totalWasteMm} mm</span></div>
-                    <div className="text-[9px] font-medium text-rose-400 italic">Total waste based on exact width slitting of {stats?.totalRolls} units.</div>
+                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-rose-600/60 uppercase">Width Loss</span><span className="font-black text-sm text-rose-600">{stats?.totalWasteMm} mm</span></div>
+                    <div className="text-[9px] font-medium text-rose-400 italic">Total width waste across {stats?.totalRolls} units.</div>
                   </div>
                 </div>
               </div>
@@ -1078,7 +1103,7 @@ function SlittingHubContent() {
                 Manual Terminal <Settings2 className="ml-2 h-4 w-4" />
               </Button>
               <Button onClick={handleAutoExecute} disabled={isProcessing} className="flex-[2] h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[11px] tracking-widest shadow-2xl">
-                {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <Scissors className="mr-2 h-5 w-5" />}
+                {isProcessing ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Scissors className="mr-2 h-5 w-5" />}
                 Confirm & Execute Slitting
               </Button>
             </div>

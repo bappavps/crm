@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -489,10 +490,22 @@ export default function PaperStockPage() {
     if (!firestore || !user || !manualParentRoll || manualChildRolls.length === 0) return;
     setIsProcessing(true);
     const jobId = `JJC-MANUAL-${Date.now().toString().slice(-6)}`;
+    const firstChild = rolls?.find(r => r.rollNo === manualChildRolls[0]);
     try {
       await setDoc(doc(firestore, 'jumbo_job_cards', jobId), {
-        id: jobId, job_card_no: jobId, parent_roll: manualParentRoll, child_rolls: manualChildRolls, status: "PENDING",
-        createdAt: new Date().toISOString(), createdById: user.uid, type: "MANUAL", machine: manualMachine || "MANUAL", operator: manualOperator || user.displayName || user.email
+        id: jobId, 
+        job_card_no: jobId, 
+        parent_roll: manualParentRoll, 
+        parent_rolls: [manualParentRoll],
+        child_rolls: manualChildRolls, 
+        status: "PENDING",
+        createdAt: new Date().toISOString(), 
+        createdById: user.uid, 
+        type: "MANUAL", 
+        machine: manualMachine || "MANUAL", 
+        operator: manualOperator || user.displayName || user.email,
+        target_job_no: firstChild?.jobNo || "",
+        target_job_name: firstChild?.jobName || ""
       });
       setIsManualJobCardOpen(false);
       toast({ title: "Manual Job Card Created" });
@@ -926,12 +939,6 @@ export default function PaperStockPage() {
           <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3"><Button type="button" variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button><Button onClick={handleCreateManualJobCard} disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}Confirm & Create Job Card</Button></DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <datalist id="companies-list">{suggestions.companies.map(c => <option key={c} value={c} />)}</datalist>
-      <datalist id="types-list">{suggestions.types.map(t => <option key={t} value={t} />)}</datalist>
-      <datalist id="gsms-list">{suggestions.gsms.map(g => <option key={g} value={g} />)}</datalist>
-      <datalist id="lots-list">{suggestions.lots.map(l => <option key={l} value={l} />)}</datalist>
-      <datalist id="mfr-rolls-list">{suggestions.mfrRolls.map(m => <option key={m} value={m} />)}</datalist>
 
       <style jsx global>{`
         @media print {
