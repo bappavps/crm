@@ -1,3 +1,4 @@
+
 "use client"
 
 import { usePathname } from "next/navigation"
@@ -18,6 +19,7 @@ const routePermissionMap: Record<string, PermissionKey> = {
   "/sales-order": "salesOrders",
   "/sales/create-job": "createJob",
   "/design/production-planning": "jobPlanning",
+  "/production/printed-label-planning": "jobPlanning",
   "/artwork": "artwork",
   "/purchase": "purchaseOrders",
   "/paper-stock": "stockRegistry",
