@@ -145,22 +145,27 @@ function FilterPopover({ label, icon: Icon, options, selected, onToggle }: {
           <ChevronDown className="h-3 w-3 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0 rounded-2xl shadow-2xl border-none overflow-hidden" align="start">
-        <div className="p-3 bg-slate-900 text-white flex items-center justify-between">
+      <PopoverContent 
+        className="w-64 p-0 rounded-2xl shadow-2xl border-none overflow-hidden" 
+        align="start"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div className="p-3 bg-slate-900 text-white flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
           <span className="text-[10px] font-black uppercase tracking-widest">{label} Filter</span>
           <span className="text-[9px] font-bold opacity-50">{options.length} options</span>
         </div>
-        <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 bg-white">
+        <div className="max-h-[300px] overflow-y-auto p-2 space-y-1 bg-white" onClick={(e) => e.stopPropagation()}>
           {options.length === 0 ? (
             <p className="p-4 text-center text-[10px] font-bold text-muted-foreground uppercase">No data found</p>
           ) : options.map(opt => (
             <div 
               key={opt} 
               className="flex items-center space-x-3 p-2 rounded-lg hover:bg-slate-100 cursor-pointer transition-colors"
-              onClick={() => onToggle(opt)}
+              onClick={(e) => { e.stopPropagation(); onToggle(opt); }}
             >
-              <Checkbox checked={selected.includes(opt)} />
-              <label className="text-xs font-black uppercase text-slate-700 cursor-pointer flex-1 truncate">{opt}</label>
+              <Checkbox checked={selected.includes(opt)} onClick={(e) => e.stopPropagation()} />
+              <label className="text-xs font-black uppercase text-slate-700 cursor-pointer flex-1 truncate" onClick={(e) => e.stopPropagation()}>{opt}</label>
               {selected.includes(opt) && <Check className="h-3 w-3 text-primary" />}
             </div>
           ))}

@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -501,7 +500,11 @@ export default function PaperStockPage() {
     } catch (e: any) { toast({ variant: "destructive", title: "Error", description: e.message }); } finally { setIsProcessing(false); }
   }
 
-  const SortableHeader = ({ label, field, className = "", stickLeft }: { label: string, field: string, className?: string, stickLeft?: string }) => {
+  /**
+   * REFACTORED: renderSortableHeader is now a plain function returning TSX.
+   * This prevents the child components (popovers) from unmounting when sorting/filtering state changes.
+   */
+  const renderSortableHeader = (label: string, field: string, className = "", stickLeft?: string) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;
     return (
@@ -512,7 +515,13 @@ export default function PaperStockPage() {
             {isActive ? (sortConfig.direction === 'asc' ? <ArrowUp className="h-3 w-3 text-primary" /> : <ArrowDown className="h-3 w-3 text-primary" />) : (<ArrowUpDown className="h-2.5 w-2.5 opacity-30 group-hover/header:opacity-100 transition-opacity" />)}
           </div>
           {filterMode === 'advanced' && (
-            <ColumnHeaderFilter columnKey={field} label={label} data={rolls || []} selectedValues={headerFilters[field] || []} onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))} />
+            <ColumnHeaderFilter 
+              columnKey={field} 
+              label={label} 
+              data={rolls || []} 
+              selectedValues={headerFilters[field] || []} 
+              onFilterChange={(values) => setHeaderFilters(prev => ({ ...prev, [field]: values }))} 
+            />
           )}
         </div>
       </TableHead>
@@ -619,24 +628,24 @@ export default function PaperStockPage() {
                   <div className="flex items-center justify-center h-full"><Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} /></div>
                 </TableHead>
                 <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
-                <SortableHeader label="Roll No" field="rollNo" className="w-[200px]" stickLeft="100px" />
-                <SortableHeader label="Status" field="status" className="w-[120px]" />
-                <SortableHeader label="Paper Company" field="paperCompany" />
-                <SortableHeader label="Paper Type" field="paperType" />
-                <SortableHeader label="Width (MM)" field="widthMm" />
-                <SortableHeader label="Length (MTR)" field="lengthMeters" />
-                <SortableHeader label="SQM" field="sqm" />
-                <SortableHeader label="GSM" field="gsm" />
-                <SortableHeader label="Weight (KG)" field="weightKg" />
-                <SortableHeader label="Purchase Rate" field="purchaseRate" />
-                <SortableHeader label="Date Received" field="receivedDate" />
-                <SortableHeader label="Date Used" field="dateOfUsed" />
-                <SortableHeader label="Job No" field="jobNo" />
-                <SortableHeader label="Job Size" field="jobSize" />
-                <SortableHeader label="Job Name" field="jobName" />
-                <SortableHeader label="Lot / Batch No" field="lotNo" />
-                <SortableHeader label="Company Roll No" field="companyRollNo" />
-                <SortableHeader label="Remarks" field="remarks" />
+                {renderSortableHeader("Roll No", "rollNo", "w-[200px]", "100px")}
+                {renderSortableHeader("Status", "status", "w-[120px]")}
+                {renderSortableHeader("Paper Company", "paperCompany")}
+                {renderSortableHeader("Paper Type", "paperType")}
+                {renderSortableHeader("Width (MM)", "widthMm")}
+                {renderSortableHeader("Length (MTR)", "lengthMeters")}
+                {renderSortableHeader("SQM", "sqm")}
+                {renderSortableHeader("GSM", "gsm")}
+                {renderSortableHeader("Weight (KG)", "weightKg")}
+                {renderSortableHeader("Purchase Rate", "purchaseRate")}
+                {renderSortableHeader("Date Received", "receivedDate")}
+                {renderSortableHeader("Date Used", "dateOfUsed")}
+                {renderSortableHeader("Job No", "jobNo")}
+                {renderSortableHeader("Job Size", "jobSize")}
+                {renderSortableHeader("Job Name", "jobName")}
+                {renderSortableHeader("Lot / Batch No", "lotNo")}
+                {renderSortableHeader("Company Roll No", "companyRollNo")}
+                {renderSortableHeader("Remarks", "remarks")}
                 <TableHead className="text-center font-semibold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[240px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -914,7 +923,7 @@ export default function PaperStockPage() {
               <div className="bg-white border-2 rounded-2xl p-4 h-[250px] overflow-y-auto industrial-scroll space-y-2">{filteredChildRollsManual.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3"><Package className="h-8 w-8" /><p className="text-[10px] font-bold uppercase">No child units found</p></div>) : filteredChildRollsManual.map(r => (<div key={r.id} className={cn("p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between", manualChildRolls.includes(r.rollNo) ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20")} onClick={() => { const next = manualChildRolls.includes(r.rollNo) ? manualChildRolls.filter(id => id !== r.rollNo) : [...manualChildRolls, r.rollNo]; setManualChildRolls(next); }}><div className="flex flex-col"><span className="text-xs font-black text-primary">{r.rollNo}</span><span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span></div>{manualChildRolls.includes(r.rollNo) && <CheckCircle2 className="h-4 w-4 text-primary" />}</div>))}</div>
             </div>
           </div>
-          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3"><Button type="button" variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button><Button onClick={handleCreateManualJobCard} disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}Confirm & Create Job Card</Button></DialogFooter>
+          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3"><Button type="button" variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button><Button onClick={handleCreateManualJobCard} disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}Confirm & Create Job Card</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

@@ -59,44 +59,51 @@ export function ColumnHeaderFilter({ columnKey, label, data, selectedValues, onF
           <Filter className={cn("h-3 w-3", isActive && "fill-current")} />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-0 rounded-xl shadow-2xl border-none overflow-hidden z-[100]" align="end" onClick={(e) => e.stopPropagation()}>
-        <div className="p-3 bg-slate-900 text-white flex items-center justify-between">
+      <PopoverContent 
+        className="w-64 p-0 rounded-xl shadow-2xl border-none overflow-hidden z-[100]" 
+        align="end" 
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <div className="p-3 bg-slate-900 text-white flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
           <span className="text-[10px] font-black uppercase tracking-widest">Filter {label}</span>
           {isActive && (
             <Button 
               variant="ghost" 
               size="sm" 
               className="h-6 px-2 text-[9px] font-bold text-rose-400 hover:text-rose-300 hover:bg-white/10"
-              onClick={() => onFilterChange([])}
+              onClick={(e) => { e.stopPropagation(); onFilterChange([]); }}
             >
               Clear
             </Button>
           )}
         </div>
-        <div className="p-3 space-y-3 bg-white">
-          <div className="relative">
+        <div className="p-3 space-y-3 bg-white" onClick={(e) => e.stopPropagation()}>
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input 
               placeholder={`Search ${label}...`} 
               className="pl-8 h-9 text-xs border-2 rounded-lg font-medium" 
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
           
-          <ScrollArea className="h-[200px] pr-2">
+          <ScrollArea className="h-[200px] pr-2" onClick={(e) => e.stopPropagation()}>
             <div className="space-y-1">
               {filteredValues.map((val) => (
                 <div 
                   key={val} 
                   className="flex items-center space-x-3 p-2 hover:bg-slate-50 rounded-lg cursor-pointer transition-colors group"
-                  onClick={() => toggleValue(val)}
+                  onClick={(e) => { e.stopPropagation(); toggleValue(val); }}
                 >
                   <Checkbox 
                     checked={selectedValues.includes(val)} 
                     onCheckedChange={() => toggleValue(val)}
+                    onClick={(e) => e.stopPropagation()}
                   />
-                  <span className="text-xs font-medium truncate flex-1 text-slate-700">{val || "(Empty)"}</span>
+                  <span className="text-xs font-medium truncate flex-1 text-slate-700" onClick={(e) => e.stopPropagation()}>{val || "(Empty)"}</span>
                   {selectedValues.includes(val) && <Check className="h-3 w-3 text-primary" />}
                 </div>
               ))}
@@ -107,12 +114,12 @@ export function ColumnHeaderFilter({ columnKey, label, data, selectedValues, onF
           </ScrollArea>
           
           {filteredValues.length > 0 && (
-            <div className="pt-2 border-t flex justify-between">
+            <div className="pt-2 border-t flex justify-between" onClick={(e) => e.stopPropagation()}>
               <Button 
                 variant="ghost" 
                 size="sm" 
                 className="text-[9px] font-black uppercase tracking-tight h-7 px-2"
-                onClick={() => onFilterChange([])}
+                onClick={(e) => { e.stopPropagation(); onFilterChange([]); }}
               >
                 Reset
               </Button>
@@ -120,7 +127,7 @@ export function ColumnHeaderFilter({ columnKey, label, data, selectedValues, onF
                 variant="ghost" 
                 size="sm" 
                 className="text-[9px] font-black uppercase tracking-tight h-7 px-2 text-primary"
-                onClick={() => onFilterChange(uniqueValues)}
+                onClick={(e) => { e.stopPropagation(); onFilterChange(uniqueValues); }}
               >
                 Select All
               </Button>
