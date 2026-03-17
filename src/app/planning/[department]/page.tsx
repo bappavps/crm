@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, use } from "react"
@@ -123,7 +124,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
 
   const { data: rows, isLoading: rowsLoading } = useCollection(rowsQuery);
 
-  // 3. Initialize Department if empty
+  // 3. Initialize Department with Default Sheet Data
   useEffect(() => {
     if (isMounted && firestore && !tableLoading && !tableDef && department === 'label-printing') {
       const initTable = async () => {
@@ -134,23 +135,50 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           created_at: serverTimestamp()
         });
         
-        // Seed Initial Data from Sheet
         const batch = writeBatch(firestore);
-        const sampleRows = [
-          { sn: 1, name: "YaisnaCookies", size: "75mm x 90mm", repeat: "3.133 mm", material: "Chromo", printing_planning: "Running", plate_no: "1052", qty_pcs: 82000, allocate_mtrs: 4000 },
-          { sn: 2, name: "Gems Gold Label", size: "50mm x 100mm", repeat: "2.5 mm", material: "Silver Paper", printing_planning: "Pending", plate_no: "1088", qty_pcs: 50000, allocate_mtrs: 2500 }
+        
+        // MAIN PRODUCTION ROWS
+        const mainRows = [
+          { sn: 1, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Running", plate_no: "1052", name: "YaisnaCookies", size: "75mm x 90mm", repeat: "3.133 mm", material: "Chromo", paper_size: "165 mm", die: "Rotary", allocate_mtrs: 4000, qty_pcs: 82000, core_size: "1 inch", qty_per_roll: "500", roll_direction: "Anticlock", remarks: "" },
+          { sn: 2, order_date: "2026-03-10", dispatch_date: "2026-03-20", printing_planning: "Pending", plate_no: "938", name: "Blue 1ltr", size: "158mm x 34mm", repeat: "3.306 mm", material: "PP White", paper_size: "172mm", die: "Rotary", allocate_mtrs: 2500, qty_pcs: 60000, core_size: "3 inch", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
+          { sn: 3, order_date: "2026-03-10", dispatch_date: "2026-03-20", printing_planning: "Pending", plate_no: "939", name: "Blue 500ml", size: "117.5mm x 27mm", repeat: "2.63mm", material: "PP White", paper_size: "130mm", die: "Rotary", allocate_mtrs: 11000, qty_pcs: 360000, core_size: "3 inch", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
+          { sn: 4, order_date: "2026-03-10", dispatch_date: "2026-03-20", printing_planning: "Pending", plate_no: "940", name: "Blue 200ml", size: "80mm x 20mm", repeat: "2.578mm", material: "PP White", paper_size: "175mm", die: "Rotary", allocate_mtrs: 3000, qty_pcs: 240000, core_size: "3 inch", qty_per_roll: "9 INC OD", roll_direction: "Head First", remarks: "" },
+          { sn: 5, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "516", name: "Dabur", size: "20mm x 50mm", repeat: "3.34mm", material: "Transparent Paper Release", paper_size: "145mm", die: "Rotary", allocate_mtrs: 20000, qty_pcs: 2000000, core_size: "", qty_per_roll: "", roll_direction: "Sheet Form", remarks: "" },
+          { sn: 6, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "871", name: "Amrit 750ml", size: "100mm x 35mm", repeat: "3.1mm", material: "Silver Metalic", paper_size: "220mm", die: "Rotary", allocate_mtrs: 20000, qty_pcs: 1000000, core_size: "3 inch", qty_per_roll: "7000", roll_direction: "Left First", remarks: "" },
+          { sn: 7, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "1054", name: "Oven Men Cookies", size: "69mm x 200mm", repeat: "3.2mm", material: "Chromo", paper_size: "154mm", die: "Flat bed", allocate_mtrs: 5300, qty_pcs: 50000, core_size: "1.5 inch", qty_per_roll: "500", roll_direction: "Anticlock", remarks: "" },
+          { sn: 8, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "1055", name: "Oven Men Cookies", size: "80mm x 175mm", repeat: "2.8mm", material: "Chromo", paper_size: "175mm", die: "Flat bed", allocate_mtrs: 2000, qty_pcs: 20000, core_size: "1.5 inch", qty_per_roll: "500", roll_direction: "Anticlock", remarks: "" },
+          { sn: 9, order_date: "2026-03-11", dispatch_date: "2026-03-21", printing_planning: "Pending", plate_no: "1053", name: "Yeti Airlines Boarding Pass Mar26", size: "82.4mm x 203.2mm", repeat: "0", material: "Thermal Board", paper_size: "180mm", die: "Flat bed", allocate_mtrs: 22000, qty_pcs: 200000, core_size: "", qty_per_roll: "", roll_direction: "Folding", remarks: "" }
         ];
 
-        sampleRows.forEach(sr => {
+        mainRows.forEach(sr => {
           const rowId = crypto.randomUUID();
           batch.set(doc(firestore, `planning_tables/label-printing/rows`, rowId), {
             id: rowId,
             section: SECTIONS.MAIN,
             data_source: "manual",
-            values: { ...sr, order_date: new Date().toISOString().split('T')[0] },
+            values: sr,
             created_at: serverTimestamp()
           });
         });
+
+        // HOLD MATERIAL ROWS
+        const holdRows = [
+          { sn: 10, order_date: "2026-02-23", dispatch_date: "2026-03-03", printing_planning: "Hold", plate_no: "1046", name: "AMD Clot Activator", size: "45mm x 17mm", repeat: "3.32mm", material: "Chromo (70gsm)", paper_size: "155mm", die: "Flat Bed", allocate_mtrs: 0, qty_pcs: "sampling", core_size: "3 inch", qty_per_roll: "3000", roll_direction: "Bottom First", remarks: "Rotary die not recv." },
+          { sn: 11, order_date: "2026-03-13", dispatch_date: "2026-03-23", printing_planning: "Hold", plate_no: "1057", name: "Trinity", size: "80mm x 35mm", repeat: "3.1mm", material: "PP White", paper_size: "176mm", die: "Flat Bed", allocate_mtrs: 3000, qty_pcs: 150000, core_size: "3 inch", qty_per_roll: "5000", roll_direction: "Left First", remarks: "Plate sent to make" },
+          { sn: 12, order_date: "2026-03-16", dispatch_date: "2026-03-26", printing_planning: "Hold", plate_no: "1058", name: "Mewa laya", size: "90mm x 149mm", repeat: "3.4mm", material: "Silver Paper", paper_size: "195mm", die: "Flat Bed", allocate_mtrs: 4000, qty_pcs: 45000, core_size: "1 inch", qty_per_roll: "500 / OD 4.5 in", roll_direction: "Left First", remarks: "" }
+        ];
+
+        holdRows.forEach(sr => {
+          const rowId = crypto.randomUUID();
+          batch.set(doc(firestore, `planning_tables/label-printing/rows`, rowId), {
+            id: rowId,
+            section: SECTIONS.HOLD_MATERIAL,
+            data_source: "manual",
+            values: sr,
+            created_at: serverTimestamp()
+          });
+        });
+
         await batch.commit();
       };
       initTable();
