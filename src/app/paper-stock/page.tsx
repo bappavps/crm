@@ -51,7 +51,8 @@ import {
   FilePlus,
   MoreHorizontal,
   RotateCcw,
-  CheckCircle2
+  CheckCircle2,
+  IdCard
 } from "lucide-react"
 import { 
   Dialog, 
@@ -177,10 +178,12 @@ export default function PaperStockPage() {
 
   useEffect(() => { 
     setIsMounted(true);
-    setSiteOrigin(window.location.origin);
-    const saved = localStorage.getItem('paperStockVisibleColumns')
-    if (saved) {
-      try { setVisibleColumns(prev => ({ ...prev, ...JSON.parse(saved) })) } catch (e) {}
+    if (typeof window !== 'undefined') {
+      setSiteOrigin(window.location.origin);
+      const saved = localStorage.getItem('paperStockVisibleColumns')
+      if (saved) {
+        try { setVisibleColumns(prev => ({ ...prev, ...JSON.parse(saved) })) } catch (e) {}
+      }
     }
   }, [])
 
@@ -842,19 +845,31 @@ export default function PaperStockPage() {
                           <Pencil className="h-4 w-4" />
                         </Button>
 
-                        {/* Create Manual Job Card */}
+                        {/* Slitting Workflow (RESTORED) */}
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm"
+                          onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}
+                          title="Slitting Operations"
+                        >
+                          <Scissors className="h-4 w-4" />
+                        </Button>
+
+                        {/* Create Manual Job Card (NEW ICON) */}
                         <Button 
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-600 hover:text-white shadow-sm"
                           onClick={() => {
                             setManualParentRoll(isParent ? j.rollNo : j.rollNo.split('-')[0]);
-                            setManualChildRolls(rolls?.filter(r => r.rollNo.startsWith(j.rollNo + '-') && r.rollNo !== j.rollNo).map(r => r.rollNo) || []);
+                            const children = rolls?.filter(r => r.rollNo.startsWith(j.rollNo + '-') && r.rollNo !== j.rollNo).map(r => r.rollNo) || [];
+                            setManualChildRolls(children);
                             setIsManualJobCardOpen(true);
                           }}
-                          title="Create Manual Job Card"
+                          title="Create Job Card"
                         >
-                          <Scissors className="h-4 w-4" />
+                          <IdCard className="h-4 w-4" />
                         </Button>
 
                         {/* Print Label */}
@@ -1250,7 +1265,7 @@ export default function PaperStockPage() {
         <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6">
             <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-              <Scissors className="h-5 w-5 text-primary" /> Create Manual Job Card
+              <IdCard className="h-5 w-5 text-primary" /> Create Manual Job Card
             </DialogTitle>
             <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">
               Select a parent roll and multiple child units to initialize a job card.
@@ -1314,7 +1329,7 @@ export default function PaperStockPage() {
             </div>
           </div>
           <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
             <Button 
               onClick={handleCreateManualJobCard} 
               disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} 
