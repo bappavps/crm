@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -49,7 +50,8 @@ import {
   RotateCcw,
   CheckCircle2,
   IdCard,
-  Search
+  Search,
+  RotateCcw as RotateCcwIcon
 } from "lucide-react"
 import { 
   Dialog, 
@@ -152,7 +154,6 @@ export default function PaperStockPage() {
   const [editingRoll, setEditingRoll] = useState<any>(null)
   const [viewingRoll, setViewingRoll] = useState<any>(null)
   const [printingRolls, setPrintingRolls] = useState<any[]>([])
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("default")
   const [isProcessing, setIsProcessing] = useState(false)
   
   const [currentPage, setCurrentPage] = useState(1)
@@ -512,6 +513,14 @@ export default function PaperStockPage() {
           <p className="text-sm font-normal text-muted-foreground">Master inventory of all parent and child paper rolls.</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={handleBulkPrint} 
+            disabled={selectedIds.size === 0}
+            className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl disabled:opacity-50"
+          >
+            <Printer className="h-4 w-4 mr-2 text-primary" /> Print Selected Labels
+          </Button>
           <Button variant="outline" onClick={() => setIsReportOpen(true)} className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
             <FileText className="h-4 w-4 mr-2 text-primary" /> Print Stock Report
           </Button>
@@ -553,7 +562,6 @@ export default function PaperStockPage() {
                 <Separator orientation="vertical" className="h-6 bg-white/20" />
                 <Badge className="bg-primary text-white font-black text-[10px]">{selectedIds.size} SELECTED</Badge>
                 <Button variant="ghost" size="sm" className="h-8 px-3 text-rose-400 hover:text-white hover:bg-rose-600 font-bold uppercase text-[9px] tracking-widest rounded-lg" onClick={handleBulkDelete}><Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete Selected</Button>
-                <Button variant="ghost" size="sm" className="h-8 px-3 text-primary hover:text-white hover:bg-primary font-bold uppercase text-[9px] tracking-widest rounded-lg" onClick={handleBulkPrint}><Printer className="h-3.5 w-3.5 mr-1.5" /> Print Selected Labels</Button>
               </div>
             )}
           </div>
