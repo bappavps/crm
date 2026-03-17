@@ -22,7 +22,8 @@ import {
   Clock,
   ArrowRight,
   ArrowDownCircle,
-  Wallet
+  Wallet,
+  LayoutDashboard
 } from "lucide-react"
 import { 
   Dialog, 
