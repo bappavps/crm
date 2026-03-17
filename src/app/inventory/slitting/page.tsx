@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -35,7 +36,10 @@ import {
   Zap,
   ArrowRight,
   X,
-  Filter
+  Filter,
+  Info,
+  Layers,
+  ArrowUpRight
 } from "lucide-react"
 import { 
   Dialog, 
@@ -57,6 +61,7 @@ import { collection, doc, query, where, runTransaction, serverTimestamp, limit }
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
+import { Separator } from "@/components/ui/separator"
 
 interface SlitRun {
   id: string;
@@ -112,6 +117,7 @@ function SlittingHubContent() {
   const [plannerSearch, setPlannerSearch] = useState("")
   const [selectedPlanningJob, setSelectedJob] = useState<any>(null)
   const [isOptionsModalOpen, setIsOptionsModalOpen] = useState(false)
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false)
   const [selectedSupplier, setSelectedSupplier] = useState<string>("all")
   const [selectionMap, setSelectionMap] = useState<Record<string, number>>({})
 
@@ -258,15 +264,22 @@ function SlittingHubContent() {
     const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
     if (selectedEntries.length === 0) return;
 
-    // Use the first roll of the first selected option as the "Parent" for the terminal
-    // In advanced mode, we simulate the first run. 
+    // Transition to Summary Modal instead of pre-filling grid
+    setIsOptionsModalOpen(false);
+    setIsSummaryModalOpen(true);
+  };
+
+  const handleInitializeTerminal = () => {
+    const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
+    if (selectedEntries.length === 0) return;
+
     const firstOptKey = selectedEntries[0][0];
     const firstOpt = availableOptions.find((o: any) => o.key === firstOptKey) as any;
     const parentRoll = firstOpt.rolls[0];
 
     setSelectedParent(parentRoll);
     
-    // Auto-fill runs
+    // Auto-fill runs into manual grid
     const runs: SlitRun[] = selectedEntries.map(([key, qty]) => {
       const opt = availableOptions.find((o: any) => o.key === key) as any;
       return {
@@ -281,8 +294,8 @@ function SlittingHubContent() {
     });
 
     setSlitRuns(runs);
-    setIsOptionsModalOpen(false);
-    toast({ title: "Selection Prefilled", description: `Configured ${stats?.totalRolls} rolls for production.` });
+    setIsSummaryModalOpen(false);
+    toast({ title: "Terminal Initialized", description: `Pre-filled workspace with ${stats?.totalRolls} source rolls.` });
   };
 
   const handleSearch = async () => {
@@ -710,7 +723,8 @@ function SlittingHubContent() {
                             {isSystemRecommended && !isSelected && <Badge className="bg-emerald-500 font-black text-[8px] h-5">BEST CHOICE</Badge>}
                             <div className="flex items-center bg-white border-2 border-slate-200 rounded-xl p-1">
                               <button 
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   const current = selectionMap[opt.key] || 0;
                                   if (current > 0) {
                                     const next = { ...selectionMap, [opt.key]: current - 1 };
@@ -726,7 +740,8 @@ function SlittingHubContent() {
                                 readOnly
                               />
                               <button 
-                                onClick={() => {
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   const current = selectionMap[opt.key] || 0;
                                   if (current < opt.availableCount) {
                                     setSelectionMap({ ...selectionMap, [opt.key]: current + 1 });
@@ -781,6 +796,141 @@ function SlittingHubContent() {
                   Confirm Selection <ArrowRight className="ml-3 h-5 w-5" />
                 </Button>
               </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- SLITTING EXECUTION SUMMARY MODAL --- */}
+      <Dialog open={isSummaryModalOpen} onOpenChange={setIsSummaryModalOpen}>
+        <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-white flex flex-col max-h-[90vh]">
+          <div className="bg-slate-900 text-white p-8 shrink-0">
+            <div className="flex justify-between items-center">
+              <div className="space-y-1">
+                <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-500" /> Slitting Execution Summary
+                </DialogTitle>
+                <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase tracking-tighter">Technical audit before production release</DialogDescription>
+              </div>
+              <Button variant="ghost" size="icon" onClick={() => setIsSummaryModalOpen(false)} className="text-white hover:bg-white/10"><X className="h-5 w-5" /></Button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-auto industrial-scroll p-8">
+            <div className="space-y-10">
+              {/* SECTION 1: Job Information */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 border-b pb-2">
+                  <Briefcase className="h-4 w-4 text-primary" />
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">1. Job Information</h4>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6 bg-slate-50 p-6 rounded-2xl border-2 border-slate-100">
+                  <SummaryField label="Job Name" value={selectedPlanningJob?.values.name} />
+                  <SummaryField label="Job Number" value={selectedPlanningJob?.values.sn || selectedPlanningJob?.id} />
+                  <SummaryField label="Material" value={selectedPlanningJob?.values.material} highlight />
+                  <SummaryField label="Required Width" value={stats?.targetWidth + " mm"} />
+                  <SummaryField label="Required Length" value={stats?.required.toLocaleString() + " mtr"} />
+                </div>
+              </div>
+
+              {/* SECTION 2: Source Rolls Used */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 border-b pb-2">
+                  <Package className="h-4 w-4 text-primary" />
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">2. Source Rolls Allocation</h4>
+                </div>
+                <div className="bg-white border-2 border-slate-100 rounded-2xl overflow-hidden">
+                  <Table>
+                    <TableHeader className="bg-slate-50">
+                      <TableRow className="h-10 border-none">
+                        <TableHead className="font-bold text-[9px] uppercase pl-6">Dimension</TableHead>
+                        <TableHead className="font-bold text-[9px] uppercase">Company</TableHead>
+                        <TableHead className="font-bold text-[9px] uppercase text-center">Allocated Qty</TableHead>
+                        <TableHead className="font-bold text-[9px] uppercase text-right pr-6">Yield Potential</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Object.entries(selectionMap).map(([key, qty]) => {
+                        const opt = availableOptions.find((o: any) => o.key === key) as any;
+                        if (!opt || qty <= 0) return null;
+                        return (
+                          <TableRow key={key} className="h-12 border-b last:border-none">
+                            <TableCell className="pl-6 font-bold text-xs">{opt.width}mm x {opt.length}m</TableCell>
+                            <TableCell><Badge variant="outline" className="text-[8px] font-black">{opt.company}</Badge></TableCell>
+                            <TableCell className="text-center font-black text-primary">{qty} ROLLS</TableCell>
+                            <TableCell className="text-right pr-6 font-bold text-xs">{(opt.length * opt.splits * qty).toLocaleString()} mtr</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              {/* SECTION 3 & 4: Plan & Waste Analysis */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 border-b pb-2">
+                    <Maximize2 className="h-4 w-4 text-primary" />
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">3. Slitting Yield Plan</h4>
+                  </div>
+                  <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 space-y-4">
+                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-500 uppercase">Target Slit Width</span><span className="font-black text-sm">{stats?.targetWidth} mm</span></div>
+                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-500 uppercase">Total Produced Length</span><span className="font-black text-sm text-emerald-600">{stats?.produced.toLocaleString()} mtr</span></div>
+                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-500 uppercase">Remaining Requirement</span><span className="font-black text-sm text-primary">{stats?.remaining.toLocaleString()} mtr</span></div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 border-b pb-2">
+                    <AlertTriangle className="h-4 w-4 text-rose-500" />
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">4. Waste Analytics</h4>
+                  </div>
+                  <div className="bg-rose-50/30 p-6 rounded-2xl border-2 border-rose-100 space-y-4">
+                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-rose-600/60 uppercase">Side Waste Calculation</span><span className="font-black text-sm text-rose-600">Dynamic per roll</span></div>
+                    <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-rose-600/60 uppercase">Cumulative Width Loss</span><span className="font-black text-sm text-rose-600">{stats?.totalWasteMm} mm</span></div>
+                    <div className="text-[9px] font-medium text-rose-400 italic">Total waste based on exact width slitting of {stats?.totalRolls} units.</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 5: Stock Movement */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 border-b pb-2">
+                  <Layers className="h-4 w-4 text-primary" />
+                  <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-900">5. Registry Impact (Stock Movement)</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="p-5 border-2 rounded-2xl border-rose-100 bg-rose-50/20">
+                    <div className="flex items-center gap-2 mb-3"><X className="h-3 w-3 text-rose-500" /><span className="text-[9px] font-black uppercase text-rose-600">Consumed Rolls (Retired)</span></div>
+                    <div className="space-y-1">
+                      {Object.entries(selectionMap).map(([key, qty]) => {
+                        const opt = availableOptions.find((o: any) => o.key === key) as any;
+                        if (!opt || qty <= 0) return null;
+                        return <p key={key} className="text-[10px] font-bold text-slate-700 opacity-70">{qty}x {opt.width}mm ({opt.company})</p>
+                      })}
+                    </div>
+                  </div>
+                  <div className="p-5 border-2 rounded-2xl border-emerald-100 bg-emerald-50/20">
+                    <div className="flex items-center gap-2 mb-3"><CheckCircle2 className="h-3 w-3 text-emerald-500" /><span className="text-[9px] font-black uppercase text-emerald-600">New Child Units (Generated)</span></div>
+                    <p className="text-xl font-black text-emerald-700">
+                      {Object.entries(selectionMap).reduce((acc, [key, qty]) => {
+                        const opt = availableOptions.find((o: any) => o.key === key) as any;
+                        return acc + (opt?.splits || 0) * qty;
+                      }, 0)} <small className="text-[10px] font-bold opacity-60">TECHNICAL UNITS</small>
+                    </p>
+                    <p className="text-[9px] font-medium text-emerald-600/60 mt-1 italic">Child units will inherit parent lineage and job assignment.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="shrink-0 bg-slate-50 border-t p-8">
+            <div className="flex gap-4">
+              <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-[11px] tracking-widest border-2" onClick={() => setIsSummaryModalOpen(false)}>Discard Plan</Button>
+              <Button onClick={handleInitializeTerminal} className="flex-[2] h-14 rounded-2xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[11px] tracking-widest shadow-2xl">
+                Initialize Slitting Terminal <ArrowUpRight className="ml-2 h-5 w-5 text-primary" />
+              </Button>
             </div>
           </div>
         </DialogContent>
@@ -1108,6 +1258,17 @@ function SlittingHubContent() {
       `}</style>
     </div>
   )
+}
+
+function SummaryField({ label, value, highlight = false }: { label: string, value: any, highlight?: boolean }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-[10px] font-black uppercase text-slate-400 tracking-tighter">{label}</p>
+      <p className={cn("text-sm font-black tracking-tight", highlight ? "text-primary" : "text-slate-900")}>
+        {value || "—"}
+      </p>
+    </div>
+  );
 }
 
 export default function SlittingPage() {
