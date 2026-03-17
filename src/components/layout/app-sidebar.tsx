@@ -35,7 +35,8 @@ import {
   Printer,
   ChevronRight,
   UserCog,
-  LayoutTemplate
+  LayoutTemplate,
+  NotebookPen
 } from "lucide-react"
 import {
   Sidebar,
@@ -101,8 +102,23 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Design & Prepress",
     items: [
       { name: 'Artwork Gallery', icon: Palette, href: '/artwork', permission: 'artwork' },
-      { name: 'Job Planning', icon: ClipboardList, href: '/design/production-planning', permission: 'jobPlanning' },
-      { name: 'Printed Label Planning', icon: LayoutTemplate, href: '/production/printed-label-planning', permission: 'jobPlanning' },
+      {
+        name: 'Job Planning',
+        icon: NotebookPen,
+        href: '/planning',
+        permission: 'jobPlanning',
+        subItems: [
+          { name: 'Label Printing', href: '/planning/label-printing' },
+          { name: 'Jumbo Slitting', href: '/planning/jumbo-slitting' },
+          { name: 'Printing', href: '/planning/printing' },
+          { name: 'Flatbed', href: '/planning/flatbed' },
+          { name: 'Rotery Die', href: '/planning/rotery-die' },
+          { name: 'Label Slitting', href: '/planning/label-slitting' },
+          { name: 'Batch Code', href: '/planning/batch-code' },
+          { name: 'Packing', href: '/planning/packing' },
+          { name: 'Dispatch', href: '/planning/dispatch' },
+        ]
+      },
     ]
   },
   {
