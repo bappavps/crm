@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, use } from "react"
@@ -499,7 +498,7 @@ function BoardTable({
                         <Button size="icon" variant="ghost" className="h-7 w-7 text-rose-600 hover:bg-rose-50 rounded-lg" onClick={(e) => { e.stopPropagation(); onCancel(); }}><X className="h-4 w-4" /></Button>
                       </div>
                     ) : (
-                      <div className="flex items-center justify-center gap-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-center gap-1 px-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-slate-400 hover:text-primary"><Pencil className="h-3.5 w-3.5" /></Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg text-slate-400 hover:text-rose-600" onClick={(e) => { e.stopPropagation(); onDelete(row.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
                       </div>
