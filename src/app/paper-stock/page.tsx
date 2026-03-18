@@ -283,29 +283,34 @@ export default function PaperStockPage() {
 
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
-    let result = rolls.filter(row => {
+    
+    // Applying filtering logic based on filters state
+    let result = rolls.filter(item => {
+      // Functional requirement: Quick search and multi-select dropdowns
       if (filters.search) {
         const s = filters.search.toLowerCase();
-        const matchesGlobal = Object.entries(row).some(([key, val]) => {
-          if (['id', 'updatedAt', 'createdAt', 'createdById', 'updatedById'].includes(key)) return false;
-          return String(val || "").toLowerCase().includes(s);
-        });
+        const matchesGlobal = Object.values(item).some(v => String(v || "").toLowerCase().includes(s));
         if (!matchesGlobal) return false;
       }
       
-      if (filters.lotNoSearch && !String(row.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
-      if (filters.rollNoSearch && !String(row.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
-      if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(row.paperCompany || ""))) return false;
-      if (filters.paperType?.length > 0 && !filters.paperType.includes(String(row.paperType || ""))) return false;
-      if (filters.gsm?.length > 0 && !filters.gsm.includes(String(row.gsm || ""))) return false;
-      if (filters.status?.length > 0 && !filters.status.includes(String(row.status || ""))) return false;
-      if (filters.receivedFrom && row.receivedDate < filters.receivedFrom) return false;
-      if (filters.receivedTo && row.receivedDate > filters.receivedTo) return false;
+      if (filters.lotNoSearch && !String(item.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
+      if (filters.rollNoSearch && !String(item.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
+      
+      // Multi-select matching (Dropdowns)
+      if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(item.paperCompany || ""))) return false;
+      if (filters.paperType?.length > 0 && !filters.paperType.includes(String(item.paperType || ""))) return false;
+      if (filters.gsm?.length > 0 && !filters.gsm.includes(String(item.gsm || ""))) return false;
+      if (filters.status?.length > 0 && !filters.status.includes(String(item.status || ""))) return false;
+      
+      // Date Range logic
+      if (filters.receivedFrom && item.receivedDate < filters.receivedFrom) return false;
+      if (filters.receivedTo && item.receivedDate > filters.receivedTo) return false;
 
+      // Advanced mode: Excel-style column filters
       if (filterMode === 'advanced') {
         for (const [key, selected] of Object.entries(headerFilters)) {
           if (selected && selected.length > 0) {
-            const val = String(row[key] || "");
+            const val = String(item[key] || "");
             if (!selected.includes(val)) return false;
           }
         }
@@ -516,10 +521,6 @@ export default function PaperStockPage() {
     } catch (e: any) { toast({ variant: "destructive", title: "Error", description: e.message }); } finally { setIsProcessing(false); }
   }
 
-  /**
-   * REFACTORED: renderSortableHeader is now a plain function returning TSX.
-   * This prevents the child components (popovers) from unmounting when sorting/filtering state changes.
-   */
   const renderSortableHeader = (label: string, field: string, className = "", stickLeft?: string) => {
     if (!visibleColumns[field]) return null;
     const isActive = sortConfig.key === field;

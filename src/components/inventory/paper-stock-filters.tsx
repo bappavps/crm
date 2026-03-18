@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -24,7 +25,7 @@ import { cn } from "@/lib/utils"
 interface PaperStockFiltersProps {
   data: any[]
   filters: any
-  setFilters: (filters: any) => void
+  setFilters: (update: (prev: any) => any) => void
   onReset: () => void
 }
 
@@ -46,11 +47,13 @@ export function PaperStockFilters({ data, filters, setFilters, onReset }: PaperS
   const statuses = ["Main", "Stock", "Slitting", "Job Assign", "In Production"]
 
   const toggleMultiSelect = (key: string, value: string) => {
-    const current = filters[key] || []
-    const next = current.includes(value)
-      ? current.filter((v: string) => v !== value)
-      : [...current, value]
-    setFilters({ ...filters, [key]: next })
+    setFilters(prev => {
+      const current = prev[key] || []
+      const next = current.includes(value)
+        ? current.filter((v: string) => v !== value)
+        : [...current, value]
+      return { ...prev, [key]: next }
+    })
   }
 
   return (
@@ -66,7 +69,7 @@ export function PaperStockFilters({ data, filters, setFilters, onReset }: PaperS
                 placeholder="Search everything..." 
                 className="pl-10 h-10 text-xs bg-slate-50 border-slate-200 font-black rounded-xl"
                 value={filters.search}
-                onChange={e => setFilters({ ...filters, search: e.target.value })}
+                onChange={e => setFilters(prev => ({ ...prev, search: e.target.value }))}
               />
             </div>
           </div>
@@ -76,7 +79,7 @@ export function PaperStockFilters({ data, filters, setFilters, onReset }: PaperS
               placeholder="Enter Lot ID..." 
               className="h-10 text-xs bg-slate-50 border-slate-200 font-black rounded-xl"
               value={filters.lotNoSearch || ""}
-              onChange={e => setFilters({ ...filters, lotNoSearch: e.target.value })}
+              onChange={e => setFilters(prev => ({ ...prev, lotNoSearch: e.target.value }))}
             />
           </div>
           <div className="space-y-2">
@@ -85,7 +88,7 @@ export function PaperStockFilters({ data, filters, setFilters, onReset }: PaperS
               placeholder="Enter Roll ID..." 
               className="h-10 text-xs bg-slate-50 border-slate-200 font-black rounded-xl"
               value={filters.rollNoSearch || ""}
-              onChange={e => setFilters({ ...filters, rollNoSearch: e.target.value })}
+              onChange={e => setFilters(prev => ({ ...prev, rollNoSearch: e.target.value }))}
             />
           </div>
         </div>
