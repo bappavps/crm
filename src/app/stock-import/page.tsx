@@ -436,7 +436,7 @@ export default function StockImportPage() {
           <CardContent className="p-16 text-center space-y-8">
             <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl"><Download className="h-10 w-10 text-primary" /></div>
             <div className="space-y-2 max-w-md mx-auto">
-              h3 className="text-xl font-black uppercase tracking-tight">Technical Data Preparation</h3>
+              <h3 className="text-xl font-black uppercase tracking-tight">Technical Data Preparation</h3>
               <p className="text-xs text-muted-foreground font-medium">Use the 18-column grid. Sanitized import preserves your existing Roll Numbers exactly as they are in Excel.</p>
             </div>
             <div className="flex gap-4 justify-center">
