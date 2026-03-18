@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -377,7 +376,7 @@ export default function StockImportPage() {
           "Job Size": r.jobSize || '-',
           "Job Name": r.jobName || '-',
           "Lot No": r.lotNo || '-',
-          "Company Roll No": r.company RollNo || '-',
+          "Company Roll No": r.companyRollNo || '-',
           "Remarks": r.remarks || '-'
         };
       });
@@ -437,7 +436,7 @@ export default function StockImportPage() {
           <CardContent className="p-16 text-center space-y-8">
             <div className="h-24 w-24 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl"><Download className="h-10 w-10 text-primary" /></div>
             <div className="space-y-2 max-w-md mx-auto">
-              <h3 className="text-xl font-black uppercase tracking-tight">Technical Data Preparation</h3>
+              h3 className="text-xl font-black uppercase tracking-tight">Technical Data Preparation</h3>
               <p className="text-xs text-muted-foreground font-medium">Use the 18-column grid. Sanitized import preserves your existing Roll Numbers exactly as they are in Excel.</p>
             </div>
             <div className="flex gap-4 justify-center">
@@ -477,7 +476,7 @@ export default function StockImportPage() {
           <Card className="lg:col-span-2 shadow-xl border-none rounded-2xl overflow-hidden">
             <CardHeader className="bg-slate-50 border-b py-6 px-8">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Settings2 className="h-4 w-4 text-primary" /> Column Mapping</CardTitle>
+                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3"><Settings2 className="h-4 w-4 text-primary" /> Column Mapping</CardTitle>
                 <Badge className="bg-primary text-white font-black text-[10px] h-7 px-4">{fileInfo?.rows} ROWS DETECTED</Badge>
               </div>
             </CardHeader>
@@ -583,7 +582,10 @@ export default function StockImportPage() {
                         {Object.keys(FIELD_LABELS).map(key => (
                           <TableCell key={key} className="text-[10px] font-medium border-r text-center">
                             {key === 'status' ? (
-                              <Badge className={cn("text-[8px] font-black h-4 uppercase", STATUS_OPTIONS.find(o => o.value === d[key])?.color || "bg-slate-500")}>
+                              <Badge className={cn(
+                                "text-[8px] font-black h-4 uppercase",
+                                STATUS_OPTIONS.find(o => o.value === d[key])?.color || "bg-slate-500"
+                              )}>
                                 {d[key] || "Stock"}
                               </Badge>
                             ) : d[key]}
@@ -628,4 +630,20 @@ export default function StockImportPage() {
       )}
     </div>
   );
+}
+
+function MetricCard({ icon: Icon, label, value, color, bg }: { icon: any, label: string, value: any, color: string, bg: string }) {
+  return (
+    <Card className="border-none shadow-lg rounded-2xl group hover:scale-105 transition-all duration-300">
+      <CardContent className="p-6 flex flex-col items-center text-center gap-2">
+        <div className={cn("p-3 rounded-2xl shadow-inner", bg)}>
+          <Icon className={cn("h-5 w-5", color)} />
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">{label}</p>
+          <p className={cn("text-2xl font-black tracking-tighter", color)}>{value}</p>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
