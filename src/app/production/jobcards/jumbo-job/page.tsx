@@ -215,7 +215,8 @@ function JumboJobCardContent() {
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
 
   const prepareJobData = (job: any) => {
-    const parentRollData = allRolls?.find(r => r.rollNo === job?.parent_roll);
+    const parentRollsList = (job?.parent_rolls || [job?.parent_roll]).filter(Boolean);
+    const rawSourceRolls = allRolls?.filter(r => parentRollsList.includes(r.rollNo)) || [];
     const children = allRolls?.filter(r => job?.child_rolls?.includes(r.rollNo)) || [];
     
     return {
@@ -224,8 +225,13 @@ function JumboJobCardContent() {
       machine_name: job?.machine,
       operator_name: job?.operator,
       parent_roll: job?.parent_roll,
-      parent_width: parentRollData?.widthMm || "—",
-      paper_type: parentRollData?.paperType || "—",
+      sourceRolls: rawSourceRolls.map(r => ({
+        rollId: r.rollNo,
+        paperType: r.paperType,
+        width: r.widthMm,
+        length: r.lengthMeters,
+        company: r.paperCompany
+      })),
       SLIT_ROLLS: children,
       // Generic mappings
       company_name: "Shree Label Creation",

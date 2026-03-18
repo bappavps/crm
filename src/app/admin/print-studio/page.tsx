@@ -78,8 +78,8 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.2)
- * Enhanced with Dynamic Placeholder Support and standard placeholder mappings.
+ * PRINT TEMPLATE STUDIO (V8.3)
+ * Enhanced with Source Rolls Dynamic Table support.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -164,7 +164,9 @@ const PLACEHOLDERS = {
   PRODUCTION: [
     { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
     { key: '{{machine_name}}', label: 'Machine Name', icon: Wrench, preview: 'Jumbo Slitter A1' },
-    { key: '{{operator_name}}', label: 'Operator', icon: User, preview: 'Rahul Sharma' },
+    { key: '{{operator_name}}', label: 'Operator', icon: User, preview: 'Mriganka Debnath' },
+    { key: '{{sourceRolls}}', label: 'Source Material Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
+    { key: '{{SLIT_ROLLS}}', label: 'Slitting Output Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
   ]
 };
 
@@ -394,6 +396,8 @@ export default function PrintTemplateStudio() {
           { id: 'subtitle', type: 'text', x: 40, y: 90, width: 400, height: 30, rotate: 0, content: 'JUMBO SLITTING INSTRUCTION SHEET', style: { fontSize: 14, fontWeight: 'bold', fontFamily: 'inter', textAlign: 'left', color: '#666666', borderRadius: 0, opacity: 1 } },
           { id: 'jobid', type: 'text', x: 550, y: 40, width: 200, height: 40, rotate: 0, content: '{{job_card_id}}', style: { fontSize: 18, fontWeight: 'bold', fontFamily: 'mono', textAlign: 'right', color: '#E4892B', borderRadius: 0, opacity: 1 } },
           { id: 'line1', type: 'line', x: 40, y: 130, width: 710, height: 2, rotate: 0, style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 2, borderColor: '#000000', opacity: 1 } },
+          { id: 'table_label_source', type: 'text', x: 40, y: 150, width: 300, height: 30, rotate: 0, content: 'SOURCE MATERIALS', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
+          { id: 'source_table', type: 'table', x: 40, y: 190, width: 710, height: 200, rotate: 0, placeholder: 'sourceRolls', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 1, borderColor: '#ccc', opacity: 1 } },
           { id: 'table_label', type: 'text', x: 40, y: 400, width: 300, height: 30, rotate: 0, content: 'SLITTING OUTPUT PLAN', style: { fontSize: 12, fontWeight: 'black', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderRadius: 0, opacity: 1 } },
           { id: 'output_table', type: 'table', x: 40, y: 440, width: 710, height: 300, rotate: 0, placeholder: 'SLIT_ROLLS', style: { fontSize: 12, fontWeight: 'normal', fontFamily: 'inter', textAlign: 'left', color: '#000000', borderWidth: 1, borderColor: '#ccc', opacity: 1 } }
         ]
@@ -662,7 +666,13 @@ export default function PrintTemplateStudio() {
                           {fields.map(p => (
                             <button 
                               key={p.key}
-                              onClick={() => addElement('text', undefined, p.key)}
+                              onClick={() => {
+                                if (p.preview === 'TABLE_PREVIEW') {
+                                  addElement('table', p.key.replace(/[{}]/g, ''));
+                                } else {
+                                  addElement('text', undefined, p.key);
+                                }
+                              }}
                               className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-primary/5 transition-all text-left group"
                             >
                               <p.icon className="h-3 w-3 text-slate-300 group-hover:text-primary" />
@@ -1195,14 +1205,23 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
           </div>
         );
       case 'table':
+        const isSourceGrid = element.placeholder === 'sourceRolls';
         return (
           <div style={{ ...commonStyle, flexDirection: 'column', padding: 0 }}>
-            <div className="w-full bg-slate-900 text-white p-2 text-[10px] font-black uppercase flex justify-between">
-              <span>ROLL ID</span><span>WIDTH</span><span>DEST</span>
+            <div className="w-full bg-slate-900 text-white p-2 text-[8px] font-black uppercase flex justify-between">
+              {isSourceGrid ? (
+                <><span>ROLL ID</span><span>ITEM</span><span>DIM</span><span>CO</span></>
+              ) : (
+                <><span>ROLL ID</span><span>WIDTH</span><span>DEST</span></>
+              )}
             </div>
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="w-full border-b p-2 text-[9px] font-bold flex justify-between uppercase opacity-50">
-                <span>T-1001-{ALPHABET[i]}</span><span>250MM</span><span>JOB</span>
+              <div key={i} className="w-full border-b p-2 text-[8px] font-bold flex justify-between uppercase opacity-50">
+                {isSourceGrid ? (
+                  <><span>T-100{i}</span><span>CHROMO</span><span>400x3k</span><span>Avery</span></>
+                ) : (
+                  <><span>T-1001-{ALPHABET[i]}</span><span>250MM</span><span>JOB</span></>
+                )}
               </div>
             ))}
           </div>

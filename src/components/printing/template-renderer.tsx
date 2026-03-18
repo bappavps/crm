@@ -108,6 +108,28 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
       case 'table':
         const tableKey = (el.placeholder || "").replace(/[{}]/g, '');
         const tableData = data[tableKey] || [];
+        
+        if (tableKey === 'sourceRolls') {
+          return (
+            <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
+              <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
+                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
+                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>PAPER TYPE</span>
+                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>DIMENSION</span>
+                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>COMPANY</span>
+              </div>
+              {tableData.map((row: any, idx: number) => (
+                <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
+                  <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{row.rollId}</span>
+                  <span style={{ flex: 2, fontSize: '10px' }}>{row.paperType}</span>
+                  <span style={{ flex: 2, fontSize: '10px' }}>{row.width}mm x {row.length}m</span>
+                  <span style={{ flex: 2, fontSize: '10px' }}>{row.company}</span>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
         return (
           <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
             <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
@@ -145,7 +167,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
       case 'qr':
         return (
           <div style={style}>
-            <QRCodeSVG value={processText(el.placeholder || "") || "NA"} size={Math.min(el.width, el.height) - 5} />
+            <QRCodeSVG value={processText(el.placeholder || "") || "NA"} size={Math.min(element.width, element.height) - 5} />
           </div>
         );
       case 'rectangle':
