@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   MoveHorizontal,
   GripHorizontal,
-  Pencil
+  Pencil,
+  RotateCcw
 } from "lucide-react"
 import { 
   Dialog, 
@@ -48,6 +49,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { Separator } from "@/components/ui/separator"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, serverTimestamp, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
@@ -448,6 +450,14 @@ function BoardTable({
   title, columns, rows, editingId, editFormData, onEdit, onSave, onCancel, onFormChange, onDelete, onReorder, height, isProcessing, emptyMessage 
 }: any) {
   const [draggedHeader, setDraggedHeader] = useState<string | null>(null);
+  const [isCustomMaterialMap, setIsCustomMaterialMap] = useState<Record<string, boolean>>({});
+
+  const tableUniqueMaterials = useMemo(() => {
+    const vals = new Set(rows.map((r: any) => r.values.material).filter(Boolean));
+    // Core defaults for Shree Label
+    ["Chromo", "PP White", "Silver Metalic", "PE White", "Transparent"].forEach(m => vals.add(m));
+    return Array.from(vals).sort();
+  }, [rows]);
 
   return (
     <Card className="border-none shadow-sm rounded-xl overflow-hidden bg-white border">
@@ -509,25 +519,48 @@ function BoardTable({
                     <TableCell key={col.id} className="text-center text-[13px] border-r px-2 py-0 border-b">
                       {editingId === row.id ? (
                         col.id === 'material' ? (
-                          <Select 
-                            value={editFormData[col.id] || ''} 
-                            onValueChange={v => {
-                              const next = { ...editFormData, [col.id]: v };
-                              console.log("Editing Row (Material):", next);
-                              onFormChange(next);
-                            }}
-                          >
-                            <SelectTrigger className="h-7 text-[11px] font-bold uppercase border-none focus-visible:ring-0 p-0 bg-transparent text-center flex justify-center">
-                              <SelectValue placeholder="Select Material" />
-                            </SelectTrigger>
-                            <SelectContent className="z-[110]">
-                              <SelectItem value="Chromo">Chromo</SelectItem>
-                              <SelectItem value="PP White">PP White</SelectItem>
-                              <SelectItem value="Silver Metalic">Silver Metalic</SelectItem>
-                              <SelectItem value="PE White">PE White</SelectItem>
-                              <SelectItem value="Transparent">Transparent</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <div className="flex items-center justify-center min-w-[120px]">
+                            {!isCustomMaterialMap[row.id] ? (
+                              <Select 
+                                value={editFormData[col.id] || ''} 
+                                onValueChange={v => {
+                                  if (v === '___CUSTOM___') {
+                                    setIsCustomMaterialMap(prev => ({...prev, [row.id]: true}));
+                                  } else {
+                                    onFormChange({ ...editFormData, [col.id]: v });
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-7 text-[11px] font-bold uppercase border-none focus-visible:ring-0 p-0 bg-transparent text-center flex justify-center">
+                                  <SelectValue placeholder="Material" />
+                                </SelectTrigger>
+                                <SelectContent className="z-[110]">
+                                  {tableUniqueMaterials.map(m => (
+                                    <SelectItem key={m} value={m} className="text-[11px] font-bold uppercase">{m}</SelectItem>
+                                  ))}
+                                  <Separator className="my-1" />
+                                  <SelectItem value="___CUSTOM___" className="text-[11px] font-black uppercase text-primary italic">Add New...</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <div className="flex items-center gap-1 w-full">
+                                <Input 
+                                  value={editFormData[col.id] || ''} 
+                                  onChange={e => onFormChange({...editFormData, [col.id]: e.target.value})}
+                                  className="h-7 text-[11px] text-center border-primary/30 focus-visible:ring-0 p-0 bg-transparent font-bold uppercase"
+                                  autoFocus
+                                />
+                                <Button 
+                                  size="icon" 
+                                  variant="ghost" 
+                                  className="h-6 w-6 text-slate-400 hover:text-primary" 
+                                  onClick={(e) => { e.stopPropagation(); setIsCustomMaterialMap(prev => ({...prev, [row.id]: false})); }}
+                                >
+                                  <RotateCcw className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
                         ) : col.type === 'Status' ? (
                           <Select 
                             value={editFormData[col.id] || ''} 
@@ -541,7 +574,7 @@ function BoardTable({
                               <SelectValue placeholder="Status" />
                             </SelectTrigger>
                             <SelectContent className="z-[110]">
-                              {Object.keys(STATUS_COLORS).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              {Object.keys(STATUS_COLORS).map(s => <SelectItem key={s} value={s} className="text-[11px] font-bold uppercase">{s}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         ) : (
