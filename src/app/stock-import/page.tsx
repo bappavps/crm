@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -306,7 +307,8 @@ export default function StockImportPage() {
         const chunk = dataToImport.slice(i, i + 500);
 
         chunk.forEach((d) => {
-          const rollId = String(d.rollNo).trim();
+          // SANITIZE ID: Replace slashes with hyphens
+          const rollId = String(d.rollNo).trim().replace(/\//g, '-');
           if (!rollId) return; 
           
           const final: any = {
@@ -375,7 +377,7 @@ export default function StockImportPage() {
           "Job Size": r.jobSize || '-',
           "Job Name": r.jobName || '-',
           "Lot No": r.lotNo || '-',
-          "Company Roll No": r.companyRollNo || '-',
+          "Company Roll No": r.company RollNo || '-',
           "Remarks": r.remarks || '-'
         };
       });

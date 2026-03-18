@@ -98,6 +98,11 @@ const getChildSuffix = (parentRollNo: string, index: number): string => {
  */
 const normalizeMaterial = (m: string) => String(m || "").toLowerCase().replace(/[\s-]/g, '').trim();
 
+/**
+ * Sanitizes ID for Firestore paths (replacing slashes with hyphens)
+ */
+const sanitizeDocId = (id: string) => String(id || "").replace(/\//g, '-');
+
 function SlittingHubContent() {
   const { toast } = useToast()
   const router = useRouter()
@@ -346,7 +351,8 @@ function SlittingHubContent() {
 
             for (let i = 0; i < splits; i++) {
               const suffix = getChildSuffix(roll.rollNo, childIdx);
-              const childId = `${roll.rollNo}-${suffix}`;
+              // SANITIZE ID: Replace slashes with hyphens
+              const childId = sanitizeDocId(`${roll.rollNo}-${suffix}`);
               const childRef = doc(firestore, 'paper_stock', childId);
               
               const childData = {
@@ -373,7 +379,8 @@ function SlittingHubContent() {
 
             if (opt.waste > 0) {
               const suffix = getChildSuffix(roll.rollNo, childIdx);
-              const remainderId = `${roll.rollNo}-${suffix}`;
+              // SANITIZE ID: Replace slashes with hyphens
+              const remainderId = sanitizeDocId(`${roll.rollNo}-${suffix}`);
               const remainderRef = doc(firestore, 'paper_stock', remainderId);
               
               transaction.set(remainderRef, {
@@ -567,7 +574,8 @@ function SlittingHubContent() {
         for (const run of slitRuns) {
           for (let i = 0; i < run.parts; i++) {
             const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
-            const childId = `${selectedParent.rollNo}-${suffix}`;
+            // SANITIZE ID: Replace slashes with hyphens
+            const childId = sanitizeDocId(`${selectedParent.rollNo}-${suffix}`);
             const childRef = doc(firestore, 'paper_stock', childId);
             
             const childStatus = run.jobNo ? "Job Assign" : "Slitting";
@@ -599,7 +607,8 @@ function SlittingHubContent() {
 
         if (calculation.remainder > 0) {
           const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
-          const remainderId = `${selectedParent.rollNo}-${suffix}`;
+          // SANITIZE ID: Replace slashes with hyphens
+          const remainderId = sanitizeDocId(`${selectedParent.rollNo}-${suffix}`);
           const remainderRef = doc(firestore, 'paper_stock', remainderId);
           
           const remWidth = calculation.mode === 'WIDTH' ? calculation.remainder : Number(selectedParent.widthMm);

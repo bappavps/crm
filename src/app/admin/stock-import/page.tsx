@@ -180,7 +180,8 @@ export default function StockImportPage() {
           const chunk = data.slice(i, i + 50);
 
           chunk.forEach((row: any) => {
-            const rollId = String(row["RELL NO"]);
+            // SANITIZE ID: Slashes are invalid in Firestore doc paths
+            const rollId = String(row["RELL NO"]).trim().replace(/\//g, '-');
             if (existingRolls.has(rollId)) {
               skipped++;
               return;
@@ -190,7 +191,7 @@ export default function StockImportPage() {
             const length = Number(row["LENGTH (MTR)"]);
             const sqm = Number(row["SQM"]) || (width * length / 1000);
 
-            const docRef = doc(collection(firestore, 'jumbo_stock'));
+            const docRef = doc(collection(firestore, 'jumbo_stock'), rollId);
             batch.set(docRef, {
               rollNo: rollId,
               barcode: rollId,

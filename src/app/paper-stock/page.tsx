@@ -428,13 +428,16 @@ export default function PaperStockPage() {
   const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
-    const rollId = formData.rollNo.trim();
+    
+    // SANITIZE ID: Slashes are invalid in Firestore doc paths
+    const rollId = formData.rollNo.trim().replace(/\//g, '-');
+    
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
       setModal({ isOpen: true, type: 'ERROR', title: 'Duplicate Roll ID', description: `Roll Number "${rollId}" is already assigned.` });
       return;
     }
     setIsProcessing(true);
-    const finalData = { ...formData, sqm: calculatedSqm, updatedAt: serverTimestamp(), updatedById: user.uid };
+    const finalData = { ...formData, rollNo: rollId, sqm: calculatedSqm, updatedAt: serverTimestamp(), updatedById: user.uid };
     try {
       if (editingRoll) { await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' }); }
       else { await setDoc(doc(firestore, 'paper_stock', rollId), { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' }); }
