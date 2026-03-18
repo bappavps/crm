@@ -55,8 +55,8 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 
 /**
- * PRODUCTION PLANNING BOARD (V5)
- * Redesigned for Industrial Dominance, Compact Data, and Column Reordering.
+ * PRODUCTION PLANNING BOARD (V5.1)
+ * Redesigned for Industrial Dominance, Compact Data, and Fixed Inline Editing.
  */
 
 const STATUS_COLORS: Record<string, string> = {
@@ -182,6 +182,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
     if (!firestore || !editingId || isProcessing) return;
     setIsProcessing(true);
     try {
+      console.log("Saving Row Data:", editFormData);
       await updateDoc(doc(firestore, `planning_tables/${department}/rows`, editingId), {
         values: editFormData,
         updated_at: serverTimestamp()
@@ -287,13 +288,18 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           columns={orderedColumns} 
           rows={sections.main} 
           editingId={editingId}
-          onEdit={(r: any) => { setEditingId(r.id); setEditFormData(r.values); }}
+          editFormData={editFormData}
+          onEdit={(r: any) => { 
+            console.log("Entering Edit Mode for Row:", r.id);
+            setEditingId(r.id); 
+            setEditFormData(r.values); 
+          }}
           onSave={handleSaveRow}
           onCancel={() => setEditingId(null)}
           onFormChange={setEditFormData}
           onDelete={setDeleteConfirmId}
           onReorder={handleReorder}
-          height="h-[65vh] min-h-[500px]"
+          height="h-[65vh] min-height-[500px]"
           isProcessing={isProcessing}
         />
       </div>
@@ -305,6 +311,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           columns={orderedColumns} 
           rows={sections.holdMaterial} 
           editingId={editingId}
+          editFormData={editFormData}
           onEdit={(r: any) => { setEditingId(r.id); setEditFormData(r.values); }}
           onSave={handleSaveRow}
           onCancel={() => setEditingId(null)}
@@ -320,6 +327,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           columns={orderedColumns} 
           rows={sections.holdPayment} 
           editingId={editingId}
+          editFormData={editFormData}
           onEdit={(r: any) => { setEditingId(r.id); setEditFormData(r.values); }}
           onSave={handleSaveRow}
           onCancel={() => setEditingId(null)}
@@ -341,7 +349,18 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
               {tableDef?.columns.map((col: any) => (
                 <div key={col.id} className="space-y-1.5 text-left">
                   <Label className="text-[10px] font-black uppercase opacity-50 block">{col.name}</Label>
-                  {col.type === 'Status' ? (
+                  {col.id === 'material' ? (
+                    <Select name={col.id} defaultValue="Chromo">
+                      <SelectTrigger className="h-10 border-2 rounded-lg bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent className="z-[110]">
+                        <SelectItem value="Chromo">Chromo</SelectItem>
+                        <SelectItem value="PP White">PP White</SelectItem>
+                        <SelectItem value="Silver Metalic">Silver Metalic</SelectItem>
+                        <SelectItem value="PE White">PE White</SelectItem>
+                        <SelectItem value="Transparent">Transparent</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : col.type === 'Status' ? (
                     <Select name={col.id} defaultValue="Pending">
                       <SelectTrigger className="h-10 border-2 rounded-lg bg-white"><SelectValue /></SelectTrigger>
                       <SelectContent className="z-[110]">
@@ -426,7 +445,9 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
   )
 }
 
-function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel, onFormChange, onDelete, onReorder, height, isProcessing, emptyMessage }: any) {
+function BoardTable({ 
+  title, columns, rows, editingId, editFormData, onEdit, onSave, onCancel, onFormChange, onDelete, onReorder, height, isProcessing, emptyMessage 
+}: any) {
   const [draggedHeader, setDraggedHeader] = useState<string | null>(null);
 
   return (
@@ -488,9 +509,38 @@ function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel,
                   {columns.map((col: any) => (
                     <TableCell key={col.id} className="text-center text-[13px] border-r px-2 py-0 border-b">
                       {editingId === row.id ? (
-                        col.type === 'Status' ? (
-                          <Select value={row.values[col.id]} onValueChange={v => onFormChange({...row.values, [col.id]: v})}>
-                            <SelectTrigger className="h-7 text-[11px] font-bold uppercase border-none focus-visible:ring-0 p-0 bg-transparent text-center flex justify-center"><SelectValue /></SelectTrigger>
+                        col.id === 'material' ? (
+                          <Select 
+                            value={editFormData[col.id] || ''} 
+                            onValueChange={v => {
+                              const next = { ...editFormData, [col.id]: v };
+                              console.log("Editing Row (Material):", next);
+                              onFormChange(next);
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-[11px] font-bold uppercase border-none focus-visible:ring-0 p-0 bg-transparent text-center flex justify-center">
+                              <SelectValue placeholder="Select Material" />
+                            </SelectTrigger>
+                            <SelectContent className="z-[110]">
+                              <SelectItem value="Chromo">Chromo</SelectItem>
+                              <SelectItem value="PP White">PP White</SelectItem>
+                              <SelectItem value="Silver Metalic">Silver Metalic</SelectItem>
+                              <SelectItem value="PE White">PE White</SelectItem>
+                              <SelectItem value="Transparent">Transparent</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : col.type === 'Status' ? (
+                          <Select 
+                            value={editFormData[col.id] || ''} 
+                            onValueChange={v => {
+                              const next = { ...editFormData, [col.id]: v };
+                              console.log("Editing Row (Status):", next);
+                              onFormChange(next);
+                            }}
+                          >
+                            <SelectTrigger className="h-7 text-[11px] font-bold uppercase border-none focus-visible:ring-0 p-0 bg-transparent text-center flex justify-center">
+                              <SelectValue placeholder="Status" />
+                            </SelectTrigger>
                             <SelectContent className="z-[110]">
                               {Object.keys(STATUS_COLORS).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
@@ -498,8 +548,12 @@ function BoardTable({ title, columns, rows, editingId, onEdit, onSave, onCancel,
                         ) : (
                           <Input 
                             type={col.type === 'Number' ? 'number' : col.type === 'Date' ? 'date' : 'text'} 
-                            value={row.values[col.id] || ''} 
-                            onChange={e => onFormChange({...row.values, [col.id]: col.type === 'Number' ? Number(e.target.value) : e.target.value})} 
+                            value={editFormData[col.id] || ''} 
+                            onChange={e => {
+                              const next = { ...editFormData, [col.id]: col.type === 'Number' ? Number(e.target.value) : e.target.value };
+                              console.log("Editing Row:", next);
+                              onFormChange(next);
+                            }} 
                             className="h-7 text-[13px] text-center border-none focus-visible:ring-0 p-0 bg-transparent font-bold"
                             autoFocus={col.id === 'sn'}
                           />
