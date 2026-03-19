@@ -261,6 +261,8 @@ function JumboJobCardContent() {
     lengthMtr: roll.lengthMeters
   });
 
+  const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex items-center justify-between">
@@ -334,7 +336,7 @@ function JumboJobCardContent() {
                     <div className="flex justify-end gap-1.5">
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600" onClick={() => { setSelectedJob(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-slate-700 text-white hover:bg-black" onClick={() => { setSelectedJob(j); setIsLabelOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-rose-500 text-white hover:bg-rose-600" onClick={() => handleDelete(j.id)}><Trash2 className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white" onClick={() => handleDelete(j.id)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -501,7 +503,14 @@ function JumboJobCardContent() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end">
-                    <div className="border-2 border-black p-1">
+                    <div 
+                      className="border-2 border-black p-1 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => {
+                        const url = siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "");
+                        if (isValidURL(url)) window.open(url, "_blank");
+                      }}
+                      title="Click to open status link"
+                    >
                       <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "")} size={80} />
                     </div>
                     <p className="text-[8px] font-black uppercase mt-1">Scan to Update Status</p>

@@ -59,6 +59,8 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
     });
   };
 
+  const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
 
   const renderElement = (el: TemplateElement) => {
@@ -165,9 +167,25 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
           </div>
         );
       case 'qr':
+        const qrVal = processText(el.placeholder || "") || "NA";
         return (
-          <div style={style}>
-            <QRCodeSVG value={processText(el.placeholder || "") || "NA"} size={Math.min(element.width, element.height) - 5} />
+          <div 
+            style={{ 
+              ...style, 
+              cursor: isValidURL(qrVal) ? 'pointer' : 'default' 
+            }}
+            onClick={() => {
+              if (isValidURL(qrVal)) {
+                window.open(qrVal, "_blank");
+              }
+            }}
+            className="group/qr"
+          >
+            <QRCodeSVG 
+              value={qrVal} 
+              size={Math.min(el.width, el.height) - 5} 
+              className="group-hover/qr:opacity-80 transition-opacity"
+            />
           </div>
         );
       case 'rectangle':

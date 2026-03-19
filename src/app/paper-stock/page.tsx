@@ -570,6 +570,8 @@ export default function PaperStockPage() {
     lengthMtr: roll.lengthMeters
   });
 
+  const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+
   if (!isMounted) return null;
 
   return (
@@ -931,7 +933,14 @@ export default function PaperStockPage() {
                   </DialogTitle>
                   <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
                 </div>
-                <div className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800">
+                <div 
+                  className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => {
+                    const url = siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.id}` : (viewingRoll?.id || "");
+                    if (isValidURL(url)) window.open(url, "_blank");
+                  }}
+                  title="Click to open profile link"
+                >
                   <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.id}` : (viewingRoll?.id || "")} size={120} />
                 </div>
               </div>

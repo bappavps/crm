@@ -79,7 +79,7 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
  * PRINT TEMPLATE STUDIO (V8.3)
- * Enhanced with Source Rolls Dynamic Table support.
+ * Enhanced with Source Rolls Dynamic Table support and Interactive QR codes.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -1167,6 +1167,8 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
     });
   };
 
+  const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+
   const renderContent = () => {
     const commonStyle = {
       width: '100%',
@@ -1236,7 +1238,24 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
           </div>
         );
       case 'qr': 
-        return <div style={commonStyle}><QRCodeSVG value={processText(element.placeholder || "PREVIEW")} size={Math.min(element.width, element.height) - 10} /></div>;
+        const qrVal = processText(element.placeholder || "PREVIEW");
+        return (
+          <div 
+            style={{ 
+              ...commonStyle, 
+              cursor: isValidURL(qrVal) ? 'pointer' : 'default' 
+            }}
+            onClick={(e) => {
+              if (isValidURL(qrVal)) {
+                e.stopPropagation();
+                window.open(qrVal, "_blank");
+              }
+            }}
+            title={isValidURL(qrVal) ? "Click to open link" : ""}
+          >
+            <QRCodeSVG value={qrVal} size={Math.min(element.width, element.height) - 10} />
+          </div>
+        );
       case 'rectangle': 
       case 'circle': 
         return <div style={commonStyle} />;
