@@ -52,17 +52,17 @@ export default function Dashboard() {
   // 2. Live Data Queries - Optimized with expanded limits
   const ordersQuery = useMemoFirebase(() => {
     if (!firestore || !isSales) return null
-    return query(collection(firestore, 'salesOrders'), orderBy('createdAt', 'desc'), limit(1000))
+    return query(collection(firestore, 'salesOrders'), orderBy('createdAt', 'desc'), limit(10000))
   }, [firestore, isSales])
 
   const productionQuery = useMemoFirebase(() => {
     if (!firestore || !isProduction) return null
-    return query(collection(firestore, 'jobs'), where("status", "==", "In Production"), limit(500))
+    return query(collection(firestore, 'jobs'), where("status", "==", "In Production"), limit(5000))
   }, [firestore, isProduction])
 
   const inventoryQuery = useMemoFirebase(() => {
     if (!firestore || !isProduction) return null
-    return query(collection(firestore, 'paper_stock'), limit(1000))
+    return query(collection(firestore, 'paper_stock'), limit(10000))
   }, [firestore, isProduction])
 
   const { data: orders, isLoading: ordersLoading } = useCollection(ordersQuery)

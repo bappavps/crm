@@ -1,3 +1,4 @@
+
 # Shree Label ERP: Comprehensive User Manual
 
 This document provides a complete guide to the Shree Label ERP system, covering everything from initial setup to the final dispatch of finished goods.
@@ -87,8 +88,8 @@ This document provides a complete guide to the Shree Label ERP system, covering 
 ## PART 5 — COLLECTION IMPACT MAP
 
 *   `jobs`: Updated by Sales, Admin (Approval), and Design (Technical Specs).
-*   `jumbo_stock`: Updated by Purchase (GRN) and Operator (Slitting Consumption).
-*   `inventoryItems`: Created by Slitting (Child Rolls) and QC (Finished Goods).
+*   `paper_stock`: Updated by Purchase (GRN), Stock Import, and Operator (Slitting Consumption).
+*   `inventoryItems`: Created by QC (Finished Goods).
 *   `counters`: Incremented atomically during Job and Roll creation.
 
 ---
@@ -112,4 +113,4 @@ This document provides a complete guide to the Shree Label ERP system, covering 
 7.  **Step 7**: Go to **Inventory > Stock Registry**. Confirm your child rolls are now status "ASSIGNED".
 
 ---
-*Documentation Version: 2.1 (Modular Architecture)*
+*Documentation Version: 2.2 (Data Architecture Sync)*

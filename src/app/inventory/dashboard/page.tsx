@@ -59,12 +59,12 @@ export default function StockDashboard() {
   // Optimized query: Standardized to paper_stock and expanded limit
   const jumboQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'paper_stock'), limit(1000));
+    return query(collection(firestore, 'paper_stock'), limit(10000));
   }, [firestore, user, adminData]);
 
   const alertsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'alerts'), where("resolved", "==", false), limit(100));
+    return query(collection(firestore, 'alerts'), where("resolved", "==", false), limit(500));
   }, [firestore, user, adminData]);
 
   const { data: jumbos, isLoading: itemsLoading } = useCollection(jumboQuery)
@@ -84,9 +84,9 @@ export default function StockDashboard() {
       acc[j.paperType] = (acc[j.paperType] || 0) + 1;
       return acc;
     }, {});
-    const barData = Object.keys(typeDistribution).map(key => ({ name: key, count: typeDistribution[key] })).slice(0, 5);
+    const barData = Object.keys(typeDistribution).map(key => ({ name: key, count: typeDistribution[key] })).slice(0, 10);
 
-    const pieData = Object.keys(typeDistribution).map(key => ({ name: key, value: typeDistribution[key] })).slice(0, 6);
+    const pieData = Object.keys(typeDistribution).map(key => ({ name: key, value: typeDistribution[key] })).slice(0, 10);
 
     return { totalRolls, totalSqm, totalValue, lowStockCount, barData, pieData };
   }, [jumbos, searchQuery]);
