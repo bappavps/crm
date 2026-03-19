@@ -51,7 +51,8 @@ import {
   CheckCircle2,
   IdCard,
   Search,
-  RotateCcw as RotateCcwIcon
+  RotateCcw as RotateCcwIcon,
+  Activity
 } from "lucide-react"
 import { 
   Dialog, 
@@ -234,7 +235,7 @@ export default function PaperStockPage() {
 
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'paper_stock'), limit(10000)); // Increased limit
+    return query(collection(firestore, 'paper_stock'), limit(10000));
   }, [firestore]);
 
   const machinesQuery = useMemoFirebase(() => {
@@ -331,6 +332,26 @@ export default function PaperStockPage() {
     return result;
   }, [rolls, filters, sortConfig, headerFilters, filterMode]);
 
+  const metricsSummary = useMemo(() => {
+    const summary = {
+      companies: {} as Record<string, number>,
+      types: {} as Record<string, number>,
+      totalMtr: 0,
+      totalSqm: 0
+    };
+
+    filteredRows.forEach(r => {
+      const co = String(r.paperCompany || "Unknown").trim();
+      const pt = String(r.paperType || "Other").trim();
+      if (co) summary.companies[co] = (summary.companies[co] || 0) + 1;
+      if (pt) summary.types[pt] = (summary.types[pt] || 0) + 1;
+      summary.totalMtr += Number(r.lengthMeters || 0);
+      summary.totalSqm += Number(r.sqm || 0);
+    });
+
+    return summary;
+  }, [filteredRows]);
+
   const activeFiltersSummary = useMemo(() => {
     const list: string[] = [];
     if (filters.search) list.push(`Search: ${filters.search}`);
@@ -384,17 +405,6 @@ export default function PaperStockPage() {
     return hierarchicalRows.slice(start, start + rowsPerPage);
   }, [hierarchicalRows, currentPage, rowsPerPage]);
 
-  const suggestions = useMemo(() => {
-    if (!rolls) return { companies: [], types: [], gsms: [], lots: [], mfrRolls: [] };
-    return {
-      companies: Array.from(new Set(rolls.map(r => String(r.paperCompany || "").trim()).filter(Boolean))).sort(),
-      types: Array.from(new Set(rolls.map(r => String(r.paperType || "").trim()).filter(Boolean))).sort(),
-      gsms: Array.from(new Set(rolls.map(r => String(r.gsm || "").trim()).filter(Boolean))).sort((a, b) => Number(a) - Number(b)),
-      lots: Array.from(new Set(rolls.map(r => String(r.lotNo || "").trim()).filter(Boolean))).sort(),
-      mfrRolls: Array.from(new Set(rolls.map(r => String(r.companyRollNo || "").trim()).filter(Boolean))).sort(),
-    };
-  }, [rolls]);
-
   const handleOpenDialog = (roll?: any) => {
     if (roll) {
       setEditingRoll(roll);
@@ -429,7 +439,6 @@ export default function PaperStockPage() {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     
-    // SANITIZE ID: Replace slashes with hyphens
     const rollId = formData.rollNo.trim().replace(/\//g, '-');
     
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
@@ -483,7 +492,6 @@ export default function PaperStockPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
       scanner.render((decodedText) => {
-        // Sanitize scanned text if it contains slashes for lookup
         const sanitizedText = decodedText.replace(/\//g, '-');
         const match = rolls?.find(r => r.rollNo === sanitizedText || r.rollNo === decodedText || r.id === sanitizedText || r.id === decodedText);
         if (match) { setHighlightedId(match.id); setViewingRoll(match); setIsViewOpen(true); scanner.clear(); setIsScannerOpen(false); }
@@ -612,6 +620,58 @@ export default function PaperStockPage() {
         </div>
       </div>
 
+      {/* Top Summary Dashboard */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardContent className="p-4 flex flex-col items-center justify-center">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
+              <Building2 className="h-3 w-3" /> Company Distribution
+            </span>
+            <div className="flex flex-wrap justify-center gap-1 mt-1">
+              {Object.entries(metricsSummary.companies).slice(0, 3).map(([co, count]) => (
+                <Badge key={co} variant="outline" className="text-[9px] h-5 bg-slate-50 border-slate-200">{co}: {count}</Badge>
+              ))}
+              {Object.entries(metricsSummary.companies).length > 3 && <span className="text-[9px] font-bold text-slate-400">+{Object.entries(metricsSummary.companies).length - 3} more</span>}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardContent className="p-4 flex flex-col items-center justify-center">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
+              <Layers className="h-3 w-3" /> Substrate Types
+            </span>
+            <div className="flex flex-wrap justify-center gap-1 mt-1">
+              {Object.entries(metricsSummary.types).slice(0, 3).map(([type, count]) => (
+                <Badge key={type} variant="outline" className="text-[9px] h-5 bg-slate-50 border-slate-200">{type}: {count}</Badge>
+              ))}
+              {Object.entries(metricsSummary.types).length > 3 && <span className="text-[9px] font-bold text-slate-400">+{Object.entries(metricsSummary.types).length - 3} more</span>}
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardContent className="p-4 flex flex-col items-center justify-center">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
+              <Activity className="h-3 w-3" /> Net Running Meter
+            </span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-primary">{metricsSummary.totalMtr.toLocaleString()}</span>
+              <span className="text-[10px] font-bold text-slate-400">MTR</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="bg-white shadow-sm border-slate-200">
+          <CardContent className="p-4 flex flex-col items-center justify-center">
+            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
+              <Maximize2 className="h-3 w-3" /> Total SQM
+            </span>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-xl font-black text-primary">{metricsSummary.totalSqm.toLocaleString()}</span>
+              <span className="text-[10px] font-bold text-slate-400">SQM</span>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       <PaperStockFilters data={rolls || []} filters={filters} setFilters={setFilters} onReset={handleResetAll} />
 
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-2xl bg-white border-none">
@@ -706,7 +766,17 @@ export default function PaperStockPage() {
         </div>
 
         <div className="bg-slate-50 p-4 border-t flex items-center justify-between shrink-0 px-8 rounded-b-2xl">
-          <div className="flex items-center gap-4"><Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}><SelectTrigger className="h-9 w-[120px] bg-white text-[12px] font-semibold uppercase rounded-xl border-none shadow-sm"><SelectValue /></SelectTrigger><SelectContent className="z-[100] border-none shadow-2xl rounded-xl">{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent></Select><span className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">Showing {filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredRows.length)} of {filteredRows.length} Rolls</span></div>
+          <div className="flex items-center gap-4">
+            <Select value={rowsPerPage.toString()} onValueChange={v => { setRowsPerPage(Number(v)); setCurrentPage(1); }}>
+              <SelectTrigger className="h-9 w-[120px] bg-white text-[12px] font-semibold uppercase rounded-xl border-none shadow-sm"><SelectValue /></SelectTrigger>
+              <SelectContent className="z-[100] border-none shadow-2xl rounded-xl">{[10, 20, 50, 100].map(v => <SelectItem key={v} value={v.toString()}>{v} Rows</SelectItem>)}</SelectContent>
+            </Select>
+            <span className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Showing {filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredRows.length)} of {filteredRows.length} Rolls
+              <span className="mx-2 opacity-30">|</span>
+              Page {currentPage} of {totalPages}
+            </span>
+          </div>
           <div className="flex items-center gap-3"><Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button><span className="text-[12px] font-bold bg-white border-2 border-slate-200 h-9 w-12 flex items-center justify-center rounded-xl shadow-inner">{currentPage}</span><Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button></div>
         </div>
       </Card>
@@ -949,6 +1019,9 @@ export default function PaperStockPage() {
             top: 0 !important;
             width: 100% !important;
             background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            display: block !important;
           }
           .label-print-item {
             page-break-after: always;
