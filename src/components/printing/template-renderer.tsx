@@ -55,7 +55,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
     if (!text) return "";
     return text.replace(/\{\{(.+?)\}\}/g, (match, key) => {
       const cleanKey = key.trim();
-      return data[cleanKey] !== undefined ? String(data[cleanKey]) : match;
+      return data[cleanKey] !== undefined ? String(data[cleanKey]) : ""; // Return empty if not found to handle fallbacks correctly
     });
   };
 
@@ -150,7 +150,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
           </div>
         );
       case 'barcode':
-        const barcodeVal = processText(el.placeholder || "") || "123456789012";
+        const barcodeVal = processText(el.placeholder || "") || data.rollNo || data.id || "123456789012";
         return (
           <div style={style}>
             <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'center' }}>
@@ -166,7 +166,13 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
           </div>
         );
       case 'qr':
-        const qrVal = processText(el.placeholder || "") || "NA";
+        let qrVal = processText(el.placeholder || "");
+        
+        // FIX: If placeholder resolution returns empty, use fallbacks to avoid "NA"
+        if (!qrVal || qrVal.trim() === "") {
+          qrVal = data.roll_url || data.rollNo || data.id || "NA";
+        }
+
         return (
           <div 
             style={{ 

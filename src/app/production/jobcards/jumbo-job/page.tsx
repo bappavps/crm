@@ -228,19 +228,18 @@ function JumboJobCardContent() {
     
     return {
       ...job,
-      job_card_id: job?.job_card_no,
-      machine_name: job?.machine,
-      operator_name: job?.operator,
-      parent_roll: job?.parent_roll,
+      job_card_id: job?.job_card_no || "",
+      machine_name: job?.machine || "",
+      operator_name: job?.operator || "",
+      parent_roll: job?.parent_roll || "",
       sourceRolls: rawSourceRolls.map(r => ({
-        rollId: r.rollNo,
-        paperType: r.paperType,
-        width: r.widthMm,
-        length: r.lengthMeters,
-        company: r.paperCompany
+        rollId: r.rollNo || "",
+        paperType: r.paperType || "",
+        width: r.widthMm || 0,
+        length: r.lengthMeters || 0,
+        company: r.paperCompany || ""
       })),
       SLIT_ROLLS: children,
-      // Generic mappings
       company_name: "Shree Label Creation",
       current_date: new Date().toLocaleDateString()
     };
@@ -248,18 +247,18 @@ function JumboJobCardContent() {
 
   const prepareRollData = (roll: any) => ({
     ...roll,
-    roll_no: roll.rollNo,
-    paper_type: roll.paperType,
-    width: roll.widthMm,
-    length: roll.lengthMeters,
-    gsm: roll.gsm,
-    weight: roll.weightKg,
-    company: roll.paperCompany,
-    date: roll.receivedDate,
-    company_name: roll.paperCompany,
-    current_date: roll.receivedDate,
-    parent_roll_no: roll.rollNo,
-    lengthMtr: roll.lengthMeters,
+    roll_no: roll.rollNo || "",
+    id: roll.id || "",
+    parent_roll_no: roll.rollNo || "",
+    paper_type: roll.paperType || "",
+    width: roll.widthMm || 0,
+    length: roll.lengthMeters || 0,
+    gsm: roll.gsm || 0,
+    weight: roll.weightKg || 0,
+    company: roll.paperCompany || "",
+    date: roll.receivedDate || "",
+    company_name: roll.paperCompany || "",
+    current_date: new Date().toLocaleDateString(),
     roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
   });
 

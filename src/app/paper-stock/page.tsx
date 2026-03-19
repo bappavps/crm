@@ -576,18 +576,18 @@ export default function PaperStockPage() {
 
   const prepareRollData = (roll: any) => ({
     ...roll,
-    roll_no: roll.rollNo,
-    paper_type: roll.paperType,
-    width: roll.widthMm,
-    length: roll.lengthMeters,
-    gsm: roll.gsm,
-    weight: roll.weightKg,
-    company: roll.paperCompany,
-    date: roll.receivedDate,
-    company_name: roll.paperCompany,
-    current_date: roll.receivedDate,
-    parent_roll_no: roll.rollNo,
-    lengthMtr: roll.lengthMeters,
+    roll_no: roll.rollNo || "",
+    id: roll.id || "",
+    parent_roll_no: roll.rollNo || "",
+    paper_type: roll.paperType || "",
+    width: roll.widthMm || 0,
+    length: roll.lengthMeters || 0,
+    gsm: roll.gsm || 0,
+    weight: roll.weightKg || 0,
+    company: roll.paperCompany || "",
+    date: roll.receivedDate || "",
+    company_name: roll.paperCompany || "",
+    current_date: new Date().toLocaleDateString(),
     roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
   });
 
