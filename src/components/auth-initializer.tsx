@@ -19,7 +19,10 @@ export function AuthInitializer() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!isUserLoading && !user && pathname !== '/login') {
+    // Allow public access to login and QR code roll pages
+    const isPublicPath = pathname === '/login' || pathname.startsWith('/roll/');
+    
+    if (!isUserLoading && !user && !isPublicPath) {
       router.push('/login');
     }
   }, [user, isUserLoading, pathname, router]);

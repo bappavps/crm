@@ -30,7 +30,10 @@ service cloud.firestore {
     }
 
     match /paper_stock/{id} {
-      allow read: if isSignedIn();
+      // Allow public "get" for QR code scanning on specific rolls
+      allow get: if true;
+      // Listing and writing still requires active user session
+      allow list: if isSignedIn();
       allow write: if isSignedIn() && isUserActive();
     }
 
