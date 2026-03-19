@@ -587,7 +587,8 @@ export default function PaperStockPage() {
     company_name: roll.paperCompany,
     current_date: roll.receivedDate,
     parent_roll_no: roll.rollNo,
-    lengthMtr: roll.lengthMeters
+    lengthMtr: roll.lengthMeters,
+    roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
   });
 
   const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");

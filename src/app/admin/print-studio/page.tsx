@@ -80,8 +80,9 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.4)
+ * PRINT TEMPLATE STUDIO (V8.5)
  * Enhanced with Element Locking, Duplication, and Corrected Line Rendering.
+ * QR Support for Roll Profile URLs.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -164,6 +165,7 @@ const PLACEHOLDERS = {
     { key: '{{length}}', label: 'Length (MTR)', icon: ArrowRightLeft, preview: '3000' },
     { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
     { key: '{{weight}}', label: 'Roll Weight (KG)', icon: Weight, preview: '245' },
+    { key: '{{roll_url}}', label: 'Roll Profile URL', icon: QrCode, preview: 'https://erp.shreelabel.com/roll/T-1038-A' },
   ],
   PRODUCTION: [
     { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
