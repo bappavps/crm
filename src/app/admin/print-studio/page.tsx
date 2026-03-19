@@ -48,6 +48,7 @@ import {
   RefreshCw,
   Paintbrush,
   Lock,
+  Unlock,
   Wallpaper,
   MousePointerSquareDashed,
   Table as TableIcon,
@@ -58,7 +59,8 @@ import {
   ArrowRightLeft,
   CornerUpLeft,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Weight
 } from "lucide-react"
 import { 
   Dialog, 
@@ -78,8 +80,8 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.3)
- * Enhanced with Source Rolls Dynamic Table support and Interactive QR codes.
+ * PRINT TEMPLATE STUDIO (V8.4)
+ * Enhanced with Element Locking, Duplication, and Corrected Line Rendering.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -94,6 +96,7 @@ interface TemplateElement {
   rotate: number;
   content?: string;
   placeholder?: string;
+  isLocked?: boolean;
   barcodeType?: 'CODE128' | 'CODE39' | 'EAN13' | 'UPC' | null;
   style: {
     fontSize: number;
@@ -160,6 +163,7 @@ const PLACEHOLDERS = {
     { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
     { key: '{{length}}', label: 'Length (MTR)', icon: ArrowRightLeft, preview: '3000' },
     { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
+    { key: '{{weight}}', label: 'Roll Weight (KG)', icon: Weight, preview: '245' },
   ],
   PRODUCTION: [
     { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
@@ -202,13 +206,16 @@ export default function PrintTemplateStudio() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedElementId && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || "")) {
-          deleteElement(selectedElementId);
+          const el = currentTemplate?.elements.find(e => e.id === selectedElementId);
+          if (el && !el.isLocked) {
+            deleteElement(selectedElementId);
+          }
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementId]);
+  }, [selectedElementId, currentTemplate]);
 
   const templatesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -425,11 +432,12 @@ export default function PrintTemplateStudio() {
       type,
       x: 100,
       y: 100,
-      width: type === 'qr' ? 80 : (type === 'barcode' ? 200 : (type === 'rectangle' || type === 'circle' ? 100 : (type === 'table' ? 600 : 150))),
-      height: type === 'qr' ? 80 : (type === 'barcode' ? 60 : (type === 'rectangle' || type === 'circle' ? 100 : (type === 'table' ? 200 : 30))),
+      width: type === 'qr' ? 80 : (type === 'barcode' ? 200 : (type === 'rectangle' || type === 'circle' ? 100 : (type === 'table' ? 600 : (type === 'line' ? 400 : 150)))),
+      height: type === 'qr' ? 80 : (type === 'barcode' ? 60 : (type === 'rectangle' || type === 'circle' ? 100 : (type === 'table' ? 200 : (type === 'line' ? 2 : 30)))),
       rotate: 0,
       content: content || (placeholder ? "" : (type === 'text' || type === 'title' ? "New Element" : "")),
       placeholder: placeholder || "",
+      isLocked: false,
       barcodeType: type === 'barcode' ? 'CODE128' : null,
       style: {
         fontSize: type === 'title' ? 24 : 14,
@@ -472,12 +480,47 @@ export default function PrintTemplateStudio() {
 
   const deleteElement = (id: string) => {
     if (!currentTemplate) return
+    const el = currentTemplate.elements.find(e => e.id === id);
+    if (el?.isLocked) {
+      toast({ variant: "destructive", title: "Element Locked", description: "Unlock to remove." });
+      return;
+    }
     setCurrentTemplate({
       ...currentTemplate,
       elements: currentTemplate.elements.filter(el => el.id !== id)
     })
     setSelectedElementId(null)
     toast({ title: "Element Removed" })
+  }
+
+  const duplicateElement = (id: string) => {
+    if (!currentTemplate) return
+    const el = currentTemplate.elements.find(e => e.id === id);
+    if (!el) return;
+
+    const newId = crypto.randomUUID();
+    const newEl: TemplateElement = {
+      ...JSON.parse(JSON.stringify(el)),
+      id: newId,
+      x: el.x + 10,
+      y: el.y + 10,
+      isLocked: false
+    };
+
+    setCurrentTemplate({
+      ...currentTemplate,
+      elements: [...currentTemplate.elements, newEl]
+    });
+    setSelectedElementId(newId);
+    toast({ title: "Element Duplicated" });
+  }
+
+  const toggleElementLock = (id: string) => {
+    if (!currentTemplate) return
+    const el = currentTemplate.elements.find(e => e.id === id);
+    if (!el) return;
+    updateElement(id, { isLocked: !el.isLocked });
+    toast({ title: el.isLocked ? "Element Unlocked" : "Element Locked" });
   }
 
   const moveElement = (direction: 'front' | 'back' | 'forward' | 'backward') => {
@@ -753,8 +796,8 @@ export default function PrintTemplateStudio() {
                       element={el} 
                       isSelected={selectedElementId === el.id} 
                       onSelect={(e) => { e.stopPropagation(); setSelectedElementId(el.id); }}
-                      onMove={(x, y) => updateElement(el.id, { x, y })}
-                      onResize={(width, height) => updateElement(el.id, { width, height })}
+                      onMove={(x, y) => !el.isLocked && updateElement(el.id, { x, y })}
+                      onResize={(width, height) => !el.isLocked && updateElement(el.id, { width, height })}
                       gridSnap={gridSnap}
                     />
                   ))}
@@ -780,20 +823,28 @@ export default function PrintTemplateStudio() {
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
                       <Settings2 className="h-4 w-4" /> Properties
                     </h4>
-                    {!currentTemplate?.isSystemTemplate && (
-                      <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10" onClick={() => deleteElement(selectedElement.id)}>
-                        <Trash2 className="h-4 w-4" />
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-primary/10" title="Duplicate" onClick={() => duplicateElement(selectedElement.id)}>
+                        <Copy className="h-4 w-4" />
                       </Button>
-                    )}
+                      <Button variant="ghost" size="icon" className={cn("h-8 w-8 hover:bg-primary/10", selectedElement.isLocked && "text-primary")} title={selectedElement.isLocked ? "Unlock" : "Lock"} onClick={() => toggleElementLock(selectedElement.id)}>
+                        {selectedElement.isLocked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                      </Button>
+                      {!currentTemplate?.isSystemTemplate && (
+                        <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10" disabled={selectedElement.isLocked} onClick={() => deleteElement(selectedElement.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-6">
                     <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Dimension</Label>
                     <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">X Pos</Label><Input type="number" value={selectedElement.x} onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Y Pos</Label><Input type="number" value={selectedElement.y} onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Width</Label><Input type="number" value={selectedElement.width} onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
-                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Height</Label><Input type="number" value={selectedElement.height} onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">X Pos</Label><Input type="number" value={selectedElement.x} onChange={e => !selectedElement.isLocked && updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Y Pos</Label><Input type="number" value={selectedElement.y} onChange={e => !selectedElement.isLocked && updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Width</Label><Input type="number" value={selectedElement.width} onChange={e => !selectedElement.isLocked && updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} /></div>
+                      <div className="space-y-1.5"><Label className="text-[9px] uppercase font-bold text-slate-400">Height</Label><Input type="number" value={selectedElement.height} onChange={e => !selectedElement.isLocked && selectedElement.type !== 'line' && updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-9 text-xs font-black rounded-lg" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked || selectedElement.type === 'line'} /></div>
                     </div>
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
@@ -803,8 +854,8 @@ export default function PrintTemplateStudio() {
                       <Slider 
                         value={[selectedElement.rotate]} 
                         min={0} max={360} step={1} 
-                        onValueChange={v => updateElement(selectedElement.id, { rotate: v[0] })} 
-                        disabled={currentTemplate?.isSystemTemplate}
+                        onValueChange={v => !selectedElement.isLocked && updateElement(selectedElement.id, { rotate: v[0] })} 
+                        disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}
                       />
                     </div>
                   </div>
@@ -822,8 +873,8 @@ export default function PrintTemplateStudio() {
                         <Slider 
                           value={[(selectedElement.style.opacity || 1) * 100]} 
                           min={0} max={100} step={1} 
-                          onValueChange={v => updateElementStyle(selectedElement.id, { opacity: v[0] / 100 })} 
-                          disabled={currentTemplate?.isSystemTemplate}
+                          onValueChange={v => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { opacity: v[0] / 100 })} 
+                          disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}
                         />
                       </div>
                     )}
@@ -832,8 +883,8 @@ export default function PrintTemplateStudio() {
                       <div className="space-y-3">
                         <Label className="text-[9px] uppercase font-bold text-slate-400">Fill Color</Label>
                         <div className="flex gap-2">
-                          <Input type="color" value={selectedElement.style.backgroundColor === 'transparent' ? '#ffffff' : selectedElement.style.backgroundColor} onChange={e => updateElementStyle(selectedElement.id, { backgroundColor: e.target.value })} className="h-9 w-12 p-1 rounded-lg" disabled={currentTemplate?.isSystemTemplate} />
-                          <Button variant="outline" size="sm" className="h-9 text-[9px] uppercase font-black" onClick={() => updateElementStyle(selectedElement.id, { backgroundColor: 'transparent' })} disabled={currentTemplate?.isSystemTemplate}>Transparent</Button>
+                          <Input type="color" value={selectedElement.style.backgroundColor === 'transparent' ? '#ffffff' : selectedElement.style.backgroundColor} onChange={e => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { backgroundColor: e.target.value })} className="h-9 w-12 p-1 rounded-lg" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} />
+                          <Button variant="outline" size="sm" className="h-9 text-[9px] uppercase font-black" onClick={() => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { backgroundColor: 'transparent' })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}>Transparent</Button>
                         </div>
                       </div>
                     )}
@@ -842,11 +893,18 @@ export default function PrintTemplateStudio() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                           <Label className="text-[9px] uppercase font-bold text-slate-400">Stroke Color</Label>
-                          <Input type="color" value={selectedElement.style.borderColor || '#000000'} onChange={e => updateElementStyle(selectedElement.id, { borderColor: e.target.value })} className="h-9 w-full p-1 rounded-lg" disabled={currentTemplate?.isSystemTemplate} />
+                          <Input type="color" value={selectedElement.style.borderColor || '#000000'} onChange={e => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { borderColor: e.target.value })} className="h-9 w-full p-1 rounded-lg" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} />
                         </div>
                         <div className="space-y-1.5">
-                          <Label className="text-[9px] uppercase font-bold text-slate-400">Weight</Label>
-                          <Input type="number" value={selectedElement.style.borderWidth || 0} onChange={e => updateElementStyle(selectedElement.id, { borderWidth: Number(e.target.value) })} className="h-9 font-bold" disabled={currentTemplate?.isSystemTemplate} />
+                          <Label className="text-[9px] uppercase font-bold text-slate-400">{selectedElement.type === 'line' ? 'Thickness' : 'Weight'}</Label>
+                          <Input type="number" value={selectedElement.style.borderWidth || 0} onChange={e => {
+                            if (selectedElement.isLocked) return;
+                            const val = Number(e.target.value);
+                            updateElementStyle(selectedElement.id, { borderWidth: val });
+                            if (selectedElement.type === 'line') {
+                              updateElement(selectedElement.id, { height: val });
+                            }
+                          }} className="h-9 font-bold" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} />
                         </div>
                       </div>
                     )}
@@ -860,8 +918,8 @@ export default function PrintTemplateStudio() {
                         <Slider 
                           value={[selectedElement.style.borderRadius || 0]} 
                           min={0} max={100} step={1} 
-                          onValueChange={v => updateElementStyle(selectedElement.id, { borderRadius: v[0] })} 
-                          disabled={currentTemplate?.isSystemTemplate}
+                          onValueChange={v => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { borderRadius: v[0] })} 
+                          disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}
                         />
                       </div>
                     )}
@@ -876,15 +934,18 @@ export default function PrintTemplateStudio() {
                           <Label className="text-[9px] uppercase font-bold text-slate-400">Content</Label>
                           <Input 
                             value={selectedElement.type === 'field' ? selectedElement.placeholder : selectedElement.content} 
-                            onChange={e => selectedElement.type === 'field' ? updateElement(selectedElement.id, { placeholder: e.target.value }) : updateElement(selectedElement.id, { content: e.target.value })} 
+                            onChange={e => {
+                              if (selectedElement.isLocked) return;
+                              selectedElement.type === 'field' ? updateElement(selectedElement.id, { placeholder: e.target.value }) : updateElement(selectedElement.id, { content: e.target.value });
+                            }} 
                             className="h-10 text-xs font-bold" 
-                            disabled={currentTemplate?.isSystemTemplate} 
+                            disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} 
                           />
                         </div>
                       )}
                       <div className="space-y-1.5">
                         <Label className="text-[9px] uppercase font-bold text-slate-400">Font Family</Label>
-                        <Select value={selectedElement.style.fontFamily} onValueChange={v => updateElementStyle(selectedElement.id, { fontFamily: v })} disabled={currentTemplate?.isSystemTemplate}>
+                        <Select value={selectedElement.style.fontFamily} onValueChange={v => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { fontFamily: v })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}>
                           <SelectTrigger className="h-10 text-xs font-black"><SelectValue /></SelectTrigger>
                           <SelectContent className="z-[200]">
                             {FONT_FAMILIES.map(f => <SelectItem key={f.id} value={f.id} style={{ fontFamily: f.value }}>{f.name}</SelectItem>)}
@@ -894,20 +955,20 @@ export default function PrintTemplateStudio() {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-1.5">
                           <Label className="text-[9px] uppercase font-bold text-slate-400">Text Size</Label>
-                          <Input type="number" value={selectedElement.style.fontSize} onChange={e => updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-9 text-xs" disabled={currentTemplate?.isSystemTemplate} />
+                          <Input type="number" value={selectedElement.style.fontSize} onChange={e => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-9 text-xs" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} />
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-[9px] uppercase font-bold text-slate-400">Text Color</Label>
-                          <Input type="color" value={selectedElement.style.color} onChange={e => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 w-full p-1" disabled={currentTemplate?.isSystemTemplate} />
+                          <Input type="color" value={selectedElement.style.color} onChange={e => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 w-full p-1" disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} />
                         </div>
                       </div>
                       <div className="space-y-1.5">
                         <Label className="text-[9px] uppercase font-bold text-slate-400">Alignment</Label>
                         <div className="flex bg-slate-100 p-1 rounded-lg gap-1">
-                          <Button variant={selectedElement.style.textAlign === 'left' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'left' })} disabled={currentTemplate?.isSystemTemplate}><AlignLeft className="h-3 w-3" /></Button>
-                          <Button variant={selectedElement.style.textAlign === 'center' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'center' })} disabled={currentTemplate?.isSystemTemplate}><AlignCenter className="h-3 w-3" /></Button>
-                          <Button variant={selectedElement.style.textAlign === 'right' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'right' })} disabled={currentTemplate?.isSystemTemplate}><AlignRight className="h-3 w-3" /></Button>
-                          <Button variant={selectedElement.style.textAlign === 'justify' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'justify' })} disabled={currentTemplate?.isSystemTemplate}><AlignJustify className="h-3 w-3" /></Button>
+                          <Button variant={selectedElement.style.textAlign === 'left' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { textAlign: 'left' })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}><AlignLeft className="h-3 w-3" /></Button>
+                          <Button variant={selectedElement.style.textAlign === 'center' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { textAlign: 'center' })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}><AlignCenter className="h-3 w-3" /></Button>
+                          <Button variant={selectedElement.style.textAlign === 'right' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { textAlign: 'right' })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}><AlignRight className="h-3 w-3" /></Button>
+                          <Button variant={selectedElement.style.textAlign === 'justify' ? 'secondary' : 'ghost'} size="sm" className="flex-1 h-8" onClick={() => !selectedElement.isLocked && updateElementStyle(selectedElement.id, { textAlign: 'justify' })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}><AlignJustify className="h-3 w-3" /></Button>
                         </div>
                       </div>
                     </div>
@@ -921,15 +982,16 @@ export default function PrintTemplateStudio() {
                         <Label className="text-[9px] uppercase font-bold text-slate-400">Placeholder Binding</Label>
                         <Input 
                           value={selectedElement.placeholder} 
-                          onChange={e => updateElement(selectedElement.id, { placeholder: e.target.value })} 
+                          onChange={e => !selectedElement.isLocked && updateElement(selectedElement.id, { placeholder: e.target.value })} 
                           placeholder="{{roll_no}}" 
                           className="h-10 text-xs font-bold" 
+                          disabled={selectedElement.isLocked}
                         />
                       </div>
                       {selectedElement.type === 'barcode' && (
                         <div className="space-y-1.5">
                           <Label className="text-[9px] uppercase font-bold text-slate-400">Symbology</Label>
-                          <Select value={selectedElement.barcodeType || 'CODE128'} onValueChange={(v: any) => updateElement(selectedElement.id, { barcodeType: v })} disabled={currentTemplate?.isSystemTemplate}>
+                          <Select value={selectedElement.barcodeType || 'CODE128'} onValueChange={(v: any) => !selectedElement.isLocked && updateElement(selectedElement.id, { barcodeType: v })} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked}>
                             <SelectTrigger className="h-10 font-bold"><SelectValue /></SelectTrigger>
                             <SelectContent className="z-[200]">
                               <SelectItem value="CODE128">Code 128 (Alpha-Numeric)</SelectItem>
@@ -946,10 +1008,10 @@ export default function PrintTemplateStudio() {
                   {selectedElement.type === 'image' && (
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Image Source</Label>
-                      <div className="p-8 border-2 border-dashed rounded-2xl text-center bg-slate-50 hover:bg-primary/5 hover:border-primary/20 relative group transition-all">
+                      <div className={cn("p-8 border-2 border-dashed rounded-2xl text-center bg-slate-50 hover:bg-primary/5 hover:border-primary/20 relative group transition-all", selectedElement.isLocked && "opacity-50 pointer-events-none")}>
                         <Upload className="h-10 w-10 mx-auto text-slate-300 group-hover:text-primary mb-2" />
                         <p className="text-[10px] font-black uppercase text-slate-400 group-hover:text-primary">Change Asset</p>
-                        <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageUpload} disabled={currentTemplate?.isSystemTemplate} />
+                        <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleImageUpload} disabled={currentTemplate?.isSystemTemplate || selectedElement.isLocked} />
                       </div>
                     </div>
                   )}
@@ -1105,6 +1167,8 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation()
     onSelect(e)
+    if (element.isLocked) return;
+    
     isDragging.current = true
     startPos.current = { x: e.clientX - element.x, y: e.clientY - element.y, w: 0, h: 0 }
     
@@ -1126,6 +1190,8 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
 
   const handleResizeStart = (e: React.MouseEvent) => {
     e.stopPropagation()
+    if (element.isLocked) return;
+    
     isResizing.current = true
     startPos.current = { x: e.clientX, y: e.clientY, w: element.width, h: element.height }
 
@@ -1135,7 +1201,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
         const dh = moveEvent.clientY - startPos.current.y
         onResize(
           Math.max(10, Math.round((startPos.current.w + dw) / gridSnap) * gridSnap),
-          Math.max(10, Math.round((startPos.current.h + dh) / gridSnap) * gridSnap)
+          element.type === 'line' ? element.height : Math.max(10, Math.round((startPos.current.h + dh) / gridSnap) * gridSnap)
         )
       }
     }
@@ -1274,7 +1340,8 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
   return (
     <div 
       className={cn(
-        "absolute cursor-move select-none group flex items-center justify-center transition-shadow",
+        "absolute select-none group flex items-center justify-center transition-shadow",
+        !element.isLocked && "cursor-move",
         isSelected && "ring-2 ring-primary ring-offset-2 z-[60] shadow-2xl",
         !isSelected && "hover:ring-1 hover:ring-primary/30"
       )}
@@ -1287,9 +1354,14 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       }}
       onMouseDown={handleMouseDown}
     >
+      {element.isLocked && (
+        <div className="absolute top-[-10px] right-[-10px] z-[70] bg-slate-900 text-white rounded-full p-1 shadow-md">
+          <Lock className="h-2 w-2" />
+        </div>
+      )}
       {renderContent()}
 
-      {isSelected && (
+      {isSelected && !element.isLocked && (
         <div 
           className="absolute bottom-[-6px] right-[-6px] w-4 h-4 bg-primary cursor-nwse-resize rounded-full border-2 border-white shadow-lg z-[70] print:hidden" 
           onMouseDown={handleResizeStart} 

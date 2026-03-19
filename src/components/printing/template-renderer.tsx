@@ -69,11 +69,11 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
       left: `${el.x}px`,
       top: `${el.y}px`,
       width: `${el.width}px`,
-      height: `${el.height}px`,
+      height: el.type === 'line' ? `${el.style.borderWidth || 2}px` : `${el.height}px`,
       transform: `rotate(${el.rotate || 0}deg)`,
       opacity: el.style.opacity || 1,
-      backgroundColor: el.style.backgroundColor || 'transparent',
-      border: el.style.borderWidth ? `${el.style.borderWidth}px ${el.style.lineStyle || 'solid'} ${el.style.borderColor || '#000'}` : 'none',
+      backgroundColor: el.type === 'line' ? el.style.borderColor : (el.style.backgroundColor || 'transparent'),
+      border: (el.style.borderWidth && el.type !== 'line') ? `${el.style.borderWidth}px ${el.style.lineStyle || 'solid'} ${el.style.borderColor || '#000'}` : 'none',
       borderRadius: el.type === 'circle' ? '100%' : `${el.style.borderRadius || 0}px`,
       display: 'flex',
       alignItems: 'center',
@@ -101,7 +101,6 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
           </div>
         );
       case 'field':
-        // Support legacy field elements by processing their placeholder as a key
         return (
           <div style={style}>
             <span style={textStyle}>{processText(el.placeholder || "")}</span>
@@ -113,7 +112,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
         
         if (tableKey === 'sourceRolls') {
           return (
-            <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
+            <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', height: 'auto' }}>
               <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
                 <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
                 <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>PAPER TYPE</span>
@@ -133,7 +132,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
         }
 
         return (
-          <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start' }}>
+          <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', height: 'auto' }}>
             <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
               <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
               <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>W (MM)</span>
@@ -190,6 +189,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
         );
       case 'rectangle':
       case 'circle':
+        return <div style={style} />;
       case 'line':
         return <div style={style} />;
       case 'image':
@@ -235,7 +235,7 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
           </div>
         )}
 
-        {elements.map((el: TemplateElement) => (
+        {elements.map((el: any) => (
           <React.Fragment key={el.id}>
             {renderElement(el)}
           </React.Fragment>
