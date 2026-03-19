@@ -76,6 +76,7 @@ function JumboJobCardContent() {
   
   const [selectedJob, setSelectedJob] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [siteOrigin, setSiteOrigin] = useState("")
 
   // Template State
   const [selectedJobTemplateId, setSelectedJobTemplateId] = useState("default")
@@ -89,6 +90,12 @@ function JumboJobCardContent() {
     operator: "",
     child_rolls: [] as string[]
   })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setSiteOrigin(window.location.origin);
+    }
+  }, []);
 
   // Data Subscriptions
   const jobsQuery = useMemoFirebase(() => {
@@ -495,7 +502,7 @@ function JumboJobCardContent() {
                   </div>
                   <div className="flex flex-col items-end">
                     <div className="border-2 border-black p-1">
-                      <QRCodeSVG value={selectedJob?.job_card_no || ""} size={80} />
+                      <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "")} size={80} />
                     </div>
                     <p className="text-[8px] font-black uppercase mt-1">Scan to Update Status</p>
                   </div>
@@ -621,7 +628,7 @@ function JumboJobCardContent() {
                             <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll?.paperType || "SUBSTRATE"}</p></div>
                           </div>
                           <div className="flex flex-col items-end gap-2">
-                            <div className="border-2 border-black p-1"><QRCodeSVG value={code} size={120} /></div>
+                            <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll?.id || code.replace(/\//g, '-')}` : (roll?.id || code.replace(/\//g, '-'))} size={120} /></div>
                             <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
                           </div>
                         </div>

@@ -49,21 +49,20 @@ export default function Dashboard() {
   const isSales = role === 'Sales' || isAdmin || profile?.roles?.includes('Sales')
   const isProduction = role === 'Operator' || isAdmin || profile?.roles?.includes('Operator')
 
-  // 2. Live Data Queries - Optimized with Limits to save Quota
+  // 2. Live Data Queries - Optimized with expanded limits
   const ordersQuery = useMemoFirebase(() => {
     if (!firestore || !isSales) return null
-    return query(collection(firestore, 'salesOrders'), orderBy('createdAt', 'desc'), limit(100))
+    return query(collection(firestore, 'salesOrders'), orderBy('createdAt', 'desc'), limit(1000))
   }, [firestore, isSales])
 
   const productionQuery = useMemoFirebase(() => {
     if (!firestore || !isProduction) return null
-    return query(collection(firestore, 'jobs'), where("status", "==", "In Production"), limit(50))
+    return query(collection(firestore, 'jobs'), where("status", "==", "In Production"), limit(500))
   }, [firestore, isProduction])
 
   const inventoryQuery = useMemoFirebase(() => {
     if (!firestore || !isProduction) return null
-    // Changed jumbo_stock to paper_stock and limited to 100
-    return query(collection(firestore, 'paper_stock'), limit(100))
+    return query(collection(firestore, 'paper_stock'), limit(1000))
   }, [firestore, isProduction])
 
   const { data: orders, isLoading: ordersLoading } = useCollection(ordersQuery)
@@ -94,7 +93,7 @@ export default function Dashboard() {
     const totalMonthlySales = monthlyOrders.reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0)
 
     const totalInventoryValue = paperStock?.reduce((acc, j) => {
-      if (j.status === 'Available') return acc + (Number(j.sqm || 0) * Number(j.purchaseRate || 0))
+      if (j.status === 'Available' || j.status === 'Stock') return acc + (Number(j.sqm || 0) * Number(j.purchaseRate || 0))
       return acc
     }, 0) || 0
 

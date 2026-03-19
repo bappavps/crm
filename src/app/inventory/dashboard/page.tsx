@@ -56,15 +56,15 @@ export default function StockDashboard() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Optimized query: Standardized to paper_stock and limited to 100
+  // Optimized query: Standardized to paper_stock and expanded limit
   const jumboQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'paper_stock'), limit(100));
+    return query(collection(firestore, 'paper_stock'), limit(1000));
   }, [firestore, user, adminData]);
 
   const alertsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'alerts'), where("resolved", "==", false), limit(20));
+    return query(collection(firestore, 'alerts'), where("resolved", "==", false), limit(100));
   }, [firestore, user, adminData]);
 
   const { data: jumbos, isLoading: itemsLoading } = useCollection(jumboQuery)
@@ -97,7 +97,7 @@ export default function StockDashboard() {
     toast({ title: "Alert Resolved" });
   };
 
-  if (!isMounted || itemsLoading) return <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto" /></div>
+  if (!isMounted || itemsLoading) return <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
   if (!adminData) return <div className="p-20 text-center">Admin Access Required.</div>
 
   return (
@@ -110,7 +110,7 @@ export default function StockDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="border-l-4 border-l-primary shadow-sm"><CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0"><CardTitle className="text-xs font-bold uppercase text-muted-foreground">Total SQM (Sample)</CardTitle><Activity className="h-4 w-4 text-primary" /></CardHeader>
+        <Card className="border-l-4 border-l-primary shadow-sm"><CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0"><CardTitle className="text-xs font-bold uppercase text-muted-foreground">Total SQM</CardTitle><Activity className="h-4 w-4 text-primary" /></CardHeader>
           <CardContent><div className="text-3xl font-black text-primary">{metrics?.totalSqm.toLocaleString()}</div></CardContent></Card>
         <Card className="border-l-4 border-l-emerald-500 shadow-sm"><CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0"><CardTitle className="text-xs font-bold uppercase text-muted-foreground">Estimated Value</CardTitle><DollarSign className="h-4 w-4 text-emerald-500" /></CardHeader>
           <CardContent><div className="text-3xl font-black text-emerald-600">₹{metrics?.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</div></CardContent></Card>

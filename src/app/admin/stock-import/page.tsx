@@ -100,7 +100,7 @@ export default function StockImportPage() {
   const exportCurrentStock = async () => {
     if (!firestore) return;
     setIsProcessing(true);
-    getDocs(query(collection(firestore, 'jumbo_stock'), orderBy('rollNo', 'asc'))).then(snapshot => {
+    getDocs(query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'asc'))).then(snapshot => {
       const data = snapshot.docs.map(d => {
         const item = d.data();
         return {
@@ -136,7 +136,7 @@ export default function StockImportPage() {
     }).catch(async (serverError) => {
       setIsProcessing(false);
       const permissionError = new FirestorePermissionError({
-        path: 'jumbo_stock',
+        path: 'paper_stock',
         operation: 'list',
       });
       errorEmitter.emit('permission-error', permissionError);
@@ -167,7 +167,7 @@ export default function StockImportPage() {
         const missing = required.filter(k => !(k in firstRow));
         if (missing.length > 0) throw new Error(`Missing columns: ${missing.join(', ')}. Please use the provided template.`);
 
-        const existingSnap = await getDocs(collection(firestore, 'jumbo_stock'));
+        const existingSnap = await getDocs(collection(firestore, 'paper_stock'));
         const existingRolls = new Set(existingSnap.docs.map(d => d.data().rollNo));
 
         let inserted = 0;
@@ -191,7 +191,7 @@ export default function StockImportPage() {
             const length = Number(row["LENGTH (MTR)"]);
             const sqm = Number(row["SQM"]) || (width * length / 1000);
 
-            const docRef = doc(collection(firestore, 'jumbo_stock'), rollId);
+            const docRef = doc(collection(firestore, 'paper_stock'), rollId);
             batch.set(docRef, {
               rollNo: rollId,
               barcode: rollId,
@@ -256,7 +256,7 @@ export default function StockImportPage() {
         toast({ title: "Import Successful", description: `Added ${inserted} rolls. ${skipped} duplicates skipped.` });
       } catch (err: any) {
         const permissionError = new FirestorePermissionError({
-          path: 'jumbo_stock',
+          path: 'paper_stock',
           operation: 'write',
         });
         errorEmitter.emit('permission-error', permissionError);

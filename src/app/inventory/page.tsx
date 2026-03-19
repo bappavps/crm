@@ -92,20 +92,20 @@ export default function InventoryPage() {
   }, [firestore, user]);
   const { data: adminData } = useDoc(adminDocRef);
 
-  // Firestore Queries - STRICTLY LIMITED to prevent Quota Exceeded
+  // Firestore Queries - Expanded limits for better data visibility
   const inventoryQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'inventoryItems'), limit(100));
+    return query(collection(firestore, 'inventoryItems'), limit(1000));
   }, [firestore, user, adminData])
 
   const jumboQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'desc'), limit(100));
+    return query(collection(firestore, 'paper_stock'), orderBy('rollNo', 'desc'), limit(1000));
   }, [firestore, user, adminData])
 
   const alertsQuery = useMemoFirebase(() => {
     if (!firestore || !user || !adminData) return null;
-    return query(collection(firestore, 'alerts'), limit(50));
+    return query(collection(firestore, 'alerts'), limit(500));
   }, [firestore, user, adminData])
 
   const { data: inventory, isLoading: itemsLoading } = useCollection(inventoryQuery)

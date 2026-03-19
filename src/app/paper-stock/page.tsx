@@ -234,7 +234,7 @@ export default function PaperStockPage() {
 
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'paper_stock'), limit(1000));
+    return query(collection(firestore, 'paper_stock'), limit(5000));
   }, [firestore]);
 
   const machinesQuery = useMemoFirebase(() => {
@@ -284,9 +284,7 @@ export default function PaperStockPage() {
   const filteredRows = useMemo(() => {
     if (!rolls) return [];
     
-    // Applying filtering logic based on filters state
     let result = rolls.filter(item => {
-      // Functional requirement: Quick search and multi-select dropdowns
       if (filters.search) {
         const s = filters.search.toLowerCase();
         const matchesGlobal = Object.values(item).some(v => String(v || "").toLowerCase().includes(s));
@@ -296,17 +294,14 @@ export default function PaperStockPage() {
       if (filters.lotNoSearch && !String(item.lotNo || "").toLowerCase().includes(filters.lotNoSearch.toLowerCase())) return false;
       if (filters.rollNoSearch && !String(item.rollNo || "").toLowerCase().includes(filters.rollNoSearch.toLowerCase())) return false;
       
-      // Multi-select matching (Dropdowns)
       if (filters.paperCompany?.length > 0 && !filters.paperCompany.includes(String(item.paperCompany || ""))) return false;
       if (filters.paperType?.length > 0 && !filters.paperType.includes(String(item.paperType || ""))) return false;
       if (filters.gsm?.length > 0 && !filters.gsm.includes(String(item.gsm || ""))) return false;
       if (filters.status?.length > 0 && !filters.status.includes(String(item.status || ""))) return false;
       
-      // Date Range logic
       if (filters.receivedFrom && item.receivedDate < filters.receivedFrom) return false;
       if (filters.receivedTo && item.receivedDate > filters.receivedTo) return false;
 
-      // Advanced mode: Excel-style column filters
       if (filterMode === 'advanced') {
         for (const [key, selected] of Object.entries(headerFilters)) {
           if (selected && selected.length > 0) {
@@ -434,7 +429,6 @@ export default function PaperStockPage() {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     
-    // SANITIZE ID: Slashes are invalid in Firestore doc paths
     const rollId = formData.rollNo.trim().replace(/\//g, '-');
     
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
@@ -488,7 +482,7 @@ export default function PaperStockPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
       scanner.render((decodedText) => {
-        const match = rolls?.find(r => r.rollNo === decodedText);
+        const match = rolls?.find(r => r.rollNo === decodedText || r.id === decodedText);
         if (match) { setHighlightedId(match.id); setViewingRoll(match); setIsViewOpen(true); scanner.clear(); setIsScannerOpen(false); }
       }, () => {});
     }, 500);
@@ -547,7 +541,6 @@ export default function PaperStockPage() {
 
   const handleResetAll = () => { setFilters(initialFilters); setHeaderFilters({}); setSortConfig({ key: 'rollNo', direction: 'desc' }); setCurrentPage(1); setSelectedIds(new Set()); }
 
-  // Template Mappings
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
   const activeReportTemplate = reportTemplates?.find(t => t.id === selectedReportTemplateId);
 
@@ -560,7 +553,6 @@ export default function PaperStockPage() {
     gsm: roll.gsm,
     company: roll.paperCompany,
     date: roll.receivedDate,
-    // Add specific keys requested for advanced placeholder mapping
     company_name: roll.paperCompany,
     current_date: roll.receivedDate,
     parent_roll_no: roll.rollNo,
@@ -829,7 +821,7 @@ export default function PaperStockPage() {
                           <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll.paperType || "SUBSTRATE"}</p></div>
                         </div>
                         <div className="flex flex-col items-end gap-2">
-                          <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.rollNo}` : roll.rollNo} size={120} /></div>
+                          <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.id}` : roll.id} size={120} /></div>
                           <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
                         </div>
                       </div>
@@ -867,7 +859,7 @@ export default function PaperStockPage() {
                   <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
                 </div>
                 <div className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800">
-                  <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.rollNo}` : (viewingRoll?.rollNo || "")} size={120} />
+                  <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.id}` : (viewingRoll?.id || "")} size={120} />
                 </div>
               </div>
               <Badge className={cn("px-4 py-1.5 rounded-full font-semibold text-[10px] uppercase shadow-lg", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>
