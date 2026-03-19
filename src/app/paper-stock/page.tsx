@@ -234,7 +234,7 @@ export default function PaperStockPage() {
 
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'paper_stock'), limit(5000));
+    return query(collection(firestore, 'paper_stock'), limit(10000)); // Increased limit
   }, [firestore]);
 
   const machinesQuery = useMemoFirebase(() => {
@@ -429,6 +429,7 @@ export default function PaperStockPage() {
     e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     
+    // SANITIZE ID: Replace slashes with hyphens
     const rollId = formData.rollNo.trim().replace(/\//g, '-');
     
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
@@ -482,7 +483,9 @@ export default function PaperStockPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 }, false);
       scanner.render((decodedText) => {
-        const match = rolls?.find(r => r.rollNo === decodedText || r.id === decodedText);
+        // Sanitize scanned text if it contains slashes for lookup
+        const sanitizedText = decodedText.replace(/\//g, '-');
+        const match = rolls?.find(r => r.rollNo === sanitizedText || r.rollNo === decodedText || r.id === sanitizedText || r.id === decodedText);
         if (match) { setHighlightedId(match.id); setViewingRoll(match); setIsViewOpen(true); scanner.clear(); setIsScannerOpen(false); }
       }, () => {});
     }, 500);

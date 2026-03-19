@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -70,9 +71,9 @@ const FIELD_LABELS: Record<string, string> = {
 
 const TEMPLATE_HEADERS = Object.values(FIELD_LABELS);
 
-const MAX_ROWS = 5000;
-const MAX_FILE_SIZE_MB = 10;
-const CHUNK_SIZE = 200;
+const MAX_ROWS = 10000;
+const MAX_FILE_SIZE_MB = 20;
+const CHUNK_SIZE = 500;
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-zinc-900" },
@@ -120,8 +121,8 @@ const findBestMatch = (targetLabel: string, systemKey: string, fileHeaders: stri
   if (match) return match;
 
   const aliases: Record<string, string[]> = {
-    rollNo: ['roll', 'rollno', 'id', 'reeliid', 'reelno'],
-    receivedDate: ['date', 'entry', 'received', 'datereceived', 'dateofreceived'],
+    rollNo: ['roll', 'rollno', 'id', 'reeliid', 'reelno', 'rellno'],
+    receivedDate: ['date', 'entry', 'received', 'datereceived', 'dateofreceived', 'receiveddate'],
     widthMm: ['width', 'wmm', 'widthmm'],
     lengthMeters: ['length', 'lmtr', 'mtr', 'lengthmtr'],
     paperCompany: ['company', 'mfr', 'supplier', 'papercompany', 'vendor'],
@@ -355,7 +356,7 @@ export default function StockImportPage() {
     if (!firestore) return
     setIsProcessing(true)
     try {
-      const q = query(collection(firestore, 'paper_stock'), limit(5000));
+      const q = query(collection(firestore, 'paper_stock'), limit(10000));
       const snap = await getDocs(q);
       const data = snap.docs.map(d => {
         const r = d.data();
@@ -461,7 +462,7 @@ export default function StockImportPage() {
                   <div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2"><FileUp className="h-10 w-10 text-primary" /></div>
                   <Label htmlFor="file-upload" className="cursor-pointer space-y-4 block">
                     <span className="text-2xl font-black text-primary underline underline-offset-8">Select inventory file</span>
-                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV (Max 10MB)</p>
+                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest pt-4">XLSX, XLS, or CSV (Max 20MB)</p>
                     <Input id="file-upload" type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleFileUpload} />
                   </Label>
                 </>
@@ -630,20 +631,4 @@ export default function StockImportPage() {
       )}
     </div>
   );
-}
-
-function MetricCard({ icon: Icon, label, value, color, bg }: { icon: any, label: string, value: any, color: string, bg: string }) {
-  return (
-    <Card className="border-none shadow-lg rounded-2xl group hover:scale-105 transition-all duration-300">
-      <CardContent className="p-6 flex flex-col items-center text-center gap-2">
-        <div className={cn("p-3 rounded-2xl shadow-inner", bg)}>
-          <Icon className={cn("h-5 w-5", color)} />
-        </div>
-        <div className="space-y-0.5">
-          <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">{label}</p>
-          <p className={cn("text-2xl font-black tracking-tighter", color)}>{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  )
 }
