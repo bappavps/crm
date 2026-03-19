@@ -60,7 +60,8 @@ import {
   CornerUpLeft,
   ChevronUp,
   ChevronDown,
-  Weight
+  Weight,
+  X
 } from "lucide-react"
 import { 
   Dialog, 
@@ -80,9 +81,9 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.5)
- * Enhanced with Element Locking, Duplication, and Corrected Line Rendering.
- * QR Support for Roll Profile URLs.
+ * PRINT TEMPLATE STUDIO (V8.6)
+ * Enhanced with Image Compression and Robust State Management.
+ * Resolves Firestore size limit issues for images.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -177,6 +178,44 @@ const PLACEHOLDERS = {
 };
 
 const MM_TO_PX = 3.78; 
+
+/**
+ * Compresses an image to fit within Firestore document limits.
+ */
+const compressImage = (base64Str: string, maxWidth = 1000, maxHeight = 1000): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onerror = reject;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width *= maxHeight / height;
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(base64Str);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.7)); // Optimized for storage
+    };
+  });
+};
 
 export default function PrintTemplateStudio() {
   const { toast } = useToast()
@@ -375,12 +414,20 @@ export default function PrintTemplateStudio() {
       }, { merge: true })
       toast({ title: "Template Saved" })
     } catch (e: any) {
-      const permissionError = new FirestorePermissionError({
-        path: docRef.path,
-        operation: 'update',
-        requestResourceData: cleanedTemplate
-      });
-      errorEmitter.emit('permission-error', permissionError);
+      if (e.code === 'invalid-argument' || e.message?.includes('too large')) {
+        toast({ 
+          variant: "destructive", 
+          title: "Template Too Large", 
+          description: "Images added are taking too much space. Please use smaller assets." 
+        });
+      } else {
+        const permissionError = new FirestorePermissionError({
+          path: docRef.path,
+          operation: 'update',
+          requestResourceData: cleanedTemplate
+        });
+        errorEmitter.emit('permission-error', permissionError);
+      }
     } finally {
       setIsSaving(false)
     }
@@ -427,7 +474,6 @@ export default function PrintTemplateStudio() {
   }
 
   const addElement = (type: ElementType, placeholder?: string, content?: string) => {
-    if (!currentTemplate) return
     const id = crypto.randomUUID()
     const newEl: TemplateElement = {
       id,
@@ -455,94 +501,116 @@ export default function PrintTemplateStudio() {
         lineStyle: 'solid'
       }
     }
-    setCurrentTemplate({
-      ...currentTemplate,
-      elements: [...currentTemplate.elements, newEl]
-    })
+    
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        elements: [...prev.elements, newEl]
+      }
+    });
     setSelectedElementId(id)
   }
 
   const updateElement = (id: string, updates: Partial<TemplateElement>) => {
-    if (!currentTemplate) return
-    setCurrentTemplate({
-      ...currentTemplate,
-      elements: currentTemplate.elements.map(el => el.id === id ? { ...el, ...updates } : el)
-    })
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        elements: prev.elements.map(el => el.id === id ? { ...el, ...updates } : el)
+      }
+    });
   }
 
   const updateElementStyle = (id: string, styleUpdates: any) => {
-    if (!currentTemplate) return
-    setCurrentTemplate({
-      ...currentTemplate,
-      elements: currentTemplate.elements.map(el => 
-        el.id === id ? { ...el, style: { ...el.style, ...styleUpdates } } : el
-      )
-    })
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      return {
+        ...prev,
+        elements: prev.elements.map(el => 
+          el.id === id ? { ...el, style: { ...el.style, ...styleUpdates } } : el
+        )
+      }
+    });
   }
 
   const deleteElement = (id: string) => {
-    if (!currentTemplate) return
-    const el = currentTemplate.elements.find(e => e.id === id);
-    if (el?.isLocked) {
-      toast({ variant: "destructive", title: "Element Locked", description: "Unlock to remove." });
-      return;
-    }
-    setCurrentTemplate({
-      ...currentTemplate,
-      elements: currentTemplate.elements.filter(el => el.id !== id)
-    })
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      const el = prev.elements.find(e => e.id === id);
+      if (el?.isLocked) {
+        toast({ variant: "destructive", title: "Element Locked", description: "Unlock to remove." });
+        return prev;
+      }
+      return {
+        ...prev,
+        elements: prev.elements.filter(el => el.id !== id)
+      }
+    });
     setSelectedElementId(null)
-    toast({ title: "Element Removed" })
   }
 
   const duplicateElement = (id: string) => {
-    if (!currentTemplate) return
-    const el = currentTemplate.elements.find(e => e.id === id);
-    if (!el) return;
-
     const newId = crypto.randomUUID();
-    const newEl: TemplateElement = {
-      ...JSON.parse(JSON.stringify(el)),
-      id: newId,
-      x: el.x + 10,
-      y: el.y + 10,
-      isLocked: false
-    };
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      const el = prev.elements.find(e => e.id === id);
+      if (!el) return prev;
 
-    setCurrentTemplate({
-      ...currentTemplate,
-      elements: [...currentTemplate.elements, newEl]
+      const newEl: TemplateElement = {
+        ...JSON.parse(JSON.stringify(el)),
+        id: newId,
+        x: el.x + 10,
+        y: el.y + 10,
+        isLocked: false
+      };
+
+      return {
+        ...prev,
+        elements: [...prev.elements, newEl]
+      }
     });
     setSelectedElementId(newId);
     toast({ title: "Element Duplicated" });
   }
 
   const toggleElementLock = (id: string) => {
-    if (!currentTemplate) return
-    const el = currentTemplate.elements.find(e => e.id === id);
-    if (!el) return;
-    updateElement(id, { isLocked: !el.isLocked });
-    toast({ title: el.isLocked ? "Element Unlocked" : "Element Locked" });
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      const el = prev.elements.find(e => e.id === id);
+      if (!el) return prev;
+      
+      const nextStatus = !el.isLocked;
+      toast({ title: nextStatus ? "Element Locked" : "Element Unlocked" });
+      
+      return {
+        ...prev,
+        elements: prev.elements.map(e => e.id === id ? { ...e, isLocked: nextStatus } : e)
+      }
+    });
   }
 
   const moveElement = (direction: 'front' | 'back' | 'forward' | 'backward') => {
-    if (!currentTemplate || !selectedElementId) return;
-    const elements = [...currentTemplate.elements];
-    const index = elements.findIndex(el => el.id === selectedElementId);
-    if (index === -1) return;
+    if (!selectedElementId) return;
+    setCurrentTemplate(prev => {
+      if (!prev) return null;
+      const elements = [...prev.elements];
+      const index = elements.findIndex(el => el.id === selectedElementId);
+      if (index === -1) return prev;
 
-    const el = elements.splice(index, 1)[0];
-    if (direction === 'front') {
-      elements.push(el);
-    } else if (direction === 'back') {
-      elements.unshift(el);
-    } else if (direction === 'forward') {
-      elements.splice(Math.min(elements.length, index + 1), 0, el);
-    } else {
-      elements.splice(Math.max(0, index - 1), 0, el);
-    }
+      const el = elements.splice(index, 1)[0];
+      if (direction === 'front') {
+        elements.push(el);
+      } else if (direction === 'back') {
+        elements.unshift(el);
+      } else if (direction === 'forward') {
+        elements.splice(Math.min(elements.length, index + 1), 0, el);
+      } else {
+        elements.splice(Math.max(0, index - 1), 0, el);
+      }
 
-    setCurrentTemplate({ ...currentTemplate, elements });
+      return { ...prev, elements };
+    });
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isBackground = false) => {
@@ -550,22 +618,65 @@ export default function PrintTemplateStudio() {
     if (!file) return
 
     const reader = new FileReader()
-    reader.onload = (evt) => {
-      const base64 = evt.target?.result as string
-      if (isBackground && currentTemplate) {
-        setCurrentTemplate({
-          ...currentTemplate,
-          background: {
-            ...currentTemplate.background!,
-            image: base64
-          }
-        })
-        toast({ title: "Background Layer Set" })
-      } else if (selectedElement && selectedElement.type === 'image') {
-        updateElement(selectedElement.id, { content: base64 })
-        toast({ title: "Asset Loaded" })
-      } else {
-        addElement('image', undefined, base64)
+    reader.onload = async (evt) => {
+      try {
+        let base64 = evt.target?.result as string
+        
+        // Compress to ensure it fits in Firestore (Max 1MB doc size)
+        base64 = await compressImage(base64);
+
+        if (isBackground) {
+          setCurrentTemplate(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              background: {
+                ...prev.background!,
+                image: base64
+              }
+            }
+          })
+          toast({ title: "Background Layer Set" })
+        } else {
+          // Determine if we update existing image or add new
+          setCurrentTemplate(prev => {
+            if (!prev) return null;
+            const selId = selectedElementId;
+            const targetEl = prev.elements.find(el => el.id === selId && el.type === 'image');
+
+            if (targetEl) {
+              return {
+                ...prev,
+                elements: prev.elements.map(el => el.id === selId ? { ...el, content: base64 } : el)
+              }
+            } else {
+              // Add new image element
+              const id = crypto.randomUUID();
+              const newEl: TemplateElement = {
+                id,
+                type: 'image',
+                x: 100, y: 100, width: 150, height: 150,
+                rotate: 0,
+                content: base64,
+                placeholder: "",
+                isLocked: false,
+                style: {
+                  fontSize: 14, fontWeight: 'normal', textAlign: 'left', color: '#000000',
+                  fontFamily: 'inter', borderRadius: 0, opacity: 1
+                }
+              };
+              // Set selection slightly later
+              setTimeout(() => setSelectedElementId(id), 0);
+              return {
+                ...prev,
+                elements: [...prev.elements, newEl]
+              }
+            }
+          });
+          toast({ title: "Asset Loaded" })
+        }
+      } catch (err) {
+        toast({ variant: "destructive", title: "Import Failed", description: "Could not process the image asset." });
       }
     }
     reader.readAsDataURL(file)
@@ -1050,14 +1161,20 @@ export default function PrintTemplateStudio() {
                             <Slider 
                               value={[(currentTemplate.background.opacity || 1) * 100]} 
                               min={0} max={100} step={1} 
-                              onValueChange={(v) => setCurrentTemplate({
-                                ...currentTemplate!,
-                                background: { ...currentTemplate!.background!, opacity: v[0] / 100 }
+                              onValueChange={(v) => setCurrentTemplate(prev => {
+                                if (!prev) return null;
+                                return {
+                                  ...prev,
+                                  background: { ...prev.background!, opacity: v[0] / 100 }
+                                }
                               })} 
                               disabled={currentTemplate?.isSystemTemplate}
                             />
                           </div>
-                          <Button variant="ghost" size="sm" className="w-full text-destructive text-[10px] font-black uppercase" onClick={() => setCurrentTemplate({ ...currentTemplate!, background: { ...currentTemplate!.background!, image: "" } })} disabled={currentTemplate?.isSystemTemplate}><Eraser className="h-3 w-3 mr-2" /> Remove Overlay</Button>
+                          <Button variant="ghost" size="sm" className="w-full text-destructive text-[10px] font-black uppercase" onClick={() => setCurrentTemplate(prev => {
+                            if (!prev) return null;
+                            return { ...prev, background: { ...prev.background!, image: "" } }
+                          })} disabled={currentTemplate?.isSystemTemplate}><Eraser className="h-3 w-3 mr-2" /> Remove Overlay</Button>
                         </div>
                       )}
                     </div>
@@ -1107,7 +1224,7 @@ export default function PrintTemplateStudio() {
               </div>
               <div className="space-y-4">
                 <Label className="text-[10px] font-black uppercase opacity-50">Paper Specification</Label>
-                <Select name="paperSize" defaultValue="A4" onValueChange={() => {}}>
+                <Select name="paperSize" defaultValue="A4">
                   <SelectTrigger className="h-11 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
                   <SelectContent className="z-[200]">
                     {PAPER_SIZES.map(s => <SelectItem key={s.id} value={s.id}>{s.name} {s.id !== 'Custom' && `(${s.w}x${s.h}mm)`}</SelectItem>)}
