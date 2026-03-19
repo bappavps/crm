@@ -337,18 +337,37 @@ export default function PaperStockPage() {
       companies: {} as Record<string, number>,
       types: {} as Record<string, number>,
       totalMtr: 0,
-      totalSqm: 0
+      totalSqm: 0,
+      groups: [] as any[]
     };
+
+    const groupMap: Record<string, any> = {};
 
     filteredRows.forEach(r => {
       const co = String(r.paperCompany || "Unknown").trim();
       const pt = String(r.paperType || "Other").trim();
+      const key = `${co}|${pt}`;
+
       if (co) summary.companies[co] = (summary.companies[co] || 0) + 1;
       if (pt) summary.types[pt] = (summary.types[pt] || 0) + 1;
       summary.totalMtr += Number(r.lengthMeters || 0);
       summary.totalSqm += Number(r.sqm || 0);
+
+      if (!groupMap[key]) {
+        groupMap[key] = {
+          company: co,
+          paperType: pt,
+          totalRolls: 0,
+          totalLength: 0,
+          totalSqm: 0
+        };
+      }
+      groupMap[key].totalRolls += 1;
+      groupMap[key].totalLength += Number(r.lengthMeters || 0);
+      groupMap[key].totalSqm += Number(r.sqm || 0);
     });
 
+    summary.groups = Object.values(groupMap).sort((a: any, b: any) => b.totalSqm - a.totalSqm);
     return summary;
   }, [filteredRows]);
 
@@ -622,56 +641,68 @@ export default function PaperStockPage() {
         </div>
       </div>
 
-      {/* Top Summary Dashboard */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
-        <Card className="bg-white shadow-sm border-slate-200">
-          <CardContent className="p-4 flex flex-col items-center justify-center">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
-              <Building2 className="h-3 w-3" /> Company Distribution
-            </span>
-            <div className="flex flex-wrap justify-center gap-1 mt-1">
-              {Object.entries(metricsSummary.companies).slice(0, 3).map(([co, count]) => (
-                <Badge key={co} variant="outline" className="text-[9px] h-5 bg-slate-50 border-slate-200">{co}: {count}</Badge>
-              ))}
-              {Object.entries(metricsSummary.companies).length > 3 && <span className="text-[9px] font-bold text-slate-400">+{Object.entries(metricsSummary.companies).length - 3} more</span>}
+      {/* Top Summary Dashboard - Grouped by Company + Type */}
+      <div className="space-y-3 no-print">
+        <div className="flex items-center justify-between px-1">
+          <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-2">
+            <LayoutGrid className="h-3 w-3 text-primary" /> Technical Inventory Summary (Company + Substrate)
+          </h3>
+          <div className="flex gap-4 items-center">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Total Meter:</span>
+              <span className="text-xs font-black text-primary">{Math.round(metricsSummary.totalMtr).toLocaleString()}</span>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-white shadow-sm border-slate-200">
-          <CardContent className="p-4 flex flex-col items-center justify-center">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
-              <Layers className="h-3 w-3" /> Substrate Types
-            </span>
-            <div className="flex flex-wrap justify-center gap-1 mt-1">
-              {Object.entries(metricsSummary.types).slice(0, 3).map(([type, count]) => (
-                <Badge key={type} variant="outline" className="text-[9px] h-5 bg-slate-50 border-slate-200">{type}: {count}</Badge>
-              ))}
-              {Object.entries(metricsSummary.types).length > 3 && <span className="text-[9px] font-bold text-slate-400">+{Object.entries(metricsSummary.types).length - 3} more</span>}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Total SQM:</span>
+              <span className="text-xs font-black text-primary">{Math.round(metricsSummary.totalSqm).toLocaleString()}</span>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-white shadow-sm border-slate-200">
-          <CardContent className="p-4 flex flex-col items-center justify-center">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
-              <Activity className="h-3 w-3" /> Net Running Meter
-            </span>
-            <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-xl font-black text-primary">{metricsSummary.totalMtr.toLocaleString()}</span>
-              <span className="text-[10px] font-bold text-slate-400">MTR</span>
+            <Badge variant="outline" className="text-[9px] font-bold h-5 border-slate-200 bg-white">
+              {metricsSummary.groups.length} Technical Groups
+            </Badge>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[320px] overflow-y-auto industrial-scroll p-1 pr-2">
+          {metricsSummary.groups.map((g, i) => (
+            <Card key={i} className="bg-white shadow-sm border-slate-200 hover:border-primary/30 transition-all group">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[9px] font-black uppercase text-primary truncate tracking-tighter" title={g.company}>
+                      {g.company}
+                    </p>
+                    <h4 className="text-xs font-black uppercase truncate" title={g.paperType}>
+                      {g.paperType}
+                    </h4>
+                  </div>
+                  <Badge className="bg-slate-900 text-white font-black text-[9px] h-5 rounded-md shrink-0">
+                    {g.totalRolls} ROLLS
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-50">
+                  <div className="space-y-0.5">
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Running Length</p>
+                    <p className="text-[11px] font-black tabular-nums">
+                      {Math.round(g.totalLength).toLocaleString()}<span className="text-[8px] ml-0.5 opacity-40">MTR</span>
+                    </p>
+                  </div>
+                  <div className="space-y-0.5 text-right">
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Surface Area</p>
+                    <p className="text-[11px] font-black text-emerald-600 tabular-nums">
+                      {Math.round(g.totalSqm).toLocaleString()}<span className="text-[8px] ml-0.5 opacity-40">SQM</span>
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {metricsSummary.groups.length === 0 && (
+            <div className="col-span-full py-10 text-center border-2 border-dashed rounded-2xl opacity-30">
+              <p className="text-[10px] font-bold uppercase tracking-widest">No technical groups match current filters</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-white shadow-sm border-slate-200">
-          <CardContent className="p-4 flex flex-col items-center justify-center">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1 flex items-center gap-1.5">
-              <Maximize2 className="h-3 w-3" /> Total SQM
-            </span>
-            <div className="flex items-baseline gap-1 mt-1">
-              <span className="text-xl font-black text-primary">{metricsSummary.totalSqm.toLocaleString()}</span>
-              <span className="text-[10px] font-bold text-slate-400">SQM</span>
-            </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       </div>
 
       <PaperStockFilters data={rolls || []} filters={filters} setFilters={setFilters} onReset={handleResetAll} />
