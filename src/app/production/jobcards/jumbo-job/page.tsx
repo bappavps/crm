@@ -253,6 +253,7 @@ function JumboJobCardContent() {
     width: roll.widthMm,
     length: roll.lengthMeters,
     gsm: roll.gsm,
+    weight: roll.weightKg,
     company: roll.paperCompany,
     date: roll.receivedDate,
     company_name: roll.paperCompany,

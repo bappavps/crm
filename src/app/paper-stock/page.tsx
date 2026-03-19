@@ -581,6 +581,7 @@ export default function PaperStockPage() {
     width: roll.widthMm,
     length: roll.lengthMeters,
     gsm: roll.gsm,
+    weight: roll.weightKg,
     company: roll.paperCompany,
     date: roll.receivedDate,
     company_name: roll.paperCompany,
@@ -837,7 +838,7 @@ export default function PaperStockPage() {
             {selectedReportTemplateId === 'default' ? (
               <>
                 <div className="border-b-4 border-black pb-6 flex justify-between items-end">
-                  <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Industrial Technical Registry Report</p></div>
+                  <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Industrial Technical Registry Report</p></div>
                   <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
                 </div>
                 <div className="mt-8 grid grid-cols-3 gap-4 no-print">
