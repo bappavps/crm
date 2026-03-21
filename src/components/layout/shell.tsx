@@ -94,27 +94,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       document.title = `${companyName} ERP`;
     }
 
-    // 2. Update Favicons dynamically
-    const updateIcon = (selector: string, href: string) => {
+    /**
+     * Forcefully updates the browser's favicon links by removing existing ones
+     * and injecting the base64 versions from Firestore.
+     */
+    const updateIcon = (rel: string, sizes: string | null, href: string) => {
       if (!href) return;
-      let link: HTMLLinkElement | null = document.querySelector(selector);
-      if (!link) {
-        link = document.createElement('link');
-        const relMatch = selector.match(/rel=["'](.+?)["']/);
-        const sizesMatch = selector.match(/sizes=["'](.+?)["']/);
-        if (relMatch) link.rel = relMatch[1];
-        if (sizesMatch) link.sizes = sizesMatch[1];
-        document.getElementsByTagName('head')[0].appendChild(link);
-      }
+      
+      // Remove all existing links matching this relationship to clear framework defaults
+      const existing = document.querySelectorAll(`link[rel*="${rel}"]`);
+      existing.forEach(el => {
+        if (!sizes || (el as HTMLLinkElement).sizes.value === sizes) {
+          el.remove();
+        }
+      });
+
+      const link = document.createElement('link');
+      link.rel = rel;
+      if (sizes) link.sizes = sizes;
       link.href = href;
+      document.getElementsByTagName('head')[0].appendChild(link);
     };
 
     if (companySettings) {
-      if (companySettings.favicon32) updateIcon('link[rel="icon"][sizes="32x32"]', companySettings.favicon32);
-      if (companySettings.favicon16) updateIcon('link[rel="icon"][sizes="16x16"]', companySettings.favicon16);
-      if (companySettings.appleTouchIcon) updateIcon('link[rel="apple-touch-icon"]', companySettings.appleTouchIcon);
-      // Main favicon.ico fallback
-      if (companySettings.favicon32) updateIcon('link[rel="icon"]:not([sizes])', companySettings.favicon32);
+      // Main favicon (used for browser tab)
+      if (companySettings.favicon32) {
+        updateIcon('icon', '32x32', companySettings.favicon32);
+        // Fallback for browsers that don't look at sizes
+        updateIcon('icon', null, companySettings.favicon32);
+      }
+      if (companySettings.favicon16) updateIcon('icon', '16x16', companySettings.favicon16);
+      if (companySettings.appleTouchIcon) updateIcon('apple-touch-icon', null, companySettings.appleTouchIcon);
     }
   }, [isMounted, companyName, companySettings]);
 

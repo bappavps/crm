@@ -27,16 +27,6 @@ export const metadata: Metadata = {
     statusBarStyle: 'default',
     title: 'ShreeERP',
   },
-  icons: {
-    icon: [
-      { url: '/favicon.ico' },
-      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
-      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-    ],
-    apple: [
-      { url: '/icons/icon-192.png' },
-    ],
-  },
 };
 
 /**
@@ -51,8 +41,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="icon" href="/favicon.ico" sizes="any" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        {/* Favicon placeholders to be overridden by dynamic logic in AppShell */}
+        <link rel="icon" href="data:," />
       </head>
       <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")} suppressHydrationWarning>
         <Suspense fallback={null}>
