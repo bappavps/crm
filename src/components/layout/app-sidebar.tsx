@@ -62,6 +62,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { usePermissions, PermissionKey } from "@/components/auth/permission-context"
+import { useFirestore, useDoc, useMemoFirebase } from "@/firebase"
+import { doc } from "firebase/firestore"
 import { cn } from "@/lib/utils"
 
 interface SubNavItem {
@@ -205,10 +207,19 @@ export function AppSidebar() {
   const { hasPermission } = usePermissions()
   const { setOpenMobile, isMobile, state } = useSidebar()
   const [mounted, setMounted] = useState(false)
+  const firestore = useFirestore()
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Fetch company name from settings
+  const companyDocRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'company_settings', 'global');
+  }, [firestore]);
+  const { data: companySettings } = useDoc(companyDocRef);
+  const companyName = companySettings?.name || "Shree Label";
 
   const handleNavClick = () => {
     if (isMobile) {
@@ -227,7 +238,9 @@ export function AppSidebar() {
           </div>
           {state === "expanded" && (
             <div className="animate-in fade-in duration-500">
-              <span className="block font-black text-white text-lg tracking-tighter uppercase whitespace-nowrap">Shree Label</span>
+              <span className="block font-bold text-white text-lg tracking-tight uppercase whitespace-nowrap">
+                {companyName}
+              </span>
               <span className="block text-[9px] text-muted-foreground uppercase tracking-[0.2em] font-bold whitespace-nowrap">ERP Solutions</span>
             </div>
           )}
