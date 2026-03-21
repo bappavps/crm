@@ -54,8 +54,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.3)
- * Enhanced with URL normalization and Admin row correction.
+ * PHYSICAL PAPER STOCK CHECK (V1.4)
+ * Enhanced with duplicate detection, append logic, and sound-loop prevention.
  */
 
 interface ScannedRoll {
@@ -80,8 +80,10 @@ export default function PhysicalStockAuditPage() {
   const [isCameraActive, setIsCameraActive] = useState(false)
   
   // Feedback State
-  const [scanFeedback, setScanFeedback] = useState<'success' | 'error' | null>(null)
+  const [scanFeedback, setScanFeedback] = useState<'success' | 'error' | 'warning' | null>(null)
+  const [highlightedRowId, setHighlightedRowId] = useState<string | null>(null)
   const feedbackTimeout = useRef<NodeJS.Timeout | null>(null)
+  const lastSoundTime = useRef<number>(0)
   
   const scanInputRef = useRef<HTMLInputElement>(null)
   const scannerInstance = useRef<Html5QrcodeScanner | null>(null)
@@ -117,12 +119,17 @@ export default function PhysicalStockAuditPage() {
   }, [firestore]);
   const { data: erpRolls, isLoading: erpLoading } = useCollection(erpRollsQuery);
 
-  const scannedRolls: ScannedRoll[] = sessionData?.scannedRolls || [];
+  const scannedRolls: ScannedRoll[] = useMemo(() => sessionData?.scannedRolls || [], [sessionData]);
 
   /**
    * AUDIO FEEDBACK SYNTHESIZER
+   * Debounced to prevent loops from fast scanner input.
    */
-  const triggerScanFeedback = (type: 'success' | 'error') => {
+  const triggerScanFeedback = (type: 'success' | 'error' | 'warning') => {
+    const now = Date.now();
+    if (now - lastSoundTime.current < 500) return; // Prevent rapid firing
+    lastSoundTime.current = now;
+
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
@@ -137,19 +144,25 @@ export default function PhysicalStockAuditPage() {
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
         oscillator.start();
         oscillator.stop(audioCtx.currentTime + 0.1);
-      } else {
-        oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
-        oscillator.type = 'square';
+      } else if (type === 'warning') {
+        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
         oscillator.start();
         oscillator.stop(audioCtx.currentTime + 0.2);
+      } else {
+        oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
+        oscillator.type = 'square';
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.3);
       }
     } catch (e) {}
 
     setScanFeedback(type);
     if (feedbackTimeout.current) clearTimeout(feedbackTimeout.current);
-    feedbackTimeout.current = setTimeout(() => setScanFeedback(null), 350);
+    feedbackTimeout.current = setTimeout(() => setScanFeedback(null), 800);
   };
 
   // 2. Reconciliation Logic
@@ -196,15 +209,21 @@ export default function PhysicalStockAuditPage() {
     }
     rollNo = rollNo.toUpperCase();
 
+    // DUPLICATE CHECK
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
-      toast({ variant: "destructive", title: "Duplicate Scan", description: `Roll ${rollNo} already scanned.` });
       triggerScanFeedback('error');
+      toast({ 
+        variant: "destructive", 
+        title: "Duplicate Roll", 
+        description: `ID ${rollNo} has already been scanned in this session.` 
+      });
       return;
     }
 
     const erpMatch = erpRolls?.find(r => r.rollNo === rollNo);
+    const newScanId = crypto.randomUUID();
     const newScan: ScannedRoll = {
-      id: crypto.randomUUID(),
+      id: newScanId,
       rollNo,
       paperType: erpMatch?.paperType || "UNKNOWN",
       dimension: erpMatch ? `${erpMatch.widthMm}mm x ${erpMatch.lengthMeters}m` : "N/A",
@@ -213,17 +232,25 @@ export default function PhysicalStockAuditPage() {
     };
 
     const updatedScans = [...scannedRolls, newScan];
-    await setDoc(doc(firestore, 'inventory_audits', activeSessionId), {
-      scannedRolls: updatedScans,
-      updatedAt: serverTimestamp()
-    }, { merge: true });
+    
+    try {
+      await setDoc(doc(firestore, 'inventory_audits', activeSessionId), {
+        scannedRolls: updatedScans,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
-    if (erpMatch) {
-      triggerScanFeedback('success');
-      toast({ title: "Roll Verified", description: `Captured ${rollNo}` });
-    } else {
-      triggerScanFeedback('error');
-      toast({ variant: "destructive", title: "Extra Roll Logged", description: `Roll ${rollNo} not found in ERP.` });
+      setHighlightedRowId(newScanId);
+      setTimeout(() => setHighlightedRowId(null), 1000);
+
+      if (erpMatch) {
+        triggerScanFeedback('success');
+        toast({ title: "Scan Successful", description: `Verified ${rollNo}` });
+      } else {
+        triggerScanFeedback('warning');
+        toast({ variant: "destructive", title: "Unknown Roll", description: `Roll ${rollNo} not found in ERP records.` });
+      }
+    } catch (e) {
+      toast({ variant: "destructive", title: "Sync Error" });
     }
     
     if (scanInputRef.current) scanInputRef.current.focus();
@@ -232,8 +259,9 @@ export default function PhysicalStockAuditPage() {
   const handleScan = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!scanInput) return;
-    await processRollId(scanInput);
-    setScanInput("");
+    const value = scanInput;
+    setScanInput(""); // Clear immediately to allow next scan
+    await processRollId(value);
   };
 
   const handleDeleteScannedRow = async (id: string) => {
@@ -245,7 +273,7 @@ export default function PhysicalStockAuditPage() {
       updatedAt: serverTimestamp()
     }, { merge: true });
     
-    toast({ title: "Scan Removed", description: "Row removed from current audit session." });
+    toast({ title: "Scan Removed", description: "Entry deleted from session." });
   };
 
   const startCamera = () => {
@@ -408,7 +436,8 @@ export default function PhysicalStockAuditPage() {
             <Card className={cn(
               "border-none shadow-2xl rounded-3xl overflow-hidden transition-all duration-300",
               scanFeedback === 'success' ? "ring-8 ring-emerald-500/50 bg-emerald-950 scale-[1.02]" : 
-              scanFeedback === 'error' ? "ring-8 ring-rose-500/50 bg-rose-950 scale-[1.02]" : "bg-slate-900",
+              scanFeedback === 'error' ? "ring-8 ring-rose-500/50 bg-rose-950 scale-[1.02]" : 
+              scanFeedback === 'warning' ? "ring-8 ring-amber-500/50 bg-amber-950 scale-[1.02]" : "bg-slate-900",
               "text-white"
             )}>
               <CardHeader className="bg-primary/10 border-b border-white/5 p-6">
@@ -445,7 +474,8 @@ export default function PhysicalStockAuditPage() {
                           className={cn(
                             "h-14 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary pr-12 transition-colors",
                             scanFeedback === 'success' ? "bg-emerald-500/20" : 
-                            scanFeedback === 'error' ? "bg-rose-500/20" : "bg-white/5"
+                            scanFeedback === 'error' ? "bg-rose-500/20" : 
+                            scanFeedback === 'warning' ? "bg-amber-500/20" : "bg-white/5"
                           )}
                           value={scanInput}
                           onChange={e => setScanInput(e.target.value)}
@@ -457,7 +487,9 @@ export default function PhysicalStockAuditPage() {
                       </div>
                     </div>
                     <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest text-center italic">
-                      * Tip: Terminal auto-focuses after each scan
+                      {scanFeedback === 'success' ? "Roll Verified" : 
+                       scanFeedback === 'error' ? "Duplicate Scan Blocked" : 
+                       scanFeedback === 'warning' ? "Extra Roll Recorded" : "* Tip: Input auto-focuses after each scan"}
                     </p>
                   </form>
                 </div>
@@ -546,7 +578,13 @@ export default function PhysicalStockAuditPage() {
                           {scannedRolls.length === 0 ? (
                             <TableRow><TableCell colSpan={5} className="py-24 text-center opacity-30 uppercase font-black text-[10px] tracking-widest">Awaiting scanner input...</TableCell></TableRow>
                           ) : [...scannedRolls].reverse().map(r => (
-                            <TableRow key={r.id} className="hover:bg-slate-50 transition-colors h-14">
+                            <TableRow 
+                              key={r.id} 
+                              className={cn(
+                                "h-14 transition-colors",
+                                highlightedRowId === r.id ? "bg-emerald-50" : "hover:bg-slate-50"
+                              )}
+                            >
                               <TableCell className="pl-8">
                                 <TooltipProvider>
                                   <Tooltip>
@@ -566,7 +604,7 @@ export default function PhysicalStockAuditPage() {
                                 <div className="flex justify-end items-center gap-3">
                                   <Badge className={cn(
                                     "text-[9px] font-black h-5 px-3 uppercase border-none",
-                                    r.status === 'Matched' ? "bg-emerald-500" : "bg-amber-500"
+                                    r.status === 'Matched' ? "bg-emerald-50" : "bg-amber-500"
                                   )}>
                                     {r.status}
                                   </Badge>
