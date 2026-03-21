@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -246,10 +247,8 @@ function JumboJobCardContent() {
     // Direct Print via Hidden Iframe (UX Cleaned)
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
+    iframe.style.right = '0'; iframe.style.bottom = '0';
+    iframe.style.width = '0'; iframe.style.height = '0';
     iframe.style.border = '0';
     document.body.appendChild(iframe);
 
@@ -322,7 +321,8 @@ function JumboJobCardContent() {
         paperType: r.paperType || "",
         width: r.widthMm || 0,
         length: r.lengthMeters || 0,
-        company: r.paperCompany || ""
+        company: r.paperCompany || "",
+        jobName: r.jobName || "—"
       })),
       SLIT_ROLLS: children,
       company_name: "Shree Label Creation",
@@ -611,7 +611,8 @@ function JumboJobCardContent() {
                       <TableRow className="border-b-2 border-black h-10">
                         <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Roll ID</TableHead>
                         <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Paper Type</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Dimension (Width × Length)</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Dimension</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Job Name</TableHead>
                         <TableHead className="font-black text-black text-[10px] uppercase px-4 text-center">Company</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -623,6 +624,7 @@ function JumboJobCardContent() {
                             <TableCell className="font-bold border-r-2 border-black px-4 font-mono">{rollId}</TableCell>
                             <TableCell className="border-r-2 border-black px-4 font-bold uppercase">{roll?.paperType || "—"}</TableCell>
                             <TableCell className="border-r-2 border-black px-4">{roll?.widthMm}mm × {roll?.lengthMeters}m</TableCell>
+                            <TableCell className="border-r-2 border-black px-4 font-bold uppercase">{roll?.jobName || "—"}</TableCell>
                             <TableCell className="px-4 font-bold uppercase">{roll?.paperCompany || "—"}</TableCell>
                           </TableRow>
                         );
@@ -638,7 +640,8 @@ function JumboJobCardContent() {
                       <TableRow className="border-b-2 border-black h-10">
                         <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Child Roll ID</TableHead>
                         <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Width</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase px-4 text-center">Length</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Length</TableHead>
+                        <TableHead className="font-black text-black text-[10px] uppercase px-4 text-center">Job Name</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -648,7 +651,8 @@ function JumboJobCardContent() {
                           <TableRow key={code} className="border-b-2 border-black last:border-b-0 h-10 text-center">
                             <TableCell className="font-bold border-r-2 border-black px-4 font-mono">{code}</TableCell>
                             <TableCell className="border-r-2 border-black px-4">{roll?.widthMm || "—"} mm</TableCell>
-                            <TableCell className="px-4 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
+                            <TableCell className="border-r-2 border-black px-4 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
+                            <TableCell className="px-4 font-bold uppercase">{roll?.jobNo ? (roll?.jobName || "Assigned") : "Available Stock"}</TableCell>
                           </TableRow>
                         );
                       })}
@@ -697,7 +701,7 @@ function JumboJobCardContent() {
                   <SelectValue placeholder="Select Template" />
                 </SelectTrigger>
                 <SelectContent className="z-[110]">
-                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default Thermal (150x100)</SelectItem>
                   {labelTemplates?.map(t => (
                     <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
                   ))}
@@ -784,7 +788,7 @@ function JumboJobCardContent() {
 
 export default function JumboJobCardPage() {
   return (
-    <Suspense fallback={<div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>}>
+    <Suspense fallback={<div className="p-20 text-center"><Loader2 className="h-8 w-8 mx-auto text-primary" /></div>}>
       <JumboJobCardContent />
     </Suspense>
   )
