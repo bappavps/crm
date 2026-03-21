@@ -508,37 +508,62 @@ export default function PaperStockPage() {
   };
 
   /**
-   * PRECISION ISOLATED PRINT HANDLER (FINAL)
+   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE
    */
-  const handleExecutePrint = (containerId: string, templateType: 'label' | 'report') => {
+  const handleExecutePrint = async (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
     if (!printContent) return;
+
+    const html2canvas = (await import('html2canvas')).default;
+    
+    setIsProcessing(true);
+    toast({ title: "Processing Print Batch", description: "Converting technical data to high-fidelity output images..." });
 
     const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeReportTemplate || { paperWidth: 210, paperHeight: 297 });
     const paperW = template.paperWidth;
     const paperH = template.paperHeight;
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast({ variant: "destructive", title: "Popup Blocked", description: "Please allow popups to print." });
+    const elements = Array.from(printContent.querySelectorAll('.label-print-item, .template-renderer-root'));
+    const images: string[] = [];
+
+    try {
+      for (const el of elements) {
+        // High-res capture for scannable industrial output
+        const canvas = await html2canvas(el as HTMLElement, {
+          scale: 3, 
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          width: paperW * 3.78, // Correct mm to px conversion
+          height: paperH * 3.78
+        });
+        images.push(canvas.toDataURL('image/png', 1.0));
+      }
+    } catch (err) {
+      console.error("Print pipeline capture error:", err);
+      toast({ variant: "destructive", title: "Print Failed", description: "Could not generate technical snapshots." });
+      setIsProcessing(false);
       return;
     }
 
-    // Grab outerHTML of rendered items to preserve designer styles exactly as seen in preview
-    const renderedItems = Array.from(printContent.querySelectorAll('.label-print-item, .template-renderer-root')).map(el => {
-      return `
-        <div class="print-label">
-          <div class="print-canvas">
-            ${el.outerHTML}
-          </div>
-        </div>
-      `;
-    }).join('');
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({ variant: "destructive", title: "Popup Blocked", description: "Please enable popups to print." });
+      setIsProcessing(false);
+      return;
+    }
+
+    const renderedItems = images.map(img => `
+      <div class="print-page">
+        <img src="${img}" />
+      </div>
+    `).join('');
 
     printWindow.document.write(`
       <html>
         <head>
-          <title>Technical Print Queue</title>
+          <title>Industrial Print Queue</title>
           <style>
             @page {
               size: ${paperW}mm ${paperH}mm;
@@ -548,15 +573,10 @@ export default function PaperStockPage() {
             html, body {
               margin: 0;
               padding: 0;
-              width: 100%;
-              height: 100%;
-              display: flex;
-              flex-direction: column;
-              align-items: center;
               background: white;
             }
 
-            .print-label {
+            .print-page {
               width: ${paperW}mm;
               height: ${paperH}mm;
               page-break-after: always;
@@ -564,27 +584,15 @@ export default function PaperStockPage() {
               display: flex;
               justify-content: center;
               align-items: center;
-              position: relative;
               overflow: hidden;
             }
 
-            .print-canvas {
-              position: relative;
-              width: ${paperW}mm;
-              height: ${paperH}mm;
-              overflow: hidden;
-            }
-
-            /* Strip decorative borders and force 1:1 scale for the actual content */
-            .print-canvas > div {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              margin: 0 !important;
-              border: none !important;
-              box-shadow: none !important;
-              transform: none !important;
-              background: transparent !important;
+            img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              image-rendering: -webkit-optimize-contrast;
+              image-rendering: crisp-edges;
             }
           </style>
         </head>
@@ -602,6 +610,7 @@ export default function PaperStockPage() {
       </html>
     `);
     printWindow.document.close();
+    setIsProcessing(false);
   };
 
   const startScanner = () => {
@@ -709,10 +718,11 @@ export default function PaperStockPage() {
           <Button 
             variant="outline" 
             onClick={handleBulkPrint} 
-            disabled={selectedIds.size === 0}
+            disabled={selectedIds.size === 0 || isProcessing}
             className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl disabled:opacity-50"
           >
-            <Printer className="h-4 w-4 mr-2 text-primary" /> Print Selected Labels
+            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2 text-primary" />}
+            Print Selected Labels
           </Button>
           <Button variant="outline" onClick={() => setIsReportOpen(true)} className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl">
             <FileText className="h-4 w-4 mr-2 text-primary" /> Print Stock Report
@@ -929,7 +939,9 @@ export default function PaperStockPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>Execute Print Batch</Button>
+            <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Batch"}
+            </Button>
           </div>
           <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="report-container">
@@ -995,7 +1007,9 @@ export default function PaperStockPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>Execute Print Batch</Button>
+            <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Batch"}
+            </Button>
           </div>
           <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="label-batch" className="space-y-10">

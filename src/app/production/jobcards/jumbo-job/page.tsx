@@ -203,6 +203,108 @@ function JumboJobCardContent() {
     }
   };
 
+  /**
+   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE
+   */
+  const handleExecutePrint = async (containerId: string, templateType: 'label' | 'report') => {
+    const printContent = document.getElementById(containerId);
+    if (!printContent) return;
+
+    const html2canvas = (await import('html2canvas')).default;
+    
+    setIsProcessing(true);
+    toast({ title: "Processing Technical Snapshots", description: "Preparing precision output..." });
+
+    const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeJobTemplate || { paperWidth: 210, paperHeight: 297 });
+    const paperW = template.paperWidth;
+    const paperH = template.paperHeight;
+
+    const elements = Array.from(printContent.querySelectorAll('.label-print-item, .template-renderer-root'));
+    const images: string[] = [];
+
+    try {
+      for (const el of elements) {
+        const canvas = await html2canvas(el as HTMLElement, {
+          scale: 3, 
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          width: paperW * 3.78, 
+          height: paperH * 3.78
+        });
+        images.push(canvas.toDataURL('image/png', 1.0));
+      }
+    } catch (err) {
+      console.error("Print snapshot error:", err);
+      toast({ variant: "destructive", title: "Rendering Failed", description: "Technical hardware incompatibility detected." });
+      setIsProcessing(false);
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({ variant: "destructive", title: "Popup Blocked", description: "Please enable popups to print." });
+      setIsProcessing(false);
+      return;
+    }
+
+    const renderedOutput = images.map(img => `
+      <div class="print-page">
+        <img src="${img}" />
+      </div>
+    `).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Shree Label Production Print</title>
+          <style>
+            @page {
+              size: ${paperW}mm ${paperH}mm;
+              margin: 0;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: white;
+            }
+            .print-page {
+              width: ${paperW}mm;
+              height: ${paperH}mm;
+              page-break-after: always;
+              break-inside: avoid;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              overflow: hidden;
+            }
+            img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              image-rendering: -webkit-optimize-contrast;
+              image-rendering: crisp-edges;
+            }
+          </style>
+        </head>
+        <body>
+          ${renderedOutput}
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+                window.onafterprint = () => window.close();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setIsProcessing(false);
+  };
+
   const handleDelete = async (id: string) => {
     if (!firestore || !confirm("Delete this Job Card?")) return;
     await deleteDoc(doc(firestore, 'jumbo_job_cards', id));
@@ -471,15 +573,16 @@ function JumboJobCardContent() {
               </Select>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>
-                <Printer className="h-4 w-4 mr-2" /> Print A4 Sheet
+              <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('print-area', 'report')}>
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                Print Technical Sheet
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
             </div>
           </div>
           <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans overflow-y-auto max-h-[80vh]">
             {selectedJobTemplateId === 'default' ? (
-              <>
+              <div className="label-print-item">
                 <div className="flex justify-between items-end border-b-4 border-black pb-6">
                   <div>
                     <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
@@ -587,7 +690,7 @@ function JumboJobCardContent() {
                     </div>
                   </div>
                 </div>
-              </>
+              </div>
             ) : (
               <div className="flex flex-col items-center">
                 <TemplateRenderer 
@@ -618,7 +721,9 @@ function JumboJobCardContent() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
+            <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Batch"}
+            </Button>
           </div>
           <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="label-batch" className="space-y-10">

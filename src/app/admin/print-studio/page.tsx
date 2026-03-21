@@ -81,9 +81,9 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V8.6)
- * Enhanced with Image Compression and Robust State Management.
- * Resolves Firestore size limit issues for images.
+ * PRINT TEMPLATE STUDIO (V8.7)
+ * Enhanced with High-Resolution Snapshot Printing Pipeline.
+ * Eliminates layout shifts and font discrepancies.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -182,7 +182,7 @@ const MM_TO_PX = 3.78;
 /**
  * Compresses an image to fit within Firestore document limits.
  */
-const compressImage = (base64Str: string, maxWidth = 1000, maxHeight = 1000): Promise<string> => {
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 800): Promise<string> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.src = base64Str;
@@ -212,7 +212,7 @@ const compressImage = (base64Str: string, maxWidth = 1000, maxHeight = 1000): Pr
         return;
       }
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7)); // Optimized for storage
+      resolve(canvas.toDataURL('image/jpeg', 0.7)); 
     };
   });
 };
@@ -229,6 +229,7 @@ export default function PrintTemplateStudio() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [isSaving, setIsSaving] = useState(false)
+  const [isPrinting, setIsPrinting] = useState(false)
   const [isSeeding, setIsSeeding] = useState(false)
   const [gridSnap, setGridSnap] = useState(5)
   const [showGuidelines, setShowGuidelines] = useState(true)
@@ -432,6 +433,83 @@ export default function PrintTemplateStudio() {
       setIsSaving(false)
     }
   }
+
+  /**
+   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE (Isolated)
+   */
+  const handleExecutePrint = async () => {
+    const canvasElement = document.getElementById('studio-canvas-print');
+    if (!canvasElement || !currentTemplate) return;
+
+    const html2canvas = (await import('html2canvas')).default;
+    
+    setIsPrinting(true);
+    const oldZoom = zoom;
+    setZoom(1); // Force 1:1 scale for pixel-perfect capture
+
+    // Ensure state updates before capture
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    toast({ title: "Generating Technical Snapshot", description: "Encoding layout for precision industrial print..." });
+
+    try {
+      const paperW = currentTemplate.paperWidth;
+      const paperH = currentTemplate.paperHeight;
+
+      const canvas = await html2canvas(canvasElement, {
+        scale: 3, // High DPI for barcodes
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        width: paperW * MM_TO_PX,
+        height: paperH * MM_TO_PX
+      });
+
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      const printWindow = window.open('', '_blank');
+      
+      if (!printWindow) {
+        toast({ variant: "destructive", title: "Popup Blocked", description: "Please enable popups." });
+        setZoom(oldZoom);
+        setIsPrinting(false);
+        return;
+      }
+
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Technical Test Print</title>
+            <style>
+              @page {
+                size: ${paperW}mm ${paperH}mm;
+                margin: 0;
+              }
+              body { margin: 0; padding: 0; background: white; display: flex; justify-content: center; align-items: center; }
+              img { width: ${paperW}mm; height: ${paperH}mm; object-fit: contain; image-rendering: -webkit-optimize-contrast; }
+            </style>
+          </head>
+          <body>
+            <img src="${imgData}" />
+            <script>
+              window.onload = () => {
+                setTimeout(() => {
+                  window.print();
+                  window.onafterprint = () => window.close();
+                }, 500);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (err) {
+      toast({ variant: "destructive", title: "Rendering Error", description: "Technical canvas capture failed." });
+    } finally {
+      setZoom(oldZoom);
+      setIsPrinting(false);
+    }
+  };
 
   const handleSeedSamples = async () => {
     if (!firestore) return
@@ -638,7 +716,6 @@ export default function PrintTemplateStudio() {
           })
           toast({ title: "Background Layer Set" })
         } else {
-          // Determine if we update existing image or add new
           setCurrentTemplate(prev => {
             if (!prev) return null;
             const selId = selectedElementId;
@@ -650,7 +727,6 @@ export default function PrintTemplateStudio() {
                 elements: prev.elements.map(el => el.id === selId ? { ...el, content: base64 } : el)
               }
             } else {
-              // Add new image element
               const id = crypto.randomUUID();
               const newEl: TemplateElement = {
                 id,
@@ -665,7 +741,6 @@ export default function PrintTemplateStudio() {
                   fontFamily: 'inter', borderRadius: 0, opacity: 1
                 }
               };
-              // Set selection slightly later
               setTimeout(() => setSelectedElementId(id), 0);
               return {
                 ...prev,
@@ -781,7 +856,10 @@ export default function PrintTemplateStudio() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => window.print()} className="font-bold"><Printer className="h-4 w-4 mr-2" /> Test Print</Button>
+              <Button disabled={isPrinting} variant="outline" size="sm" onClick={handleExecutePrint} className="font-bold">
+                {isPrinting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                Test Print
+              </Button>
               {!currentTemplate?.isSystemTemplate ? (
                 <Button onClick={handleSaveTemplate} disabled={isSaving} className="font-black h-10 px-8 bg-primary shadow-lg">
                   {isSaving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
