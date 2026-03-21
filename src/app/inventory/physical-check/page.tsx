@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Checkbox } from "@/components/ui/checkbox"
 import { 
   ScanLine, 
   Search, 
@@ -29,7 +30,9 @@ import {
   PackageCheck,
   Camera,
   StopCircle,
-  ArrowUp
+  ArrowUp,
+  Target,
+  ClipboardCheck
 } from "lucide-react"
 import { 
   Dialog, 
@@ -55,8 +58,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.7)
- * Normalization: URL → Roll ID Display
+ * PHYSICAL PAPER STOCK CHECK (V2.0)
+ * Enhanced Reconciliation: Selectable adjustments & advanced metrics.
  */
 
 interface ScannedRoll {
@@ -65,7 +68,7 @@ interface ScannedRoll {
   paperType: string;
   dimension: string;
   scanTime: string;
-  status: 'Matched' | 'Unknown' | 'Duplicate';
+  status: 'Matched' | 'Unknown';
 }
 
 export default function PhysicalStockAuditPage() {
@@ -79,6 +82,10 @@ export default function PhysicalStockAuditPage() {
   const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCameraActive, setIsCameraActive] = useState(false)
+  
+  // Selection States
+  const [selectedMissing, setSelectedMissing] = useState<Set<string>>(new Set())
+  const [selectedExtra, setSelectedExtra] = useState<Set<string>>(new Set())
   
   // Feedback State
   const [scanFeedback, setScanFeedback] = useState<'success' | 'error' | 'warning' | null>(null)
@@ -112,13 +119,9 @@ export default function PhysicalStockAuditPage() {
   const uniqueSessions = useMemo(() => {
     if (!sessions) return [];
     const seenIds = new Set();
-    const seenNames = new Set();
     return sessions.filter(s => {
-      const id = s.id;
-      const name = s.sessionName;
-      if (!id || seenIds.has(id) || (name && seenNames.has(name))) return false;
-      seenIds.add(id);
-      if (name) seenNames.add(name);
+      if (seenIds.has(s.id)) return false;
+      seenIds.add(s.id);
       return true;
     });
   }, [sessions]);
@@ -131,7 +134,7 @@ export default function PhysicalStockAuditPage() {
 
   const erpRollsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'paper_stock'), limit(5000));
+    return query(collection(firestore, 'paper_stock'), limit(10000));
   }, [firestore]);
   const { data: erpRolls } = useCollection(erpRollsQuery);
 
@@ -182,7 +185,7 @@ export default function PhysicalStockAuditPage() {
 
   // 2. Reconciliation Logic
   const reconciliation = useMemo(() => {
-    if (!erpRolls || !scannedRolls) return { matched: [], missing: [], extra: [], stats: { totalERP: 0, totalScanned: 0, matchedCount: 0, missingCount: 0, extraCount: 0 } };
+    if (!erpRolls || !scannedRolls) return { matched: [], missing: [], extra: [], stats: { totalERP: 0, totalScanned: 0, matchedCount: 0, missingCount: 0, extraCount: 0, matchPercent: 0 } };
 
     const erpMap = new Map(erpRolls.map(r => [r.rollNo, r]));
     const matched: any[] = [];
@@ -197,20 +200,19 @@ export default function PhysicalStockAuditPage() {
     });
 
     const scannedIds = new Set(scannedRolls.map(r => r.rollNo));
-    const missing = erpRolls.filter(r => !scannedIds.has(r.rollNo) && r.status !== 'Consumed');
+    const activeERPRolls = erpRolls.filter(r => r.status !== 'Consumed' && r.status !== 'Main-Used');
+    const missing = activeERPRolls.filter(r => !scannedIds.has(r.rollNo));
 
-    return {
-      matched,
-      missing,
-      extra,
-      stats: {
-        totalERP: erpRolls.filter(r => r.status !== 'Consumed').length,
-        totalScanned: scannedRolls.length,
-        matchedCount: matched.length,
-        missingCount: missing.length,
-        extraCount: extra.length
-      }
+    const stats = {
+      totalERP: activeERPRolls.length,
+      totalScanned: scannedRolls.length,
+      matchedCount: matched.length,
+      missingCount: missing.length,
+      extraCount: extra.length,
+      matchPercent: activeERPRolls.length > 0 ? Math.round((matched.length / activeERPRolls.length) * 100) : 0
     };
+
+    return { matched, missing, extra, stats };
   }, [erpRolls, scannedRolls]);
 
   /**
@@ -220,7 +222,6 @@ export default function PhysicalStockAuditPage() {
     const rawValue = scanInput.trim();
     if (!rawValue || !activeSessionId || !firestore || !user) return;
 
-    // Normalization: Extract Roll ID from URL if necessary
     let rollNo = rawValue;
     if (rollNo.includes('/')) {
       rollNo = rollNo.split('/').pop() || rollNo;
@@ -230,11 +231,7 @@ export default function PhysicalStockAuditPage() {
     // Duplicate Check
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
       triggerScanFeedback('error');
-      toast({ 
-        variant: "destructive", 
-        title: "Duplicate Roll", 
-        description: `Roll ${rollNo} is already in the list.` 
-      });
+      toast({ variant: "destructive", title: "Duplicate Roll", description: `Roll ${rollNo} already captured.` });
       return;
     }
 
@@ -249,9 +246,8 @@ export default function PhysicalStockAuditPage() {
       status: erpMatch ? 'Matched' : 'Unknown'
     };
 
-    const updatedScans = [...scannedRolls, newScan];
-    
     try {
+      const updatedScans = [...scannedRolls, newScan];
       await setDoc(doc(firestore, 'inventory_audits', activeSessionId), {
         scannedRolls: updatedScans,
         updatedAt: serverTimestamp()
@@ -262,16 +258,15 @@ export default function PhysicalStockAuditPage() {
 
       if (erpMatch) {
         triggerScanFeedback('success');
-        toast({ title: "Scan Added Successfully", description: `Roll ${rollNo} verified.` });
+        toast({ title: "Roll Identified" });
       } else {
         triggerScanFeedback('warning');
-        toast({ variant: "destructive", title: "Unknown Roll Added", description: `Roll ${rollNo} not found in ERP.` });
+        toast({ variant: "destructive", title: "Roll ID Missing in ERP" });
       }
     } catch (e) {
-      toast({ variant: "destructive", title: "Sync Error" });
+      toast({ variant: "destructive", title: "Cloud Sync Failed" });
     }
     
-    // Clear and focus
     setScanInput("");
     if (scanInputRef.current) scanInputRef.current.focus();
   };
@@ -283,14 +278,12 @@ export default function PhysicalStockAuditPage() {
 
   const handleDeleteScannedRow = async (id: string) => {
     if (!firestore || !activeSessionId || !isAdmin) return;
-    
     const updatedScans = scannedRolls.filter(r => r.id !== id);
     await setDoc(doc(firestore, 'inventory_audits', activeSessionId), {
       scannedRolls: updatedScans,
       updatedAt: serverTimestamp()
     }, { merge: true });
-    
-    toast({ title: "Scan Removed", description: "Entry deleted from session." });
+    toast({ title: "Entry Removed" });
   };
 
   const startCamera = () => {
@@ -298,13 +291,10 @@ export default function PhysicalStockAuditPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("camera-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
       scanner.render((decodedText) => {
-        // Camera only populates input field with normalized value
         let normalized = decodedText;
-        if (normalized.includes('/')) {
-          normalized = normalized.split('/').pop() || normalized;
-        }
+        if (normalized.includes('/')) normalized = normalized.split('/').pop() || normalized;
         setScanInput(normalized);
-        toast({ title: "Roll ID Scanned", description: "Click Submit to process." });
+        toast({ title: "ID Captured", description: "Ready to commit." });
       }, () => {});
       scannerInstance.current = scanner;
     }, 100);
@@ -318,33 +308,89 @@ export default function PhysicalStockAuditPage() {
     setIsCameraActive(false);
   };
 
+  /**
+   * RECONCILIATION ACTIONS (ADMIN ONLY)
+   */
+  const handleBulkRemoveMissing = async () => {
+    if (!firestore || !isAdmin || selectedMissing.size === 0) return;
+    if (!confirm(`Mark ${selectedMissing.size} selected rolls as 'Consumed' in ERP?`)) return;
+
+    setIsProcessing(true);
+    try {
+      const batch = writeBatch(firestore);
+      const targets = reconciliation.missing.filter(r => selectedMissing.has(r.id));
+      
+      targets.forEach(r => {
+        batch.update(doc(firestore, 'paper_stock', r.id), {
+          status: 'Consumed',
+          remarks: `Deducted during audit: ${sessionData?.sessionName}`,
+          dateOfUsed: new Date().toISOString().split('T')[0],
+          updatedAt: serverTimestamp()
+        });
+      });
+      
+      await batch.commit();
+      setSelectedMissing(new Set());
+      toast({ title: "Inventory Updated", description: `${targets.length} rolls removed from stock.` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Adjustment Failed" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleBulkAddExtra = async () => {
+    if (!firestore || !isAdmin || selectedExtra.size === 0) return;
+    if (!confirm(`Register ${selectedExtra.size} found rolls into ERP stock?`)) return;
+
+    setIsProcessing(true);
+    try {
+      const batch = writeBatch(firestore);
+      const targets = reconciliation.extra.filter(r => selectedExtra.has(r.id));
+      
+      targets.forEach(r => {
+        const rollId = r.rollNo.trim().replace(/\//g, '-');
+        batch.set(doc(firestore, 'paper_stock', rollId), {
+          id: rollId,
+          rollNo: rollId,
+          status: 'Stock',
+          paperType: 'AUDIT_FOUND',
+          receivedDate: new Date().toISOString().split('T')[0],
+          remarks: `Registered from audit: ${sessionData?.sessionName}`,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          createdById: user?.uid
+        });
+      });
+      
+      await batch.commit();
+      setSelectedExtra(new Set());
+      toast({ title: "Stock Registered", description: `${targets.length} new rolls initialized.` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Registration Failed" });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleCreateSession = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!firestore || !user) return;
     const fd = new FormData(e.currentTarget);
     const name = fd.get("sessionName") as string;
-    
     const id = `AUDIT-${format(new Date(), 'yyyyMMdd')}-${Math.floor(1000 + Math.random() * 9000)}`;
     await setDoc(doc(firestore, 'inventory_audits', id), {
-      id,
-      sessionName: name,
-      status: 'In Progress',
-      scannedRolls: [],
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      createdById: user.uid,
-      createdByName: user.displayName || user.email
+      id, sessionName: name, status: 'In Progress', scannedRolls: [],
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), createdById: user.uid, createdByName: user.displayName || user.email
     });
-
     setActiveSessionId(id);
     setIsNewSessionOpen(false);
-    toast({ title: "Audit Session Started" });
+    toast({ title: "Audit Session Initialized" });
   }
 
   const handleFinalize = async () => {
     if (!firestore || !activeSessionId || !isAdmin) return;
-    if (!confirm("Finalize audit? This will lock the records for this session.")) return;
-
+    if (!confirm("Confirm Audit Completion? This locks the current dataset.")) return;
     setIsProcessing(true);
     try {
       await setDoc(doc(firestore, 'inventory_audits', activeSessionId), {
@@ -353,57 +399,24 @@ export default function PhysicalStockAuditPage() {
         finalizedAt: serverTimestamp(),
         finalizedById: user.uid
       }, { merge: true });
-      toast({ title: "Audit Finalized & Locked" });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Finalization Failed" });
-    } finally {
-      setIsProcessing(false);
-    }
+      toast({ title: "Session Closed" });
+    } catch (e) { toast({ variant: "destructive", title: "Locking Failed" }); } 
+    finally { setIsProcessing(false); }
   }
 
   const handleExport = () => {
     const data = [
-      { Category: 'SUMMARY', Metric: 'Total ERP Rolls', Value: reconciliation.stats.totalERP },
-      { Category: 'SUMMARY', Metric: 'Total Scanned', Value: reconciliation.stats.totalScanned },
-      { Category: 'SUMMARY', Metric: 'Matched', Value: reconciliation.stats.matchedCount },
-      { Category: 'SUMMARY', Metric: 'Missing', Value: reconciliation.stats.missingCount },
-      { Category: 'SUMMARY', Metric: 'Extra', Value: reconciliation.stats.extraCount },
+      { Category: 'AUDIT SUMMARY', Metric: 'ERP Stock Count', Value: reconciliation.stats.totalERP },
+      { Category: 'AUDIT SUMMARY', Metric: 'Total Scanned', Value: reconciliation.stats.totalScanned },
+      { Category: 'AUDIT SUMMARY', Metric: 'Match Efficiency', Value: `${reconciliation.stats.matchPercent}%` },
       {},
-      { Category: 'MISSING ROLLS', 'Roll ID': 'Description', Dimension: 'Status' },
-      ...reconciliation.missing.map(r => ({ Category: 'MISSING', 'Roll ID': r.rollNo, Description: r.paperType, Dimension: `${r.widthMm}mm x ${r.lengthMeters}m` })),
-      {},
-      { Category: 'EXTRA ROLLS', 'Roll ID': 'Description', Dimension: 'Status' },
-      ...reconciliation.extra.map(r => ({ Category: 'EXTRA', 'Roll ID': r.rollNo, Description: r.paperType, Dimension: r.dimension }))
+      { ID: 'ROLL ID', TYPE: 'PAPER TYPE', STATUS: 'AUDIT STATUS' },
+      ...scannedRolls.map(r => ({ ID: r.rollNo, TYPE: r.paperType, STATUS: r.status }))
     ];
-
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Audit Report");
-    XLSX.writeFile(wb, `Stock_Audit_${sessionData?.sessionName || 'Report'}.xlsx`);
-  }
-
-  const handleRemoveMissing = async () => {
-    if (!firestore || !isAdmin || reconciliation.missing.length === 0) return;
-    if (!confirm(`Mark all ${reconciliation.missing.length} missing rolls as 'Consumed' in ERP?`)) return;
-
-    setIsProcessing(true);
-    try {
-      const batch = writeBatch(firestore);
-      reconciliation.missing.forEach(r => {
-        batch.update(doc(firestore, 'paper_stock', r.id), {
-          status: 'Consumed',
-          remarks: `System deducted during audit: ${sessionData?.sessionName}`,
-          dateOfUsed: new Date().toISOString().split('T')[0],
-          updatedAt: serverTimestamp()
-        });
-      });
-      await batch.commit();
-      toast({ title: "Inventory Adjusted", description: "Missing rolls marked as consumed." });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Batch Update Failed" });
-    } finally {
-      setIsProcessing(false);
-    }
+    XLSX.utils.book_append_sheet(wb, ws, "Audit Detail");
+    XLSX.writeFile(wb, `Stock_Audit_${sessionData?.sessionName || 'Registry'}.xlsx`);
   }
 
   if (!isMounted) return null;
@@ -413,43 +426,34 @@ export default function PhysicalStockAuditPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter flex items-center gap-3">
-            <ScanLine className="h-8 w-8" /> Physical Stock Check
+            <ClipboardCheck className="h-8 w-8" /> Stock Audit Terminal
           </h2>
-          <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Monthly Technical Substrate Verification Hub</p>
+          <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Physical Substrate Reconciliation Pipeline</p>
         </div>
         <div className="flex items-center gap-3">
           <Select value={activeSessionId || ""} onValueChange={setActiveSessionId}>
-            <SelectTrigger className="w-[250px] h-11 bg-white border-2 rounded-xl font-bold uppercase text-[10px]">
-              <SelectValue placeholder="Select Audit Session" />
+            <SelectTrigger className="w-[300px] h-11 bg-white border-2 rounded-xl font-bold uppercase text-[10px]">
+              <SelectValue placeholder="Browse Audit History" />
             </SelectTrigger>
             <SelectContent className="z-[100]">
-              {sessionsLoading ? (
-                <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
-              ) : uniqueSessions.map(s => (
-                <SelectItem key={s.id} value={s.id} className="font-bold text-[10px] uppercase">
-                  {s.sessionName} ({s.status})
-                </SelectItem>
-              ))}
-              {uniqueSessions.length === 0 && !sessionsLoading && <SelectItem value="none" disabled>No Sessions Found</SelectItem>}
+              {sessionsLoading ? <div className="p-4 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div> : 
+                uniqueSessions.map(s => <SelectItem key={s.id} value={s.id} className="font-bold text-[10px] uppercase">{s.sessionName} • {s.status}</SelectItem>)
+              }
             </SelectContent>
           </Select>
           <Button onClick={() => setIsNewSessionOpen(true)} className="h-11 px-6 bg-primary shadow-lg rounded-xl font-black uppercase text-[10px] tracking-widest">
-            <Plus className="mr-2 h-4 w-4" /> Start New Session
+            <Plus className="mr-2 h-4 w-4" /> New Session
           </Button>
         </div>
       </div>
 
       {!activeSessionId ? (
         <Card className="border-4 border-dashed rounded-[2.5rem] bg-slate-50/50">
-          <CardContent className="p-24 text-center space-y-6">
-            <div className="h-20 w-20 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl">
-              <History className="h-10 w-10 text-slate-300" />
-            </div>
+          <CardContent className="p-32 text-center space-y-6">
+            <div className="h-20 w-20 bg-white rounded-full flex items-center justify-center mx-auto shadow-xl"><History className="h-10 w-10 text-slate-200" /></div>
             <div className="space-y-2 max-w-sm mx-auto">
-              <h3 className="text-xl font-black uppercase">No Active Audit</h3>
-              <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest leading-loose">
-                Select an existing audit session from the dropdown or start a new monthly check to begin scanning rolls.
-              </p>
+              <h3 className="text-xl font-black uppercase tracking-tight">Audit Session Required</h3>
+              <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest leading-loose">Initialize a new monthly audit or select an existing session to begin physical substrate verification.</p>
             </div>
           </CardContent>
         </Card>
@@ -459,191 +463,107 @@ export default function PhysicalStockAuditPage() {
           {/* SCAN TERMINAL */}
           <div className="lg:col-span-4 space-y-6">
             <Card className={cn(
-              "border-none shadow-2xl rounded-3xl overflow-hidden transition-all duration-300",
-              scanFeedback === 'success' ? "ring-8 ring-emerald-500/50 bg-emerald-950 scale-[1.02]" : 
-              scanFeedback === 'error' ? "ring-8 ring-rose-500/50 bg-rose-950 scale-[1.02]" : 
-              scanFeedback === 'warning' ? "ring-8 ring-amber-500/50 bg-amber-950 scale-[1.02]" : "bg-slate-900",
-              "text-white"
+              "border-none shadow-2xl rounded-3xl overflow-hidden transition-all duration-300 bg-slate-900 text-white",
+              scanFeedback === 'success' && "ring-8 ring-emerald-500/30 scale-[1.01]",
+              scanFeedback === 'error' && "ring-8 ring-rose-500/30 scale-[1.01]"
             )}>
               <CardHeader className="bg-primary/10 border-b border-white/5 p-6">
                 <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
-                  <ScanLine className="h-4 w-4 text-primary" /> Scan Terminal
+                  <ScanLine className="h-4 w-4 text-primary" /> Audit Terminal
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-8 space-y-6">
                 <div className="space-y-4">
                   {isCameraActive ? (
                     <div className="space-y-4 animate-in zoom-in-95">
-                      <div id="camera-reader" className="w-full overflow-hidden rounded-2xl bg-black aspect-square" />
-                      <Button onClick={stopCamera} variant="destructive" className="w-full h-12 font-black uppercase text-[10px]">
-                        <StopCircle className="mr-2 h-4 w-4" /> Close Camera
-                      </Button>
+                      <div id="camera-reader" className="w-full overflow-hidden rounded-2xl bg-black aspect-square border-2 border-white/10" />
+                      <Button onClick={stopCamera} variant="destructive" className="w-full h-12 font-black uppercase text-[10px]"><StopCircle className="mr-2 h-4 w-4" /> Deactivate Camera</Button>
                     </div>
                   ) : (
-                    <Button 
-                      onClick={startCamera} 
-                      className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl"
-                      disabled={sessionData?.status === 'Finalized'}
-                    >
-                      <Camera className="mr-3 h-6 w-6 text-primary" /> Start Mobile Scan
-                    </Button>
+                    <Button onClick={startCamera} className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl" disabled={sessionData?.status === 'Finalized'}><Camera className="mr-3 h-6 w-6 text-primary" /> Mobile QR Scanner</Button>
                   )}
 
                   <form onSubmit={handleManualSubmit} className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase opacity-50">Roll ID Entry</Label>
-                      <Input 
-                        ref={scanInputRef}
-                        placeholder="Scan or Type ID..."
-                        className={cn(
-                          "h-14 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary transition-colors",
-                          scanFeedback === 'success' ? "bg-emerald-500/20" : 
-                          scanFeedback === 'error' ? "bg-rose-500/20" : 
-                          scanFeedback === 'warning' ? "bg-amber-500/20" : "bg-white/5"
-                        )}
-                        value={scanInput}
-                        onChange={e => setScanInput(e.target.value)}
-                        disabled={sessionData?.status === 'Finalized'}
-                      />
+                      <Label className="text-[10px] font-black uppercase opacity-50">Roll Identification</Label>
+                      <Input ref={scanInputRef} placeholder="Scan or Type ID..." className="h-14 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/10 rounded-2xl bg-white/5 focus-visible:ring-primary" value={scanInput} onChange={e => setScanInput(e.target.value)} disabled={sessionData?.status === 'Finalized'} />
                     </div>
-                    <Button 
-                      type="submit" 
-                      className="w-full h-14 bg-primary text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl hover:bg-primary/90 transition-all active:scale-95"
-                      disabled={sessionData?.status === 'Finalized' || !scanInput.trim()}
-                    >
-                      Commit Scan to List
-                    </Button>
+                    <Button type="submit" className="w-full h-14 bg-primary text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl transition-all active:scale-95" disabled={sessionData?.status === 'Finalized' || !scanInput.trim()}>Commit Entry</Button>
                   </form>
                 </div>
 
                 <div className="pt-6 border-t border-white/5 space-y-4">
-                  <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl">
-                    <div>
-                      <p className="text-[10px] font-black uppercase opacity-50">Verified Progress</p>
-                      <p className="text-2xl font-black tracking-tighter">{reconciliation.stats.matchedCount} / {reconciliation.stats.totalERP}</p>
+                  <div className="flex justify-between items-center bg-white/5 p-5 rounded-2xl">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-black uppercase opacity-50">Capture Progress</p>
+                      <p className="text-3xl font-black tracking-tighter">{reconciliation.stats.matchedCount} <small className="text-[10px] opacity-30">Matched</small></p>
                     </div>
-                    <Badge className="bg-primary text-white font-black text-[10px]">
-                      {Math.round((reconciliation.stats.matchedCount / reconciliation.stats.totalERP) * 100) || 0}%
-                    </Badge>
+                    <div className="text-right space-y-1">
+                      <p className="text-[10px] font-black uppercase opacity-50">Accuracy</p>
+                      <p className="text-3xl font-black tracking-tighter text-emerald-400">{reconciliation.stats.matchPercent}%</p>
+                    </div>
                   </div>
+                  <Progress value={reconciliation.stats.matchPercent} className="h-1.5 bg-white/5" />
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="border-none shadow-xl rounded-3xl overflow-hidden">
-              <CardHeader className="bg-slate-50 border-b p-6">
-                <CardTitle className="text-xs font-black uppercase tracking-widest">Audit Session Summary</CardTitle>
-              </CardHeader>
+            <Card className="border-none shadow-xl rounded-3xl overflow-hidden bg-white">
+              <CardHeader className="bg-slate-50 border-b p-6"><CardTitle className="text-xs font-black uppercase tracking-widest">Reconciliation Metrics</CardTitle></CardHeader>
               <CardContent className="p-6 space-y-4">
-                <SummaryRow label="Total ERP Registry" value={reconciliation.stats.totalERP} icon={Database} />
-                <SummaryRow label="Physical Scanned" value={reconciliation.stats.totalScanned} icon={ScanLine} />
+                <SummaryRow label="Total ERP Stock" value={reconciliation.stats.totalERP} icon={Database} color="text-slate-900" />
+                <SummaryRow label="Physical Scan Count" value={reconciliation.stats.totalScanned} icon={ScanLine} color="text-blue-600" />
                 <SummaryRow label="Verified Matches" value={reconciliation.stats.matchedCount} icon={CheckCircle2} color="text-emerald-600" />
-                <SummaryRow label="Missing From Floor" value={reconciliation.stats.missingCount} icon={AlertTriangle} color="text-rose-600" />
-                <SummaryRow label="Extra / Found Rolls" value={reconciliation.stats.extraCount} icon={Plus} color="text-amber-600" />
+                <SummaryRow label="Missing from Floor" value={reconciliation.stats.missingCount} icon={AlertTriangle} color="text-rose-600" />
+                <SummaryRow label="Extra / Found Units" value={reconciliation.stats.extraCount} icon={Plus} color="text-amber-600" />
               </CardContent>
               <CardFooter className="bg-slate-50 p-6 border-t flex flex-col gap-3">
-                <Button onClick={handleExport} variant="outline" className="w-full h-11 rounded-xl font-black uppercase text-[10px] tracking-widest border-2">
-                  <FileDown className="mr-2 h-4 w-4" /> Export Report
-                </Button>
+                <Button onClick={handleExport} variant="outline" className="w-full h-11 rounded-xl font-black uppercase text-[10px] tracking-widest border-2"><FileDown className="mr-2 h-4 w-4" /> Export Results</Button>
                 {isAdmin && sessionData?.status !== 'Finalized' && (
-                  <>
-                    <Button onClick={handleRemoveMissing} variant="outline" className="w-full h-11 rounded-xl font-black uppercase text-[10px] tracking-widest border-2 text-rose-600 border-rose-100 hover:bg-rose-50" disabled={reconciliation.missing.length === 0 || isProcessing}>
-                      {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                      Deduct Missing From Stock
-                    </Button>
-                    <Button onClick={handleFinalize} className="w-full h-14 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl" disabled={isProcessing}>
-                      {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                      Finalize Audit Session
-                    </Button>
-                  </>
+                  <Button onClick={handleFinalize} className="w-full h-14 rounded-xl bg-slate-900 text-white font-black uppercase text-xs tracking-widest shadow-xl" disabled={isProcessing}>{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <PackageCheck className="mr-2 h-4 w-4" />} Finalize Audit</Button>
                 )}
                 {sessionData?.status === 'Finalized' && (
                   <div className="bg-emerald-50 border border-emerald-100 p-4 rounded-xl flex items-center gap-3 text-emerald-700">
-                    <CheckCircle2 className="h-5 w-5 shrink-0" />
-                    <span className="text-[10px] font-black uppercase leading-tight">Session Finalized & Immutable</span>
+                    <CheckCircle2 className="h-5 w-5 shrink-0" /><span className="text-[10px] font-black uppercase">Report Finalized & Immutable</span>
                   </div>
                 )}
               </CardFooter>
             </Card>
           </div>
 
-          {/* TABLES AREA */}
+          {/* ANALYSIS TABS */}
           <div className="lg:col-span-8 space-y-6">
             <Tabs defaultValue="scanned" className="w-full">
               <TabsList className="bg-slate-100 p-1 rounded-2xl h-12">
-                <TabsTrigger value="scanned" className="px-10 font-black uppercase text-[10px] tracking-widest gap-2">
-                  <ScanLine className="h-4 w-4" /> Scanned Log
-                </TabsTrigger>
-                <TabsTrigger value="missing" className="px-10 font-black uppercase text-[10px] tracking-widest gap-2">
-                  <AlertTriangle className="h-4 w-4" /> Missing Items
-                </TabsTrigger>
-                <TabsTrigger value="extra" className="px-10 font-black uppercase text-[10px] tracking-widest gap-2">
-                  <Plus className="h-4 w-4" /> Extra / Unknown
-                </TabsTrigger>
+                <TabsTrigger value="scanned" className="px-8 font-black uppercase text-[10px] tracking-widest gap-2"><ScanLine className="h-4 w-4" /> Scanned Log</TabsTrigger>
+                <TabsTrigger value="missing" className="px-8 font-black uppercase text-[10px] tracking-widest gap-2 text-rose-600"><AlertTriangle className="h-4 w-4" /> Missing ({reconciliation.missing.length})</TabsTrigger>
+                <TabsTrigger value="extra" className="px-8 font-black uppercase text-[10px] tracking-widest gap-2 text-amber-600"><Plus className="h-4 w-4" /> Extra ({reconciliation.extra.length})</TabsTrigger>
               </TabsList>
 
               <TabsContent value="scanned" className="mt-6">
                 <Card className="border-none shadow-xl rounded-3xl overflow-hidden">
                   <CardContent className="p-0">
-                    <div className="max-h-[600px] overflow-auto industrial-scroll">
+                    <div className="max-h-[650px] overflow-auto industrial-scroll">
                       <Table>
-                        <TableHeader className="bg-muted/30 sticky top-0 z-10">
-                          <TableRow>
-                            <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Roll ID</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Paper Type</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Dimensions</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Scan Time</TableHead>
-                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
+                        <TableHeader className="bg-muted/30 sticky top-0 z-10"><TableRow>
+                          <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Roll ID</TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Status</TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Dimensions</TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Scan Time</TableHead>
+                          <TableHead className="text-right font-black text-[10px] uppercase pr-8">Actions</TableHead>
+                        </TableRow></TableHeader>
                         <TableBody>
-                          {scannedRolls.length === 0 ? (
-                            <TableRow><TableCell colSpan={5} className="py-24 text-center opacity-30 uppercase font-black text-[10px] tracking-widest">Awaiting scanner input...</TableCell></TableRow>
-                          ) : [...scannedRolls].reverse().map(r => (
-                            <TableRow 
-                              key={r.id} 
-                              className={cn(
-                                "h-14 transition-colors",
-                                highlightedRowId === r.id ? "bg-emerald-50" : "hover:bg-slate-50"
-                              )}
-                            >
-                              <TableCell className="pl-8">
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span className="font-black text-primary font-mono truncate max-w-[150px] block cursor-help">{r.rollNo}</span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p className="text-[10px] font-bold uppercase">{r.rollNo}</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              </TableCell>
-                              <TableCell className="text-xs font-bold text-slate-600">{r.paperType}</TableCell>
-                              <TableCell className="text-xs font-medium text-slate-400">{r.dimension}</TableCell>
-                              <TableCell className="text-[10px] font-bold text-slate-400">{format(new Date(r.scanTime), 'HH:mm:ss')}</TableCell>
-                              <TableCell className="text-right pr-8">
-                                <div className="flex justify-end items-center gap-3">
-                                  <Badge className={cn(
-                                    "text-[9px] font-black h-5 px-3 uppercase border-none",
-                                    r.status === 'Matched' ? "bg-emerald-50 text-emerald-700" : "bg-amber-500 text-white"
-                                  )}>
-                                    {r.status}
-                                  </Badge>
-                                  {isAdmin && sessionData?.status !== 'Finalized' && (
-                                    <Button 
-                                      variant="ghost" 
-                                      size="icon" 
-                                      className="h-8 w-8 text-slate-300 hover:text-rose-500 transition-colors"
-                                      onClick={() => handleDeleteScannedRow(r.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                          {scannedRolls.length === 0 ? <TableRow><TableCell colSpan={5} className="py-24 text-center opacity-30 font-black text-[10px] tracking-widest uppercase">Awaiting hardware input...</TableCell></TableRow> : 
+                            [...scannedRolls].reverse().map(r => (
+                              <TableRow key={r.id} className={cn("h-14 transition-colors", highlightedRowId === r.id ? "bg-emerald-50" : "hover:bg-slate-50")}>
+                                <TableCell className="pl-8"><span className="font-black text-primary font-mono">{r.rollNo}</span></TableCell>
+                                <TableCell><Badge className={cn("text-[9px] font-black h-5", r.status === 'Matched' ? "bg-emerald-50 text-emerald-700" : "bg-amber-500 text-white")}>{r.status}</Badge></TableCell>
+                                <TableCell className="text-xs font-bold text-slate-400">{r.dimension}</TableCell>
+                                <TableCell className="text-[10px] font-bold text-slate-400">{format(new Date(r.scanTime), 'HH:mm:ss')}</TableCell>
+                                <TableCell className="text-right pr-8">{isAdmin && sessionData?.status !== 'Finalized' && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-200 hover:text-rose-500" onClick={() => handleDeleteScannedRow(r.id)}><Trash2 className="h-4 w-4" /></Button>}</TableCell>
+                              </TableRow>
+                            ))
+                          }
                         </TableBody>
                       </Table>
                     </div>
@@ -652,37 +572,34 @@ export default function PhysicalStockAuditPage() {
               </TabsContent>
 
               <TabsContent value="missing" className="mt-6">
-                <Card className="border-none shadow-xl rounded-3xl overflow-hidden border-rose-100">
-                  <CardHeader className="bg-rose-50/50 p-6 border-b border-rose-100">
-                    <CardTitle className="text-xs font-black uppercase text-rose-700 tracking-widest">Lost / Un-scanned Inventory</CardTitle>
-                  </CardHeader>
+                <Card className="border-none shadow-xl rounded-3xl overflow-hidden">
+                  <div className="bg-rose-50 p-4 border-b border-rose-100 flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase text-rose-700 flex items-center gap-2"><AlertTriangle className="h-4 w-4" /> {selectedMissing.size} Rolls Selected for Deduction</p>
+                    {isAdmin && selectedMissing.size > 0 && (
+                      <Button onClick={handleBulkRemoveMissing} disabled={isProcessing} className="bg-rose-600 hover:bg-rose-700 h-9 font-black uppercase text-[10px] tracking-widest shadow-lg">Remove Selected from Stock</Button>
+                    )}
+                  </div>
                   <CardContent className="p-0">
                     <div className="max-h-[600px] overflow-auto industrial-scroll">
                       <Table>
-                        <TableHeader className="bg-muted/30 sticky top-0 z-10">
-                          <TableRow>
-                            <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Roll ID</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Supplier</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Type</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Width</TableHead>
-                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Current Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
+                        <TableHeader className="bg-muted/30 sticky top-0 z-10"><TableRow>
+                          <TableHead className="w-12 text-center py-4"><Checkbox checked={reconciliation.missing.length > 0 && selectedMissing.size === reconciliation.missing.length} onCheckedChange={v => setSelectedMissing(v ? new Set(reconciliation.missing.map(r => r.id)) : new Set())} /></TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Roll ID</TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Supplier</TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Width</TableHead>
+                          <TableHead className="text-right font-black text-[10px] uppercase pr-8">Status</TableHead>
+                        </TableRow></TableHeader>
                         <TableBody>
                           {reconciliation.missing.map(r => (
-                            <TableRow key={r.id} className="hover:bg-slate-50 transition-colors h-14">
-                              <TableCell className="pl-8 font-black text-rose-600 font-mono">{r.rollNo}</TableCell>
+                            <TableRow key={r.id} className="hover:bg-slate-50 h-14">
+                              <TableCell className="text-center"><Checkbox checked={selectedMissing.has(r.id)} onCheckedChange={v => { const next = new Set(selectedMissing); v ? next.add(r.id) : next.delete(r.id); setSelectedMissing(next); }} /></TableCell>
+                              <TableCell className="font-black text-rose-600 font-mono">{r.rollNo}</TableCell>
                               <TableCell className="text-xs font-bold">{r.paperCompany}</TableCell>
-                              <TableCell className="text-xs font-medium text-slate-500">{r.paperType}</TableCell>
                               <TableCell className="text-xs font-mono font-bold">{r.widthMm}mm</TableCell>
-                              <TableCell className="text-right pr-8">
-                                <Badge variant="outline" className="text-[9px] font-black uppercase">{r.status}</Badge>
-                              </TableCell>
+                              <TableCell className="text-right pr-8"><Badge variant="outline" className="text-[9px] font-black uppercase">{r.status}</Badge></TableCell>
                             </TableRow>
                           ))}
-                          {reconciliation.missing.length === 0 && (
-                            <TableRow><TableCell colSpan={5} className="py-24 text-center text-emerald-600 uppercase font-black text-[10px] tracking-widest">Inventory Fully Verified - No Missing Rolls</TableCell></TableRow>
-                          )}
+                          {reconciliation.missing.length === 0 && <TableRow><TableCell colSpan={5} className="py-24 text-center text-emerald-600 uppercase font-black text-[10px]">Inventory Fully Verified</TableCell></TableRow>}
                         </TableBody>
                       </Table>
                     </div>
@@ -691,35 +608,32 @@ export default function PhysicalStockAuditPage() {
               </TabsContent>
 
               <TabsContent value="extra" className="mt-6">
-                <Card className="border-none shadow-xl rounded-3xl overflow-hidden border-amber-100">
-                  <CardHeader className="bg-amber-50/50 p-6 border-b border-amber-100">
-                    <CardTitle className="text-xs font-black uppercase text-amber-700 tracking-widest">Found But Not in ERP</CardTitle>
-                  </CardHeader>
+                <Card className="border-none shadow-xl rounded-3xl overflow-hidden">
+                  <div className="bg-amber-50 p-4 border-b border-amber-100 flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase text-amber-700 flex items-center gap-2"><Plus className="h-4 w-4" /> {selectedExtra.size} Rolls Selected for Registration</p>
+                    {isAdmin && selectedExtra.size > 0 && (
+                      <Button onClick={handleBulkAddExtra} disabled={isProcessing} className="bg-amber-600 hover:bg-amber-700 h-9 font-black uppercase text-[10px] tracking-widest shadow-lg">Add Selected to Registry</Button>
+                    )}
+                  </div>
                   <CardContent className="p-0">
                     <div className="max-h-[600px] overflow-auto industrial-scroll">
                       <Table>
-                        <TableHeader className="bg-muted/30 sticky top-0 z-10">
-                          <TableRow>
-                            <TableHead className="font-black text-[10px] uppercase pl-8 py-4">Scanned ID</TableHead>
-                            <TableHead className="font-black text-[10px] uppercase py-4">Scan Context</TableHead>
-                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Reconciliation</TableHead>
-                          </TableRow>
-                        </TableHeader>
+                        <TableHeader className="bg-muted/30 sticky top-0 z-10"><TableRow>
+                          <TableHead className="w-12 text-center py-4"><Checkbox checked={reconciliation.extra.length > 0 && selectedExtra.size === reconciliation.extra.length} onCheckedChange={v => setSelectedExtra(v ? new Set(reconciliation.extra.map(r => r.id)) : new Set())} /></TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Found ID</TableHead>
+                          <TableHead className="font-black text-[10px] uppercase py-4">Scan Time</TableHead>
+                          <TableHead className="text-right font-black text-[10px] uppercase pr-8">Actions</TableHead>
+                        </TableRow></TableHeader>
                         <TableBody>
                           {reconciliation.extra.map(r => (
-                            <TableRow key={r.id} className="hover:bg-slate-50 transition-colors h-14">
-                              <TableCell className="pl-8 font-black text-amber-600 font-mono">{r.rollNo}</TableCell>
-                              <TableCell className="text-xs font-bold text-slate-400">Scanned at {format(new Date(r.scanTime), 'HH:mm:ss')}</TableCell>
-                              <TableCell className="text-right pr-8">
-                                <Button variant="ghost" size="sm" className="h-8 font-black uppercase text-[9px] tracking-widest text-primary hover:bg-primary/5">
-                                  Register Roll
-                                </Button>
-                              </TableCell>
+                            <TableRow key={r.id} className="hover:bg-slate-50 h-14">
+                              <TableCell className="text-center"><Checkbox checked={selectedExtra.has(r.id)} onCheckedChange={v => { const next = new Set(selectedExtra); v ? next.add(r.id) : next.delete(r.id); setSelectedExtra(next); }} /></TableCell>
+                              <TableCell className="font-black text-amber-600 font-mono">{r.rollNo}</TableCell>
+                              <TableCell className="text-xs font-bold text-slate-400">Captured at {format(new Date(r.scanTime), 'HH:mm')}</TableCell>
+                              <TableCell className="text-right pr-8"><Button variant="ghost" size="sm" className="h-8 font-black uppercase text-[9px] text-primary hover:bg-primary/5">Details</Button></TableCell>
                             </TableRow>
                           ))}
-                          {reconciliation.extra.length === 0 && (
-                            <TableRow><TableCell colSpan={3} className="py-24 text-center opacity-30 uppercase font-black text-[10px] tracking-widest">No extra rolls found</TableCell></TableRow>
-                          )}
+                          {reconciliation.extra.length === 0 && <TableRow><TableCell colSpan={4} className="py-24 text-center opacity-30 uppercase font-black text-[10px]">No unidentified rolls found</TableCell></TableRow>}
                         </TableBody>
                       </Table>
                     </div>
@@ -731,29 +645,13 @@ export default function PhysicalStockAuditPage() {
         </div>
       )}
 
-      {/* NEW SESSION DIALOG */}
+      {/* MODALS */}
       <Dialog open={isNewSessionOpen} onOpenChange={setIsNewSessionOpen}>
         <DialogContent className="sm:max-w-[425px] rounded-[2rem] border-none shadow-3xl">
           <form onSubmit={handleCreateSession}>
-            <DialogHeader>
-              <DialogTitle className="text-xl font-black uppercase flex items-center gap-3">
-                <Plus className="h-6 w-6 text-primary" /> Start New Audit
-              </DialogTitle>
-              <DialogDescription className="font-bold uppercase text-[10px] tracking-widest">
-                Create a container for this month's physical verification.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-8 space-y-4">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase opacity-50">Audit Session Name</Label>
-                <Input name="sessionName" placeholder="e.g. March 2026 Monthly Audit" required className="h-12 rounded-xl font-bold border-2" />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="submit" className="w-full h-14 rounded-2xl bg-primary text-white font-black uppercase tracking-widest shadow-xl">
-                Initialize Session
-              </Button>
-            </DialogFooter>
+            <DialogHeader><DialogTitle className="text-xl font-black uppercase flex items-center gap-3"><Plus className="h-6 w-6 text-primary" /> Start New Audit</DialogTitle></DialogHeader>
+            <div className="py-8"><div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Audit Session Name</Label><Input name="sessionName" placeholder="e.g. March 2026 Audit" required className="h-12 rounded-xl font-bold border-2" /></div></div>
+            <DialogFooter><Button type="submit" className="w-full h-14 rounded-2xl bg-primary font-black uppercase tracking-widest shadow-xl">Initialize Session</Button></DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -763,13 +661,8 @@ export default function PhysicalStockAuditPage() {
 
 function SummaryRow({ label, value, icon: Icon, color = "text-slate-900", bg = "bg-slate-50" }: any) {
   return (
-    <div className={cn("p-4 rounded-2xl flex items-center justify-between transition-all hover:shadow-inner", bg)}>
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-8 bg-white rounded-lg shadow-sm border flex items-center justify-center">
-          <Icon className={cn("h-4 w-4", color)} />
-        </div>
-        <span className="text-[10px] font-black uppercase text-slate-400 tracking-tight">{label}</span>
-      </div>
+    <div className={cn("p-4 rounded-2xl flex items-center justify-between transition-all hover:bg-slate-100", bg)}>
+      <div className="flex items-center gap-3"><div className="h-8 w-8 bg-white rounded-lg shadow-sm border flex items-center justify-center"><Icon className={cn("h-4 w-4", color)} /></div><span className="text-[10px] font-black uppercase text-slate-400">{label}</span></div>
       <span className={cn("text-lg font-black tracking-tight", color)}>{value}</span>
     </div>
   )
