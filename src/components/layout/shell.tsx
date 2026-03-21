@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
@@ -68,8 +68,13 @@ const routePermissionMap: Record<string, PermissionKey> = {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const [isMounted, setIsMounted] = useState(false)
   const pathname = usePathname()
   const firestore = useFirestore()
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Fetch company name and logos from settings
   const companyDocRef = useMemoFirebase(() => {
@@ -111,7 +116,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       // Main favicon.ico fallback
       if (companySettings.favicon32) updateIcon('link[rel="icon"]:not([sizes])', companySettings.favicon32);
     }
-  }, [companyName, companySettings]);
+  }, [isMounted, companyName, companySettings]);
 
   const isLoginPage = pathname === "/login"
   const isUnauthorizedPage = pathname === "/unauthorized"
