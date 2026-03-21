@@ -144,7 +144,7 @@ function SlittingHubContent() {
   }, [firestore]);
   const { data: rawPlanningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
 
-  // Client-side filter for Job Status (Part 5)
+  // Client-side filter for Job Status
   const planningJobs = useMemo(() => {
     if (!rawPlanningJobs) return [];
     return rawPlanningJobs.filter(j => {
@@ -438,7 +438,7 @@ function SlittingHubContent() {
     }
   }
 
-  // --- AUTO PLANNER LOGIC (Part 1, 2, 3) ---
+  // --- AUTO PLANNER LOGIC ---
   const availableOptions = useMemo(() => {
     if (!selectedPlanningJob || !stockData) return [];
     const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
@@ -466,7 +466,7 @@ function SlittingHubContent() {
         const yieldPerRoll = rl * splits;
         const requiredRolls = yieldPerRoll > 0 ? Math.ceil(jobLengthRequired / yieldPerRoll) : 1;
 
-        // Smart Priority Logic (Part 3)
+        // Smart Priority Logic
         let priorityLabel = "Alternate";
         if (rw === targetWidth) priorityLabel = "Best Fit";
         else if (rw >= 1000) priorityLabel = "Use Jumbo if required";
@@ -493,14 +493,13 @@ function SlittingHubContent() {
     });
 
     return Object.values(groups).sort((a: any, b: any) => {
-      // Sorting: Best Fit first, then by efficiency
       if (a.priorityLabel === "Best Fit" && b.priorityLabel !== "Best Fit") return -1;
       if (b.priorityLabel === "Best Fit" && a.priorityLabel !== "Best Fit") return 1;
       return b.efficiency - a.efficiency;
     });
   }, [selectedPlanningJob, stockData]);
 
-  // Insight Calculations (Part 4)
+  // Insight Calculations
   const selectionInsights = useMemo(() => {
     if (!selectedPlanningJob) return { totalProduced: 0, remaining: 0, required: 0 };
     const required = Number(selectedPlanningJob.values.allocate_mtrs) || 0;
@@ -584,7 +583,7 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- AUTO SLITTING PLANNER PANEL (Part 1 Required Mtr) --- */}
+      {/* --- AUTO SLITTING PLANNER PANEL --- */}
       <Card className="shadow-2xl border-none rounded-3xl overflow-hidden bg-white mx-4">
         <CardHeader className="bg-slate-900 text-white p-6">
           <div className="flex items-center justify-between">
@@ -822,7 +821,7 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- PLANNER OPTIONS MODAL (Parts 1, 2, 3, 4) --- */}
+      {/* --- PLANNER OPTIONS MODAL --- */}
       <Dialog open={isOptionsModalOpen} onOpenChange={setIsOptionsModalOpen}>
         <DialogContent className="sm:max-w-[1200px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-slate-50 flex flex-col h-[90vh]">
           <div className="bg-slate-900 text-white p-8 shrink-0">
@@ -850,9 +849,9 @@ function SlittingHubContent() {
                 <TableHeader className="bg-slate-100/50">
                   <TableRow className="h-12">
                     <TableHead className="font-black text-[9px] uppercase pl-6">Dimension & Priority</TableHead>
-                    <TableHead className="font-black text-[9px] uppercase text-center">Wastage</TableHead>
-                    <TableHead className="font-black text-[9px] uppercase text-center">Estimation (Part 2)</TableHead>
-                    <TableHead className="font-black text-[9px] uppercase">Yield Details (Part 1)</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase text-center">Wastage Control</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase text-center">Estimation</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase">Yield Details</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-center">Efficiency</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-right pr-6">Batch Selection</TableHead>
                   </TableRow>
@@ -878,7 +877,23 @@ function SlittingHubContent() {
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
-                          <Badge variant="outline" className="border-rose-200 text-rose-600 font-black h-6 px-3">{opt.waste} MM</Badge>
+                          <div className="flex flex-col items-center gap-2">
+                            <Badge variant="outline" className="border-rose-200 text-rose-600 font-black h-6 px-3">{opt.waste} MM</Badge>
+                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg scale-75 shadow-inner">
+                              <Button 
+                                variant={wastagePreferences[opt.key] !== 'ADJUST' ? "secondary" : "ghost"} 
+                                size="sm" 
+                                className="h-6 px-2 text-[8px] font-black tracking-tighter"
+                                onClick={() => setWastagePreferences({...wastagePreferences, [opt.key]: 'STOCK'})}
+                              >STOCK</Button>
+                              <Button 
+                                variant={wastagePreferences[opt.key] === 'ADJUST' ? "secondary" : "ghost"} 
+                                size="sm" 
+                                className="h-6 px-2 text-[8px] font-black tracking-tighter"
+                                onClick={() => setWastagePreferences({...wastagePreferences, [opt.key]: 'ADJUST'})}
+                              >WASTE</Button>
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex flex-col items-center justify-center gap-1">
@@ -917,7 +932,7 @@ function SlittingHubContent() {
             </div>
           </div>
 
-          {/* Selection Insight Panel (Part 4) */}
+          {/* Selection Insight Panel */}
           <div className="p-8 bg-white border-t border-slate-100 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
             <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
               <div className="flex-1 w-full space-y-4">
