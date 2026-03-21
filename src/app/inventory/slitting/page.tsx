@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -69,6 +68,7 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import { ActionModal, ModalType } from "@/components/action-modal"
 import { Separator } from "@/components/ui/separator"
+import { QRCodeSVG } from 'qrcode.react'
 
 interface SlitRun {
   id: string;
@@ -586,7 +586,8 @@ function SlittingHubContent() {
       const imgData = canvas.toDataURL('image/png', 1.0);
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0';
-      iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
+      iframe.style.width = '0'; iframe.style.height = '0';
+      iframe.style.border = '0';
       document.body.appendChild(iframe);
 
       const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
