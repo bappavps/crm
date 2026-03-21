@@ -84,8 +84,8 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V11.0)
- * Integrated with Global Image Library and Template Portability (JSON Imp/Exp).
+ * PRINT TEMPLATE STUDIO (V12.0)
+ * Fixed "From Library" crash and implemented real-time thumbnail generation.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -197,7 +197,6 @@ export default function PrintTemplateStudio() {
   const [zoom, setZoom] = useState(1)
   const [isSaving, setIsSaving] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
-  const [isSeeding, setIsSeeding] = useState(false)
   const [gridSnap, setGridSnap] = useState(5)
   const [showGuidelines, setShowGuidelines] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string>("All")
@@ -330,10 +329,28 @@ export default function PrintTemplateStudio() {
     if (currentTemplate.isSystemTemplate) { toast({ variant: "destructive", title: "Read Only", description: "System templates cannot be modified." }); return; }
     setIsSaving(true)
     
-    // Generate thumbnail automatically before saving (simplified simulation)
-    const updated = { ...currentTemplate, updatedAt: serverTimestamp() };
-    const docRef = doc(firestore, 'print_templates', currentTemplate.id);
-    try { 
+    try {
+      const canvasElement = document.getElementById('studio-canvas-print');
+      let thumbnail = currentTemplate.thumbnail || "";
+      
+      if (canvasElement) {
+        const html2canvas = (await import('html2canvas')).default;
+        const canvas = await html2canvas(canvasElement, {
+          scale: 0.2, // Small scale for thumbnail
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+        thumbnail = canvas.toDataURL('image/jpeg', 0.7);
+      }
+
+      const updated = { 
+        ...currentTemplate, 
+        thumbnail,
+        updatedAt: serverTimestamp() 
+      };
+      
+      const docRef = doc(firestore, 'print_templates', currentTemplate.id);
       await setDoc(docRef, updated, { merge: true }); 
       toast({ title: "Template Saved" }) 
     } catch (e: any) { 
@@ -472,10 +489,14 @@ export default function PrintTemplateStudio() {
                 <Card key={tpl.id} className="group hover:border-primary transition-all overflow-hidden border-none shadow-lg bg-white relative">
                   {tpl.isSystemTemplate && <div className="absolute top-2 left-2 z-20"><Badge className="bg-slate-900 text-white border-none text-[8px] font-black uppercase py-0.5 px-2">SYSTEM DEFAULT</Badge></div>}
                   <div className="bg-slate-100 aspect-[3/4] p-4 relative flex items-center justify-center overflow-hidden">
-                    <div className="bg-white shadow-2xl w-full h-full rounded p-4 flex flex-col gap-2 overflow-hidden scale-90 opacity-80 group-hover:opacity-100 transition-all">
-                      <div className="h-4 w-1/2 bg-slate-100 rounded" /><div className="h-2 w-full bg-slate-50 rounded" /><div className="h-2 w-full bg-slate-50 rounded" />
-                      <div className="mt-auto h-10 w-full border-2 border-dashed border-slate-50 rounded flex items-center justify-center text-[8px] font-bold text-slate-200 uppercase">Layout Preview</div>
-                    </div>
+                    {tpl.thumbnail ? (
+                      <img src={tpl.thumbnail} className="w-full h-full object-contain shadow-md rounded" alt="Preview" />
+                    ) : (
+                      <div className="bg-white shadow-2xl w-full h-full rounded p-4 flex flex-col gap-2 overflow-hidden scale-90 opacity-80 group-hover:opacity-100 transition-all">
+                        <div className="h-4 w-1/2 bg-slate-100 rounded" /><div className="h-2 w-full bg-slate-50 rounded" /><div className="h-2 w-full bg-slate-50 rounded" />
+                        <div className="mt-auto h-10 w-full border-2 border-dashed border-slate-50 rounded flex items-center justify-center text-[8px] font-bold text-slate-200 uppercase">No Preview</div>
+                      </div>
+                    )}
                     <div className="absolute inset-0 bg-primary/90 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 p-6">
                       <Button variant="secondary" className="w-full font-black uppercase text-[10px] tracking-widest" onClick={() => { setCurrentTemplate(tpl); setIsEditorOpen(true); }}>
                         {tpl.isSystemTemplate ? <><Eye className="h-3 w-3 mr-2" /> View Layout</> : <><Paintbrush className="h-3 w-3 mr-2" /> Edit Layout</>}
@@ -658,11 +679,11 @@ export default function PrintTemplateStudio() {
           <div className="flex-1 overflow-auto p-8 bg-slate-50">
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
               {libraryImages?.map((asset) => (
-                <Card key={asset.id} className="group cursor-pointer border-none shadow-lg rounded-2xl overflow-hidden bg-white transition-all hover:ring-4 hover:ring-primary/20" onClick={() => handleLibraryUpload(asset)}>
+                <Card key={asset.id} className="group cursor-pointer border-none shadow-lg rounded-2xl overflow-hidden bg-white transition-all hover:ring-4 hover:ring-primary/20" onClick={() => handleSelectFromLibrary(asset)}>
                   <div className="aspect-square relative flex items-center justify-center p-4 bg-white">
                     <img src={asset.url} alt={asset.name} className="w-full h-full object-contain" />
                     <div className="absolute inset-0 bg-primary/90 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <Button variant="secondary" className="font-black text-[9px] uppercase tracking-widest" onClick={(e) => { e.stopPropagation(); handleSelectFromLibrary(asset); }}>Select Asset</Button>
+                      <Button variant="secondary" className="font-black text-[9px] uppercase tracking-widest">Select Asset</Button>
                     </div>
                   </div>
                   <div className="p-3 border-t">
@@ -689,7 +710,7 @@ export default function PrintTemplateStudio() {
             <div className="grid gap-6 py-6">
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Template Name</Label><Input name="name" placeholder="e.g. Industrial Label v1" required className="h-11 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Document Category</Label><Select name="documentType" required><SelectTrigger className="h-11 rounded-xl border-2 font-bold"><SelectValue placeholder="Select Category" /></SelectTrigger><SelectContent className="z-[200]"><SelectItem value="Tax Invoice">Tax Invoice</SelectItem><SelectItem value="Technical Job Card">Technical Job Card</SelectItem><SelectItem value="Industrial Label">Industrial Label</SelectItem><SelectItem value="Delivery Challan">Delivery Challan</SelectItem><SelectItem value="Purchase Order">Purchase Order</SelectItem><SelectItem value="Proforma">Proforma Invoice</SelectItem><SelectItem value="Report">Report / Audit Sheet</SelectItem></SelectContent></Select></div>
-              <div className="space-y-4"><Label className="text-[10px] font-black uppercase opacity-50">Paper Specification</Label><Select name="paperSize" defaultValue="A4"><SelectTrigger className="h-11 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger><SelectContent className="z-[200]">{PAPER_SIZES.map(s => <SelectItem key={s.id} value={s.id}>{s.name} {s.id !== 'Custom' && `(${s.w}x${s.h}mm)`}</SelectItem>)}</SelectContent></Select><div className="grid grid-cols-2 gap-4"><div className="space-y-1"><Label className="text-[9px] uppercase font-bold text-slate-400">Width (mm)</Label><Input name="customWidth" type="number" placeholder="100" className="h-10 font-bold" /></div><div className="space-y-1"><Label className="text-[9px] uppercase font-bold text-slate-400">Height (mm)</Label><Input name="customHeight" type="number" placeholder="100" className="h-10 font-bold" /></div></div></div>
+              <div className="space-y-4"><Label className="text-[10px] font-black uppercase opacity-50">Paper Specification</Label><Select name="paperSize" defaultValue="A4"><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue /></SelectTrigger><SelectContent className="z-[200]">{PAPER_SIZES.map(s => <SelectItem key={s.id} value={s.id}>{s.name} {s.id !== 'Custom' && `(${s.w}x${s.h}mm)`}</SelectItem>)}</SelectContent></Select><div className="grid grid-cols-2 gap-4"><div className="space-y-1"><Label className="text-[9px] uppercase font-bold text-slate-400">Width (mm)</Label><Input name="customWidth" type="number" placeholder="100" className="h-10 font-bold" /></div><div className="space-y-1"><Label className="text-[9px] uppercase font-bold text-slate-400">Height (mm)</Label><Input name="customHeight" type="number" placeholder="100" className="h-10 font-bold" /></div></div></div>
             </div>
             <DialogFooter><Button type="submit" className="w-full h-14 font-black uppercase tracking-widest rounded-2xl shadow-xl">Start Designing</Button></DialogFooter>
           </form>
