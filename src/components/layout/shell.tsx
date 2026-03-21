@@ -11,6 +11,7 @@ import { PermissionKey } from "@/components/auth/permission-context"
 import { Separator } from "@/components/ui/separator"
 import { useFirestore, useDoc, useMemoFirebase } from "@/firebase"
 import { doc } from "firebase/firestore"
+import { Footer } from "@/components/layout/footer"
 
 // Map of routes to permission keys
 const routePermissionMap: Record<string, PermissionKey> = {
@@ -108,16 +109,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           
-          <main className="flex-1 p-4 md:p-6 lg:p-8">
-            <div className="w-full pb-32 transition-all duration-300">
-              {isUnauthorizedPage ? (
-                children
-              ) : (
-                <ProtectedRoute permission={requiredPermission}>
-                  {children}
-                </ProtectedRoute>
-              )}
+          <main className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 p-4 md:p-6 lg:p-8">
+              <div className="w-full pb-12 transition-all duration-300">
+                {isUnauthorizedPage ? (
+                  children
+                ) : (
+                  <ProtectedRoute permission={requiredPermission}>
+                    {children}
+                  </ProtectedRoute>
+                )}
+              </div>
             </div>
+            <Footer />
           </main>
         </SidebarInset>
       </div>
