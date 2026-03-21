@@ -1,3 +1,4 @@
+
 "use client"
 
 import React from 'react'
@@ -115,13 +116,15 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
                 <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
                 <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>PAPER TYPE</span>
                 <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>DIMENSION</span>
+                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>JOB NAME</span>
                 <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>COMPANY</span>
               </div>
               {tableData.map((row: any, idx: number) => (
                 <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
                   <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{row.rollId}</span>
                   <span style={{ flex: 2, fontSize: '10px' }}>{row.paperType}</span>
-                  <span style={{ flex: 2, fontSize: '10px' }}>{row.width}mm x {row.length}m</span>
+                  <span style={{ flex: 2, fontSize: '10px' }}>{row.dimension || `${row.width}mm x ${row.length}m`}</span>
+                  <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold', color: '#E4892B' }}>{row.jobName}</span>
                   <span style={{ flex: 2, fontSize: '10px' }}>{row.company}</span>
                 </div>
               ))}
@@ -135,14 +138,16 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
               <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
               <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>W (MM)</span>
               <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>L (MTR)</span>
-              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>DEST</span>
+              <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>JOB NAME</span>
+              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>STATUS</span>
             </div>
             {tableData.map((row: any, idx: number) => (
               <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
-                <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace' }}>{row.rollNo || row.roll_code}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.widthMm || row.width}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.lengthMeters || row.length}</span>
-                <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>{row.jobNo ? 'JOB' : 'STOCK'}</span>
+                <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace' }}>{row.rollId || row.rollNo || row.roll_code}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.width || row.widthMm}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.length || row.lengthMeters}</span>
+                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>{row.jobName || (row.jobNo ? 'Job' : 'Stock')}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.status || (row.jobNo ? 'Assigned' : 'Stock')}</span>
               </div>
             ))}
           </div>

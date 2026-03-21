@@ -92,8 +92,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V15.1)
- * Fixed hydration mismatch for current date placeholders.
+ * PRINT TEMPLATE STUDIO (V15.2)
+ * Enhanced Job Card dynamic field directory.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -184,6 +184,7 @@ const PLACEHOLDERS = {
     { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
     { key: '{{machine_name}}', label: 'Machine Name', icon: Wrench, preview: 'Jumbo Slitter A1' },
     { key: '{{operator_name}}', label: 'Operator', icon: User, preview: 'Mriganka Debnath' },
+    { key: '{{parent_roll}}', label: 'Primary Parent ID', icon: Box, preview: 'T-1001' },
     { key: '{{sourceRolls}}', label: 'Source Material Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
     { key: '{{SLIT_ROLLS}}', label: 'Slitting Output Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
   ]

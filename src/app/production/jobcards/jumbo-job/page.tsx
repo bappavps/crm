@@ -334,15 +334,25 @@ function JumboJobCardContent() {
       machine_name: job?.machine || "",
       operator_name: job?.operator || "",
       parent_roll: job?.parent_roll || "",
+      // Standardized Source Material Allocation Data for Templates
       sourceRolls: rawSourceRolls.map(r => ({
         rollId: r.rollNo || "",
         paperType: r.paperType || "",
         width: r.widthMm || 0,
         length: r.lengthMeters || 0,
+        dimension: `${r.widthMm}mm x ${r.lengthMeters}m`,
         company: r.paperCompany || "",
         jobName: r.jobName || "—"
       })),
-      SLIT_ROLLS: children,
+      // Standardized Slit Output Data for Templates
+      SLIT_ROLLS: children.map(r => ({
+        ...r,
+        rollId: r.rollNo || "",
+        width: r.widthMm || 0,
+        length: r.lengthMeters || 0,
+        jobName: r.jobName || "Available Stock",
+        status: r.jobNo ? "Assigned" : "Available Stock"
+      })),
       company_name: "Shree Label Creation",
       current_date: new Date().toLocaleDateString()
     };
@@ -364,8 +374,6 @@ function JumboJobCardContent() {
     current_date: new Date().toLocaleDateString(),
     roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
   });
-
-  const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
 
   const GROUP_COLORS = ['bg-blue-50/40', 'bg-slate-50/60'];
 
