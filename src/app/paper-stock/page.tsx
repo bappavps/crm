@@ -79,7 +79,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from "@/dropdown-menu"
+} from "@/components/ui/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { 
   collection, 
@@ -985,7 +985,7 @@ export default function PaperStockPage() {
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>
                 {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
-                Execute Print
+                Execute Print Stream
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsReportOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
             </div>
@@ -1027,7 +1027,7 @@ export default function PaperStockPage() {
             </div>
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
                 Execute Spooler
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
