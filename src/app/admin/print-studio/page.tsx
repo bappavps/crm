@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -80,9 +81,9 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V9.0)
- * Enhanced with High-Resolution Snapshot Printing Pipeline (Direct IFrame).
- * Eliminates layout shifts and text distortion via background capture.
+ * PRINT TEMPLATE STUDIO (V9.5)
+ * WYSIWYG Technical Design Canvas with Strict Clipping & Yellow Boundary.
+ * Ensures Print Output = Designer Preview.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -335,8 +336,9 @@ export default function PrintTemplateStudio() {
       const paperW = currentTemplate.paperWidth;
       const paperH = currentTemplate.paperHeight;
 
+      // Ensure the captured element doesn't show designer outlines or shadows
       const canvas = await html2canvas(canvasElement, {
-        scale: 4, // 4x resolution for sharp industrial text
+        scale: 4, 
         useCORS: true,
         allowTaint: true,
         logging: false,
@@ -593,7 +595,22 @@ export default function PrintTemplateStudio() {
               <div className="absolute top-0 left-0 right-0 h-8 bg-white border-b flex items-end px-20 z-10 shadow-sm print:hidden">
                 {Array.from({ length: 20 }).map((_, i) => (<div key={i} className="flex-1 border-l border-slate-300 h-2 text-[8px] text-slate-400 pl-1">{i * 50}</div>))}
               </div>
-              <div id="studio-canvas-print" className="bg-white shadow-2xl relative border border-slate-300 overflow-hidden canvas-surface print:border-none print:shadow-none" style={{ width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`, transform: `scale(${zoom})`, transformOrigin: 'top center' }} onMouseDown={() => setSelectedElementId(null)}>
+              
+              {/* WYSIWYG Technical Design Area */}
+              <div 
+                id="studio-canvas-print" 
+                className="bg-white shadow-2xl relative overflow-hidden canvas-surface print:border-none print:shadow-none transition-all duration-200" 
+                style={{ 
+                  width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, 
+                  height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`, 
+                  transform: `scale(${zoom})`, 
+                  transformOrigin: 'top center',
+                  outline: '2px solid #fbbf24', // Yellow safety boundary
+                  outlineOffset: '0px',
+                  contain: 'paint' // Enforce strict hardware clipping
+                }} 
+                onMouseDown={() => setSelectedElementId(null)}
+              >
                 {currentTemplate?.background?.image && <div className="absolute inset-0 pointer-events-none z-0" style={{ opacity: currentTemplate.background.opacity }}><img src={currentTemplate.background.image} className="w-full h-full object-contain" alt="Background" /></div>}
                 {showGuidelines && <div className="absolute inset-0 opacity-[0.05] pointer-events-none z-[5] guidelines-grid print:hidden" style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />}
                 <div className="relative z-10 w-full h-full">
@@ -602,6 +619,7 @@ export default function PrintTemplateStudio() {
                   ))}
                 </div>
               </div>
+
               <div className="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white p-2 rounded-2xl flex items-center gap-4 shadow-2xl border border-white/10 z-[150] print:hidden">
                 <div className="flex items-center gap-2 px-2">
                   <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/10" onClick={() => setZoom(z => Math.max(0.2, z - 0.1))}>-</Button>
@@ -667,6 +685,26 @@ export default function PrintTemplateStudio() {
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        /* WYSIWYG Print Studio Safety Boundary Styling */
+        #studio-canvas-print::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 100;
+          outline: 2px dashed #fbbf24;
+          outline-offset: -2px;
+          opacity: 0.5;
+        }
+        
+        @media print {
+          #studio-canvas-print::before {
+            display: none !important;
+          }
+        }
+      `}</style>
 
       <Dialog open={isNewDialogOpen} onOpenChange={setIsNewDialogOpen}>
         <DialogContent className="sm:max-w-[425px] rounded-3xl">
