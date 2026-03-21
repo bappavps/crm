@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect } from "react"
@@ -27,7 +28,9 @@ import {
   Shield,
   Tag,
   Filter,
-  AlertTriangle
+  AlertTriangle,
+  Smartphone,
+  Maximize
 } from "lucide-react"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { doc, setDoc, serverTimestamp, collection, deleteDoc, getDocs, query, where } from "firebase/firestore"
@@ -85,6 +88,8 @@ export default function SettingsPage() {
     email: "",
     website: "",
     logo: "",
+    pwaIcon192: "",
+    pwaIcon512: "",
     company_id: "default_company"
   })
 
@@ -99,10 +104,42 @@ export default function SettingsPage() {
         email: companySettings.email || "",
         website: companySettings.website || "",
         logo: companySettings.logo || "",
+        pwaIcon192: companySettings.pwaIcon192 || "",
+        pwaIcon512: companySettings.pwaIcon512 || "",
         company_id: companySettings.company_id || "default_company"
       });
     }
   }, [companySettings]);
+
+  /**
+   * Industrial Image Processor: PNG Conversion + Resize
+   */
+  const processImage = (file: File, size: number): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return reject("Canvas failure");
+
+          // Center Crop Logic
+          const minDim = Math.min(img.width, img.height);
+          const sx = (img.width - minDim) / 2;
+          const sy = (img.height - minDim) / 2;
+
+          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+          resolve(canvas.toDataURL('image/png'));
+        };
+      };
+      reader.onerror = reject;
+    });
+  };
 
   const handleSaveCompany = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +151,7 @@ export default function SettingsPage() {
         updatedAt: serverTimestamp(),
         updatedBy: user.uid
       }, { merge: true });
-      toast({ title: "Company Details Saved", description: "Global branding has been updated." });
+      toast({ title: "Company Details Saved", description: "Global branding and PWA icons have been updated." });
     } catch (e) {
       toast({ variant: "destructive", title: "Save Failed" });
     } finally {
@@ -122,15 +159,36 @@ export default function SettingsPage() {
     }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const base64 = evt.target?.result as string;
-      setCompanyForm(prev => ({ ...prev, logo: base64 }));
-    };
-    reader.readAsDataURL(file);
+
+    if (!file.type.startsWith('image/')) {
+      toast({ variant: "destructive", title: "Invalid File", description: "Only image files are allowed." });
+      return;
+    }
+
+    setIsUploading(true);
+    toast({ title: "Optimizing Branding...", description: "Converting to PNG and generating PWA icon set." });
+
+    try {
+      const mainLogo = await processImage(file, 512); 
+      const icon192 = await processImage(file, 192);
+      const icon512 = await processImage(file, 512);
+
+      setCompanyForm(prev => ({ 
+        ...prev, 
+        logo: mainLogo,
+        pwaIcon192: icon192,
+        pwaIcon512: icon512
+      }));
+      
+      toast({ title: "Branding Ready", description: "Logo optimized for app installation successfully." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Processing Error", description: "Could not generate technical icon set." });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleLibraryUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -223,30 +281,66 @@ export default function SettingsPage() {
               <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
                 <Building2 className="h-5 w-5 text-primary" /> Corporate Identity
               </CardTitle>
-              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest">Global branding used for Invoices, Print Sheets, and Reports</CardDescription>
+              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest">Global branding used for Invoices, Print Sheets, and PWA App Icons</CardDescription>
             </CardHeader>
             <CardContent className="p-8">
               <form onSubmit={handleSaveCompany} className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                {/* Logo Section */}
-                <div className="space-y-6">
-                  <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Brand Logo</Label>
-                  <div className="relative group aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl overflow-hidden flex flex-col items-center justify-center gap-4 transition-all hover:border-primary/40 hover:bg-primary/5">
-                    {companyForm.logo ? (
-                      <>
-                        <img src={companyForm.logo} alt="Logo" className="w-full h-full object-contain p-8" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                          <Label htmlFor="logo-upload" className="cursor-pointer bg-white text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-xl">Change Logo</Label>
+                {/* Logo & PWA Section */}
+                <div className="space-y-8">
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Master Brand Logo</Label>
+                    <div className="relative group aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl overflow-hidden flex flex-col items-center justify-center gap-4 transition-all hover:border-primary/40 hover:bg-primary/5">
+                      {companyForm.logo ? (
+                        <>
+                          <img src={companyForm.logo} alt="Logo" className="w-full h-full object-contain p-8" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                            <Label htmlFor="logo-upload" className="cursor-pointer bg-white text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-xl">Change Logo</Label>
+                          </div>
+                        </>
+                      ) : (
+                        <Label htmlFor="logo-upload" className="cursor-pointer flex flex-col items-center gap-2 group">
+                          <Upload className="h-10 w-10 text-slate-300 group-hover:text-primary transition-colors" />
+                          <span className="text-[10px] font-black uppercase text-slate-400">Upload Logo</span>
+                        </Label>
+                      )}
+                      <input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} disabled={isUploading} />
+                      {isUploading && (
+                        <div className="absolute inset-0 bg-white/80 flex items-center justify-center backdrop-blur-sm">
+                          <Loader2 className="h-10 w-10 animate-spin text-primary" />
                         </div>
-                      </>
-                    ) : (
-                      <Label htmlFor="logo-upload" className="cursor-pointer flex flex-col items-center gap-2 group">
-                        <Upload className="h-10 w-10 text-slate-300 group-hover:text-primary transition-colors" />
-                        <span className="text-[10px] font-black uppercase text-slate-400">Upload High-Res PNG</span>
-                      </Label>
-                    )}
-                    <input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                      )}
+                    </div>
                   </div>
-                  <p className="text-[9px] text-muted-foreground text-center font-medium italic">Recommended: 512x512 Transparent PNG</p>
+
+                  {/* PWA Icon Previews */}
+                  <div className="space-y-4 pt-4 border-t">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
+                      <Smartphone className="h-3 w-3" /> PWA Optimized Iconset
+                    </Label>
+                    <div className="flex items-end gap-6">
+                      <div className="space-y-2">
+                        <div className="w-16 h-16 bg-slate-50 border rounded-xl overflow-hidden shadow-inner">
+                          {companyForm.pwaIcon192 ? (
+                            <img src={companyForm.pwaIcon192} className="w-full h-full object-cover" alt="192" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center opacity-20"><ImageIcon className="h-4 w-4" /></div>
+                          )}
+                        </div>
+                        <p className="text-[8px] font-black text-center text-slate-400 uppercase">192px</p>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="w-24 h-24 bg-slate-50 border rounded-2xl overflow-hidden shadow-md">
+                          {companyForm.pwaIcon512 ? (
+                            <img src={companyForm.pwaIcon512} className="w-full h-full object-cover" alt="512" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center opacity-20"><ImageIcon className="h-6 w-6" /></div>
+                          )}
+                        </div>
+                        <p className="text-[8px] font-black text-center text-slate-400 uppercase">512px (HQ)</p>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-muted-foreground font-medium italic">Automatically generated from your logo upload.</p>
+                  </div>
                 </div>
 
                 {/* Details Section */}
@@ -291,7 +385,7 @@ export default function SettingsPage() {
                     <Textarea value={companyForm.description} onChange={e => setCompanyForm({...companyForm, description: e.target.value})} className="min-h-[80px] rounded-xl border-2 font-bold bg-slate-50 p-4" placeholder="e.g. Leading narrow web flexo printer..." />
                   </div>
                   <div className="md:col-span-2 pt-4">
-                    <Button type="submit" disabled={isSaving} className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-xs tracking-widest shadow-2xl">
+                    <Button type="submit" disabled={isSaving || isUploading} className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-xs tracking-widest shadow-2xl">
                       {isSaving ? <Loader2 className="animate-spin h-5 w-5 mr-2" /> : <Save className="mr-2 h-5 w-5" />}
                       Update Corporate Identity
                     </Button>
