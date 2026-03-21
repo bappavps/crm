@@ -28,7 +28,8 @@ import {
   Info,
   PackageCheck,
   Camera,
-  StopCircle
+  StopCircle,
+  ArrowUp
 } from "lucide-react"
 import { 
   Dialog, 
@@ -54,8 +55,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.5)
- * Fixed: Robust Session Deduplication & Fetch Stability.
+ * PHYSICAL PAPER STOCK CHECK (V1.6)
+ * Manual Submit Flow: Scan → Input Fill → User Submit → Process
  */
 
 interface ScannedRoll {
@@ -98,7 +99,7 @@ export default function PhysicalStockAuditPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
+  const { data: adminData } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
   const sessionsQuery = useMemoFirebase(() => {
@@ -108,10 +109,6 @@ export default function PhysicalStockAuditPage() {
   
   const { data: sessions, isLoading: sessionsLoading } = useCollection(sessionsQuery);
 
-  /**
-   * ROBUST SESSION DEDUPLICATION
-   * Ensures uniqueness by both ID and Name to handle potential naming conflicts or cache artifacts.
-   */
   const uniqueSessions = useMemo(() => {
     if (!sessions) return [];
     const seenIds = new Set();
@@ -136,7 +133,7 @@ export default function PhysicalStockAuditPage() {
     if (!firestore) return null;
     return query(collection(firestore, 'paper_stock'), limit(5000));
   }, [firestore]);
-  const { data: erpRolls, isLoading: erpLoading } = useCollection(erpRollsQuery);
+  const { data: erpRolls } = useCollection(erpRollsQuery);
 
   const scannedRolls: ScannedRoll[] = useMemo(() => sessionData?.scannedRolls || [], [sessionData]);
 
@@ -216,22 +213,27 @@ export default function PhysicalStockAuditPage() {
     };
   }, [erpRolls, scannedRolls]);
 
-  // 3. Central Process Function
-  const processRollId = async (rollNoRaw: string) => {
-    if (!rollNoRaw || !activeSessionId || !firestore || !user) return;
+  /**
+   * CENTRAL SUBMIT LOGIC (Manual Flow)
+   */
+  const processSubmission = async () => {
+    const rawValue = scanInput.trim();
+    if (!rawValue || !activeSessionId || !firestore || !user) return;
 
-    let rollNo = rollNoRaw.trim();
+    // Normalization: Extract Roll ID from URL if necessary
+    let rollNo = rawValue;
     if (rollNo.includes('/')) {
       rollNo = rollNo.split('/').pop() || rollNo;
     }
     rollNo = rollNo.toUpperCase();
 
+    // Duplicate Check
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
       triggerScanFeedback('error');
       toast({ 
         variant: "destructive", 
         title: "Duplicate Roll", 
-        description: `ID ${rollNo} has already been scanned in this session.` 
+        description: `Roll ${rollNo} is already in the list.` 
       });
       return;
     }
@@ -260,24 +262,23 @@ export default function PhysicalStockAuditPage() {
 
       if (erpMatch) {
         triggerScanFeedback('success');
-        toast({ title: "Scan Successful", description: `Verified ${rollNo}` });
+        toast({ title: "Scan Added Successfully", description: `Roll ${rollNo} verified.` });
       } else {
         triggerScanFeedback('warning');
-        toast({ variant: "destructive", title: "Unknown Roll", description: `Roll ${rollNo} not found in ERP records.` });
+        toast({ variant: "destructive", title: "Unknown Roll Added", description: `Roll ${rollNo} not found in ERP.` });
       }
     } catch (e) {
       toast({ variant: "destructive", title: "Sync Error" });
     }
     
+    // Clear and focus
+    setScanInput("");
     if (scanInputRef.current) scanInputRef.current.focus();
   };
 
-  const handleScan = async (e?: React.FormEvent) => {
+  const handleManualSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!scanInput) return;
-    const value = scanInput;
-    setScanInput(""); 
-    await processRollId(value);
+    processSubmission();
   };
 
   const handleDeleteScannedRow = async (id: string) => {
@@ -297,7 +298,9 @@ export default function PhysicalStockAuditPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("camera-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
       scanner.render((decodedText) => {
-        processRollId(decodedText);
+        // Camera only populates input field
+        setScanInput(decodedText);
+        toast({ title: "Roll ID Scanned", description: "Click Submit to process." });
       }, () => {});
       scannerInstance.current = scanner;
     }, 100);
@@ -469,7 +472,7 @@ export default function PhysicalStockAuditPage() {
                     <div className="space-y-4 animate-in zoom-in-95">
                       <div id="camera-reader" className="w-full overflow-hidden rounded-2xl bg-black aspect-square" />
                       <Button onClick={stopCamera} variant="destructive" className="w-full h-12 font-black uppercase text-[10px]">
-                        <StopCircle className="mr-2 h-4 w-4" /> Stop Camera Scan
+                        <StopCircle className="mr-2 h-4 w-4" /> Close Camera
                       </Button>
                     </div>
                   ) : (
@@ -482,35 +485,37 @@ export default function PhysicalStockAuditPage() {
                     </Button>
                   )}
 
-                  <form onSubmit={handleScan} className="space-y-4">
+                  <form onSubmit={handleManualSubmit} className="space-y-4">
                     <div className="space-y-2">
-                      <Label className="text-[10px] font-black uppercase opacity-50">Roll ID Input</Label>
-                      <div className="relative">
-                        <Input 
-                          ref={scanInputRef}
-                          placeholder="Scan or Type ID..."
-                          className={cn(
-                            "h-14 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary pr-12 transition-colors",
-                            scanFeedback === 'success' ? "bg-emerald-500/20" : 
-                            scanFeedback === 'error' ? "bg-rose-500/20" : 
-                            scanFeedback === 'warning' ? "bg-amber-500/20" : "bg-white/5"
-                          )}
-                          value={scanInput}
-                          onChange={e => setScanInput(e.target.value)}
-                          disabled={sessionData?.status === 'Finalized'}
-                        />
-                        <Button type="submit" size="icon" variant="ghost" className="absolute right-2 top-2 h-10 w-10 text-primary hover:bg-white/5" disabled={sessionData?.status === 'Finalized'}>
-                          <ArrowRight className="h-6 w-6" />
-                        </Button>
-                      </div>
+                      <Label className="text-[10px] font-black uppercase opacity-50">Roll ID Entry</Label>
+                      <Input 
+                        ref={scanInputRef}
+                        placeholder="Scan or Type ID..."
+                        className={cn(
+                          "h-14 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary transition-colors",
+                          scanFeedback === 'success' ? "bg-emerald-500/20" : 
+                          scanFeedback === 'error' ? "bg-rose-500/20" : 
+                          scanFeedback === 'warning' ? "bg-amber-500/20" : "bg-white/5"
+                        )}
+                        value={scanInput}
+                        onChange={e => setScanInput(e.target.value)}
+                        disabled={sessionData?.status === 'Finalized'}
+                      />
                     </div>
+                    <Button 
+                      type="submit" 
+                      className="w-full h-14 bg-primary text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl hover:bg-primary/90 transition-all active:scale-95"
+                      disabled={sessionData?.status === 'Finalized' || !scanInput.trim()}
+                    >
+                      Commit Scan to List
+                    </Button>
                   </form>
                 </div>
 
                 <div className="pt-6 border-t border-white/5 space-y-4">
                   <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl">
                     <div>
-                      <p className="text-[10px] font-black uppercase opacity-50">Current Progress</p>
+                      <p className="text-[10px] font-black uppercase opacity-50">Verified Progress</p>
                       <p className="text-2xl font-black tracking-tighter">{reconciliation.stats.matchedCount} / {reconciliation.stats.totalERP}</p>
                     </div>
                     <Badge className="bg-primary text-white font-black text-[10px]">
@@ -523,7 +528,7 @@ export default function PhysicalStockAuditPage() {
 
             <Card className="border-none shadow-xl rounded-3xl overflow-hidden">
               <CardHeader className="bg-slate-50 border-b p-6">
-                <CardTitle className="text-xs font-black uppercase tracking-widest">Session Summary</CardTitle>
+                <CardTitle className="text-xs font-black uppercase tracking-widest">Audit Session Summary</CardTitle>
               </CardHeader>
               <CardContent className="p-6 space-y-4">
                 <SummaryRow label="Total ERP Registry" value={reconciliation.stats.totalERP} icon={Database} />
@@ -534,7 +539,7 @@ export default function PhysicalStockAuditPage() {
               </CardContent>
               <CardFooter className="bg-slate-50 p-6 border-t flex flex-col gap-3">
                 <Button onClick={handleExport} variant="outline" className="w-full h-11 rounded-xl font-black uppercase text-[10px] tracking-widest border-2">
-                  <FileDown className="mr-2 h-4 w-4" /> Export Results
+                  <FileDown className="mr-2 h-4 w-4" /> Export Report
                 </Button>
                 {isAdmin && sessionData?.status !== 'Finalized' && (
                   <>
@@ -544,7 +549,7 @@ export default function PhysicalStockAuditPage() {
                     </Button>
                     <Button onClick={handleFinalize} className="w-full h-14 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl" disabled={isProcessing}>
                       {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                      Finalize & Lock Audit
+                      Finalize Audit Session
                     </Button>
                   </>
                 )}
@@ -584,7 +589,7 @@ export default function PhysicalStockAuditPage() {
                             <TableHead className="font-black text-[10px] uppercase py-4">Paper Type</TableHead>
                             <TableHead className="font-black text-[10px] uppercase py-4">Dimensions</TableHead>
                             <TableHead className="font-black text-[10px] uppercase py-4">Scan Time</TableHead>
-                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Actions</TableHead>
+                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Status</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -617,7 +622,7 @@ export default function PhysicalStockAuditPage() {
                                 <div className="flex justify-end items-center gap-3">
                                   <Badge className={cn(
                                     "text-[9px] font-black h-5 px-3 uppercase border-none",
-                                    r.status === 'Matched' ? "bg-emerald-50" : "bg-amber-500"
+                                    r.status === 'Matched' ? "bg-emerald-50 text-emerald-700" : "bg-amber-500 text-white"
                                   )}>
                                     {r.status}
                                   </Badge>
