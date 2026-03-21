@@ -38,6 +38,12 @@ import {
   DialogFooter,
   DialogDescription
 } from "@/components/ui/dialog"
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { collection, doc, query, orderBy, limit, setDoc, serverTimestamp, deleteDoc, writeBatch } from "firebase/firestore"
@@ -48,8 +54,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.2)
- * Enhanced with audio-visual scan feedback and camera support.
+ * PHYSICAL PAPER STOCK CHECK (V1.3)
+ * Enhanced with URL normalization and Admin row correction.
  */
 
 interface ScannedRoll {
@@ -117,7 +123,6 @@ export default function PhysicalStockAuditPage() {
    * AUDIO FEEDBACK SYNTHESIZER
    */
   const triggerScanFeedback = (type: 'success' | 'error') => {
-    // 1. Play Tone
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioCtx.createOscillator();
@@ -127,24 +132,21 @@ export default function PhysicalStockAuditPage() {
       gainNode.connect(audioCtx.destination);
       
       if (type === 'success') {
-        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch success
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime);
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
         oscillator.start();
         oscillator.stop(audioCtx.currentTime + 0.1);
       } else {
-        oscillator.frequency.setValueAtTime(220, audioCtx.currentTime); // Low pitch error
+        oscillator.frequency.setValueAtTime(220, audioCtx.currentTime);
         oscillator.type = 'square';
         gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
         gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
         oscillator.start();
         oscillator.stop(audioCtx.currentTime + 0.2);
       }
-    } catch (e) {
-      console.warn("Audio feedback failed:", e);
-    }
+    } catch (e) {}
 
-    // 2. Trigger Visual Flash
     setScanFeedback(type);
     if (feedbackTimeout.current) clearTimeout(feedbackTimeout.current);
     feedbackTimeout.current = setTimeout(() => setScanFeedback(null), 350);
@@ -187,7 +189,12 @@ export default function PhysicalStockAuditPage() {
   const processRollId = async (rollNoRaw: string) => {
     if (!rollNoRaw || !activeSessionId || !firestore || !user) return;
 
-    const rollNo = rollNoRaw.trim().toUpperCase();
+    // NORMALIZE INPUT: Extract Roll ID if URL is provided
+    let rollNo = rollNoRaw.trim();
+    if (rollNo.includes('/')) {
+      rollNo = rollNo.split('/').pop() || rollNo;
+    }
+    rollNo = rollNo.toUpperCase();
 
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
       toast({ variant: "destructive", title: "Duplicate Scan", description: `Roll ${rollNo} already scanned.` });
@@ -219,7 +226,6 @@ export default function PhysicalStockAuditPage() {
       toast({ variant: "destructive", title: "Extra Roll Logged", description: `Roll ${rollNo} not found in ERP.` });
     }
     
-    // Auto-focus input for hardware scanners
     if (scanInputRef.current) scanInputRef.current.focus();
   };
 
@@ -230,15 +236,25 @@ export default function PhysicalStockAuditPage() {
     setScanInput("");
   };
 
+  const handleDeleteScannedRow = async (id: string) => {
+    if (!firestore || !activeSessionId || !isAdmin) return;
+    
+    const updatedScans = scannedRolls.filter(r => r.id !== id);
+    await setDoc(doc(firestore, 'inventory_audits', activeSessionId), {
+      scannedRolls: updatedScans,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    
+    toast({ title: "Scan Removed", description: "Row removed from current audit session." });
+  };
+
   const startCamera = () => {
     setIsCameraActive(true);
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("camera-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
       scanner.render((decodedText) => {
         processRollId(decodedText);
-      }, (error) => {
-        // Scan failed, silence logs
-      });
+      }, () => {});
       scannerInstance.current = scanner;
     }, 100);
   };
@@ -343,7 +359,6 @@ export default function PhysicalStockAuditPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-[1600px] mx-auto pb-20 font-sans">
-      {/* HEADER & SESSION SELECTOR */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter flex items-center gap-3">
@@ -413,7 +428,7 @@ export default function PhysicalStockAuditPage() {
                   ) : (
                     <Button 
                       onClick={startCamera} 
-                      className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl md:hidden"
+                      className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl"
                       disabled={sessionData?.status === 'Finalized'}
                     >
                       <Camera className="mr-3 h-6 w-6 text-primary" /> Start Mobile Scan
@@ -433,7 +448,7 @@ export default function PhysicalStockAuditPage() {
                             scanFeedback === 'error' ? "bg-rose-500/20" : "bg-white/5"
                           )}
                           value={scanInput}
-                          onChange={e => setScanInput(e.target.value.toUpperCase())}
+                          onChange={e => setScanInput(e.target.value)}
                           disabled={sessionData?.status === 'Finalized'}
                         />
                         <Button type="submit" size="icon" variant="ghost" className="absolute right-2 top-2 h-10 w-10 text-primary hover:bg-white/5" disabled={sessionData?.status === 'Finalized'}>
@@ -524,7 +539,7 @@ export default function PhysicalStockAuditPage() {
                             <TableHead className="font-black text-[10px] uppercase py-4">Paper Type</TableHead>
                             <TableHead className="font-black text-[10px] uppercase py-4">Dimensions</TableHead>
                             <TableHead className="font-black text-[10px] uppercase py-4">Scan Time</TableHead>
-                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Audit Status</TableHead>
+                            <TableHead className="text-right font-black text-[10px] uppercase pr-8 py-4">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -532,17 +547,40 @@ export default function PhysicalStockAuditPage() {
                             <TableRow><TableCell colSpan={5} className="py-24 text-center opacity-30 uppercase font-black text-[10px] tracking-widest">Awaiting scanner input...</TableCell></TableRow>
                           ) : [...scannedRolls].reverse().map(r => (
                             <TableRow key={r.id} className="hover:bg-slate-50 transition-colors h-14">
-                              <TableCell className="pl-8 font-black text-primary font-mono">{r.rollNo}</TableCell>
+                              <TableCell className="pl-8">
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="font-black text-primary font-mono truncate max-w-[150px] block cursor-help">{r.rollNo}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-[10px] font-bold uppercase">{r.rollNo}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              </TableCell>
                               <TableCell className="text-xs font-bold text-slate-600">{r.paperType}</TableCell>
                               <TableCell className="text-xs font-medium text-slate-400">{r.dimension}</TableCell>
                               <TableCell className="text-[10px] font-bold text-slate-400">{format(new Date(r.scanTime), 'HH:mm:ss')}</TableCell>
                               <TableCell className="text-right pr-8">
-                                <Badge className={cn(
-                                  "text-[9px] font-black h-5 px-3 uppercase border-none",
-                                  r.status === 'Matched' ? "bg-emerald-500" : "bg-amber-500"
-                                )}>
-                                  {r.status}
-                                </Badge>
+                                <div className="flex justify-end items-center gap-3">
+                                  <Badge className={cn(
+                                    "text-[9px] font-black h-5 px-3 uppercase border-none",
+                                    r.status === 'Matched' ? "bg-emerald-500" : "bg-amber-500"
+                                  )}>
+                                    {r.status}
+                                  </Badge>
+                                  {isAdmin && sessionData?.status !== 'Finalized' && (
+                                    <Button 
+                                      variant="ghost" 
+                                      size="icon" 
+                                      className="h-8 w-8 text-slate-300 hover:text-rose-500 transition-colors"
+                                      onClick={() => handleDeleteScannedRow(r.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
                               </TableCell>
                             </TableRow>
                           ))}
