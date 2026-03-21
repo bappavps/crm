@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -168,6 +169,7 @@ export default function PaperStockPage() {
   const [highlightedId, setHighlightedId] = useState<string | null>(null)
   const [isCustomStatus, setIsCustomStatus] = useState(false)
   const [siteOrigin, setSiteOrigin] = useState("")
+  const [clientNow, setClientNow] = useState<string>("DD/MM/YYYY")
 
   // Template Selection State
   const [selectedLabelTemplateId, setSelectedLabelTemplateId] = useState("default")
@@ -187,6 +189,7 @@ export default function PaperStockPage() {
 
   useEffect(() => { 
     setIsMounted(true);
+    setClientNow(new Date().toLocaleDateString());
     if (typeof window !== 'undefined') {
       setSiteOrigin(window.location.origin);
       const saved = localStorage.getItem('paperStockVisibleColumns')
@@ -652,7 +655,7 @@ export default function PaperStockPage() {
     ...roll, roll_no: roll.rollNo || "", id: roll.id || "", parent_roll_no: roll.rollNo || "", paper_type: roll.paperType || "",
     width: roll.widthMm || 0, length: roll.lengthMeters || 0, gsm: roll.gsm || 0, weight: roll.weightKg || 0,
     company: roll.paperCompany || "", date: roll.receivedDate || "", company_name: roll.paperCompany || "",
-    current_date: new Date().toLocaleDateString(), roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
+    current_date: clientNow, roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
   });
 
   if (!isMounted) return null;
@@ -991,7 +994,7 @@ export default function PaperStockPage() {
           <div id="report-container" className="flex-1 overflow-y-auto bg-white p-12 industrial-scroll">
             {selectedReportTemplateId === 'default' ? (
               <div className="label-print-item w-[210mm] mx-auto text-black">
-                <h1 className="text-3xl font-black mb-8 border-b-4 border-black pb-4">PAPER STOCK AUDIT - {new Date().toLocaleDateString()}</h1>
+                <h1 className="text-3xl font-black mb-8 border-b-4 border-black pb-4">PAPER STOCK AUDIT - {clientNow}</h1>
                 <Table className="border-2 border-black">
                   <TableHeader className="bg-slate-100"><TableRow className="border-b-2 border-black">{COLUMN_KEYS.map(col => <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">{col.label}</TableHead>)}</TableRow></TableHeader>
                   <TableBody>{filteredRows.map((r, i) => (<TableRow key={i} className="border-b border-black last:border-b-0">{COLUMN_KEYS.map(col => <TableCell key={col.id} className="text-[9px] font-bold border-r border-black p-2 text-center">{r[col.id] || '-'}</TableCell>)}</TableRow>))}</TableBody>
@@ -1012,7 +1015,7 @@ export default function PaperStockPage() {
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
             <div className="flex items-center gap-4">
-              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Spooler</DialogTitle>
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
               <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
                 <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
                   <SelectValue placeholder="Select Template" />

@@ -92,8 +92,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V15.0)
- * Fixed element selection persistence and restored full property controls.
+ * PRINT TEMPLATE STUDIO (V15.1)
+ * Fixed hydration mismatch for current date placeholders.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -169,7 +169,7 @@ const FONT_FAMILIES = [
 const PLACEHOLDERS = {
   GENERAL: [
     { key: '{{company_name}}', label: 'Company Name', icon: Building2, preview: 'Shree Label Creation' },
-    { key: '{{current_date}}', label: 'Current Date', icon: CalendarDays, preview: new Date().toLocaleDateString() },
+    { key: '{{current_date}}', label: 'Current Date', icon: CalendarDays, preview: 'DD/MM/YYYY' },
   ],
   INVENTORY: [
     { key: '{{parent_roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
@@ -210,6 +210,7 @@ export default function PrintTemplateStudio() {
   const [gridSnap, setGridSnap] = useState(5)
   const [showGuidelines, setShowGuidelines] = useState(true)
   const [activeCategory, setActiveCategory] = useState<string>("All")
+  const [clientDate, setClientDate] = useState<string>("DD/MM/YYYY")
 
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -221,6 +222,7 @@ export default function PrintTemplateStudio() {
 
   useEffect(() => { 
     setIsMounted(true);
+    setClientDate(new Date().toLocaleDateString());
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedElementId && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || "")) {
@@ -515,6 +517,14 @@ export default function PrintTemplateStudio() {
   const toggleElementLock = (id: string) => { setCurrentTemplate(prev => { if (!prev) return null; const el = prev.elements.find(e => e.id === id); if (!el) return prev; const nextStatus = !el.isLocked; toast({ title: nextStatus ? "Element Locked" : "Element Unlocked" }); return { ...prev, elements: prev.elements.map(e => e.id === id ? { ...e, isLocked: nextStatus } : e) } }); }
   const moveElement = (direction: 'front' | 'back' | 'forward' | 'backward') => { if (!selectedElementId) return; setCurrentTemplate(prev => { if (!prev) return null; const elements = [...prev.elements]; const index = elements.findIndex(el => el.id === selectedElementId); if (index === -1) return prev; const el = elements.splice(index, 1)[0]; if (direction === 'front') elements.push(el); else if (direction === 'back') elements.unshift(el); else if (direction === 'forward') elements.splice(Math.min(elements.length, index + 1), 0, el); else elements.splice(Math.max(0, index - 1), 0, el); return { ...prev, elements }; }); };
 
+  const previewData = useMemo(() => {
+    const data: Record<string, any> = {};
+    Object.values(PLACEHOLDERS).flat().forEach(p => {
+      data[p.key.replace(/[{}]/g, '')] = p.key === '{{current_date}}' ? clientDate : p.preview;
+    });
+    return data;
+  }, [clientDate]);
+
   if (!isMounted) return null;
 
   return (
@@ -672,7 +682,7 @@ export default function PrintTemplateStudio() {
                 {showGuidelines && <div className="absolute inset-0 opacity-[0.05] pointer-events-none z-[5] guidelines-grid print:hidden" style={{ backgroundImage: 'linear-gradient(#000 1px, transparent 1px), linear-gradient(90deg, #000 1px, transparent 1px)', backgroundSize: '20px 20px' }} />}
                 <div className="relative z-10 w-full h-full">
                   {currentTemplate?.elements.map(el => (
-                    <CanvasElement key={el.id} element={el} isSelected={selectedElementId === el.id} onSelect={(e) => { e.stopPropagation(); setSelectedElementId(el.id); }} onMove={(x, y) => !el.isLocked && updateElement(el.id, { x, y })} onResize={(width, height) => !el.isLocked && updateElement(el.id, { width, height })} gridSnap={gridSnap} />
+                    <CanvasElement key={el.id} element={el} isSelected={selectedElementId === el.id} onSelect={(e) => { e.stopPropagation(); setSelectedElementId(el.id); }} onMove={(x, y) => !el.isLocked && updateElement(el.id, { x, y })} onResize={(width, height) => !el.isLocked && updateElement(el.id, { width, height })} gridSnap={gridSnap} previewData={previewData} />
                   ))}
                 </div>
               </div>
@@ -983,7 +993,7 @@ function ElementTool({ icon: Icon, label, onClick }: { icon: any, label: string,
   return (<button onClick={onClick} className="flex flex-col items-center justify-center gap-2 p-4 bg-white border-2 border-slate-100 rounded-xl hover:border-primary/40 hover:bg-primary/5 transition-all group active:scale-95 shadow-sm"><Icon className="h-5 w-5 text-slate-400 group-hover:text-primary" /><span className="text-[9px] font-black uppercase text-slate-500 group-hover:text-primary tracking-tighter">{label}</span></button>)
 }
 
-function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSnap }: { element: TemplateElement, isSelected: boolean, onSelect: (e: any) => void, onMove: (x: number, y: number) => void, onResize: (w: number, h: number) => void, gridSnap: number }) {
+function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSnap, previewData }: { element: TemplateElement, isSelected: boolean, onSelect: (e: any) => void, onMove: (x: number, y: number) => void, onResize: (w: number, h: number) => void, gridSnap: number, previewData: Record<string, any> }) {
   const isDragging = useRef(false); const isResizing = useRef(false); const startPos = useRef({ x: 0, y: 0, w: 0, h: 0 });
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation(); onSelect(e); if (element.isLocked) return;
@@ -1000,7 +1010,6 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
   }
   const getFontFamilyValue = (id: string) => FONT_FAMILIES.find(f => f.id === id)?.value || 'sans-serif';
-  const previewData = Object.values(PLACEHOLDERS).flat().reduce((acc, p) => { acc[p.key.replace(/[{}]/g, '')] = p.preview; return acc; }, {} as Record<string, any>);
   const processText = (text: string) => text?.replace(/\{\{(.+?)\}\}/g, (match, key) => previewData[key.trim()] !== undefined ? String(previewData[key.trim()]) : match);
   const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
   const commonStyle = { width: '100%', height: '100%', backgroundColor: element.style.backgroundColor, border: element.style.borderWidth ? `${element.style.borderWidth}px ${element.style.lineStyle || 'solid'} ${element.style.borderColor}` : 'none', borderRadius: element.type === 'circle' ? '100%' : `${element.style.borderRadius || 0}px`, opacity: element.style.opacity, display: 'flex', alignItems: 'center', justifyContent: element.style.textAlign === 'center' ? 'center' : element.style.textAlign === 'right' ? 'flex-end' : 'flex-start', overflow: 'hidden' };

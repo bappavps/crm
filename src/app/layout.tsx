@@ -32,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")}>
+      <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")} suppressHydrationWarning>
         <Suspense fallback={null}>
           <FirebaseClientProvider>
             {/* AuthInitializer handles redirection and profile provisioning */}
