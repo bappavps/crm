@@ -41,7 +41,8 @@ import {
   Layers,
   ArrowUpRight,
   Settings2,
-  Settings
+  Settings,
+  Activity
 } from "lucide-react"
 import { 
   Dialog, 
