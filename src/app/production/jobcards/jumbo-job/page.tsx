@@ -203,9 +203,6 @@ function JumboJobCardContent() {
     }
   };
 
-  /**
-   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE (DIRECT IFRAME)
-   */
   const handleExecutePrint = async (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
     if (!printContent) return;
@@ -215,7 +212,6 @@ function JumboJobCardContent() {
     setIsProcessing(true);
     toast({ title: "Streamlining Print Pipeline", description: "Applying technical snapshot enhancements..." });
 
-    // Sync fonts before capture
     await document.fonts.ready;
 
     const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeJobTemplate || { paperWidth: 210, paperHeight: 297 });
@@ -244,7 +240,6 @@ function JumboJobCardContent() {
       return;
     }
 
-    // Direct Print via Hidden Iframe (UX Cleaned)
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0'; iframe.style.bottom = '0';
@@ -301,7 +296,6 @@ function JumboJobCardContent() {
     );
   }, [jobs, searchQuery]);
 
-  // Active Template Renderers
   const activeJobTemplate = jobTemplates?.find(t => t.id === selectedJobTemplateId);
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
 
@@ -348,6 +342,8 @@ function JumboJobCardContent() {
   });
 
   const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+
+  const GROUP_COLORS = ['bg-blue-50/40', 'bg-slate-50/60'];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -565,115 +561,135 @@ function JumboJobCardContent() {
           </div>
           <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans overflow-y-auto max-h-[80vh]">
             {selectedJobTemplateId === 'default' ? (
-              <div className="label-print-item">
-                <div className="flex justify-between items-end border-b-4 border-black pb-6">
-                  <div>
-                    <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
-                    <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Production Floor: Jumbo Slitting</p>
+              <div className="label-print-item w-[210mm] mx-auto">
+                <div className="flex justify-between items-end border-b-[6px] border-slate-900 pb-8 mb-10">
+                  <div className="space-y-1">
+                    <h1 className="text-5xl font-black tracking-tighter text-slate-900">SHREE LABEL CREATION</h1>
+                    <p className="text-[11px] font-black uppercase tracking-[0.4em] text-primary">Technical Instruction Sheet: Jumbo Slitting</p>
                   </div>
-                  <div className="text-right space-y-1">
-                    <Badge className="bg-black text-white px-4 py-1.5 rounded-none font-black text-lg">{selectedJob?.job_card_no}</Badge>
-                    <p className="text-[10px] font-bold uppercase pt-2">DATE: {selectedJob?.createdAt ? new Date(selectedJob.createdAt).toLocaleDateString() : '—'}</p>
+                  <div className="text-right space-y-2">
+                    <Badge className="bg-slate-900 text-white px-6 py-2 rounded-lg font-black text-xl shadow-lg border-none tracking-tight">{selectedJob?.job_card_no}</Badge>
+                    <p className="text-[10px] font-black uppercase text-slate-400">GEN DATE: {selectedJob?.createdAt ? new Date(selectedJob.createdAt).toLocaleDateString() : '—'}</p>
                   </div>
                 </div>
 
-                <div className="mt-8 grid grid-cols-2 gap-12">
+                <div className="grid grid-cols-2 gap-12 mb-12">
                   <div className="space-y-6">
-                    <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Job Information</h3>
-                    <div className="grid grid-cols-2 gap-x-12 gap-y-3 text-xs font-bold">
-                      <span className="opacity-50 uppercase">Job ID:</span><span className="font-mono">{selectedJob?.target_job_no || "—"}</span>
-                      <span className="opacity-50 uppercase">Job Name:</span><span>{selectedJob?.target_job_name || "—"}</span>
-                      <span className="opacity-50 uppercase">Material:</span><span className="text-primary font-black uppercase">{allRolls?.find(r => r.rollNo === selectedJob?.parent_roll)?.paperType || "—"}</span>
-                      <span className="opacity-50 uppercase">Received At:</span><span className="font-mono">{selectedJob?.createdAt ? format(new Date(selectedJob.createdAt), 'dd-MM-yyyy hh:mm a') : '—'}</span>
-                      <span className="opacity-50 uppercase">Machine:</span><span>{selectedJob?.machine || "—"}</span>
-                      <span className="opacity-50 uppercase">Operator:</span><span>{selectedJob?.operator || "—"}</span>
+                    <h3 className="text-xs font-black uppercase text-slate-900 flex items-center gap-2">
+                      <div className="w-1.5 h-4 bg-primary rounded-full" /> Workflow Identity
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-xs">
+                      <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase">Job Ref:</span><span className="font-bold text-slate-900">{selectedJob?.target_job_no || "—"}</span></div>
+                      <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase">Production Job:</span><span className="font-bold text-primary truncate uppercase">{selectedJob?.target_job_name || "—"}</span></div>
+                      <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase">Machine ID:</span><span className="font-bold text-slate-900">{selectedJob?.machine || "—"}</span></div>
+                      <div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase">Floor Operator:</span><span className="font-bold text-slate-900">{selectedJob?.operator || "—"}</span></div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end">
-                    <div 
-                      className="border-2 border-black p-1 cursor-pointer hover:opacity-80 transition-opacity"
-                      onClick={() => {
-                        const url = siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "");
-                        if (isValidURL(url)) window.open(url, "_blank");
-                      }}
-                      title="Click to open status link"
-                    >
-                      <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "")} size={80} />
+                  <div className="flex flex-col items-end gap-3">
+                    <div className="p-2 bg-slate-50 border-2 border-slate-100 rounded-2xl shadow-inner">
+                      <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "")} size={100} />
                     </div>
-                    <p className="text-[8px] font-black uppercase mt-1">Scan to Update Status</p>
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Technical Status QR</p>
                   </div>
                 </div>
 
-                <div className="mt-10">
-                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Source Rolls Table</h3>
-                  <Table className="border-2 border-black">
-                    <TableHeader className="bg-slate-100">
-                      <TableRow className="border-b-2 border-black h-10">
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Roll ID</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Paper Type</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Dimension</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Job Name</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase px-4 text-center">Company</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(selectedJob?.parent_rolls || [selectedJob?.parent_roll]).filter(Boolean).map((rollId: string) => {
-                        const roll = allRolls?.find(r => r.rollNo === rollId);
-                        return (
-                          <TableRow key={rollId} className="border-b-2 border-black last:border-b-0 h-10 text-center">
-                            <TableCell className="font-bold border-r-2 border-black px-4 font-mono">{rollId}</TableCell>
-                            <TableCell className="border-r-2 border-black px-4 font-bold uppercase">{roll?.paperType || "—"}</TableCell>
-                            <TableCell className="border-r-2 border-black px-4">{roll?.widthMm}mm × {roll?.lengthMeters}m</TableCell>
-                            <TableCell className="border-r-2 border-black px-4 font-bold uppercase">{roll?.jobName || "—"}</TableCell>
-                            <TableCell className="px-4 font-bold uppercase">{roll?.paperCompany || "—"}</TableCell>
+                <div className="space-y-12">
+                  {/* SOURCE ROLLS SECTION */}
+                  <div className="space-y-4">
+                    <h3 className="text-[11px] font-black uppercase text-slate-900 flex items-center gap-2">
+                      <div className="w-1.5 h-4 bg-primary rounded-full" /> Source Material Allocation
+                    </h3>
+                    <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
+                      <Table>
+                        <TableHeader className="bg-slate-900 border-none h-12">
+                          <TableRow className="border-none hover:bg-slate-900">
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center border-r border-white/10">Roll ID</TableHead>
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center border-r border-white/10">Paper Type</TableHead>
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center border-r border-white/10">Dimension</TableHead>
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center">Job Context</TableHead>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div className="mt-10">
-                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1 mb-4">Child Rolls Generated</h3>
-                  <Table className="border-2 border-black">
-                    <TableHeader className="bg-slate-100">
-                      <TableRow className="border-b-2 border-black h-10">
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Child Roll ID</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Width</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase border-r-2 border-black px-4 text-center">Length</TableHead>
-                        <TableHead className="font-black text-black text-[10px] uppercase px-4 text-center">Job Name</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {selectedJob?.child_rolls?.map((code: string) => {
-                        const roll = allRolls?.find(r => r.rollNo === code);
-                        return (
-                          <TableRow key={code} className="border-b-2 border-black last:border-b-0 h-10 text-center">
-                            <TableCell className="font-bold border-r-2 border-black px-4 font-mono">{code}</TableCell>
-                            <TableCell className="border-r-2 border-black px-4">{roll?.widthMm || "—"} mm</TableCell>
-                            <TableCell className="border-r-2 border-black px-4 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
-                            <TableCell className="px-4 font-bold uppercase">{roll?.jobNo ? (roll?.jobName || "Assigned") : "Available Stock"}</TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div className="mt-12 grid grid-cols-3 gap-8">
-                  <div className="border-2 border-black p-4 space-y-4">
-                    <p className="text-[10px] font-black uppercase underline">Machine Log</p>
-                    <div className="space-y-2 text-[10px] font-bold">
-                      <p>Start: _______________</p>
-                      <p>End:   _______________</p>
+                        </TableHeader>
+                        <TableBody>
+                          {(selectedJob?.parent_rolls || [selectedJob?.parent_roll]).filter(Boolean).map((rollId: string, idx: number) => {
+                            const roll = allRolls?.find(r => r.rollNo === rollId);
+                            const groupColor = GROUP_COLORS[idx % GROUP_COLORS.length];
+                            return (
+                              <TableRow key={rollId} className={cn("border-none h-12 text-center", groupColor)}>
+                                <TableCell className="font-black border-r border-slate-200/50 text-[13px]">{rollId}</TableCell>
+                                <TableCell className="border-r border-slate-200/50 font-bold uppercase text-[11px]">{roll?.paperType || "—"}</TableCell>
+                                <TableCell className="border-r border-slate-200/50 font-bold">{roll?.widthMm}mm × {roll?.lengthMeters}m</TableCell>
+                                <TableCell className="font-black text-primary text-[11px] uppercase truncate px-4">{roll?.jobName || "Allocated"}</TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
                     </div>
                   </div>
-                  <div className="border-2 border-black p-4">
-                    <p className="text-[10px] font-black uppercase underline">Operator Notes</p>
+
+                  {/* CHILD ROLLS SECTION */}
+                  <div className="space-y-4">
+                    <h3 className="text-[11px] font-black uppercase text-slate-900 flex items-center gap-2">
+                      <div className="w-1.5 h-4 bg-primary rounded-full" /> Slitting Unit Outputs (Lineage)
+                    </h3>
+                    <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
+                      <Table>
+                        <TableHeader className="bg-slate-900 border-none h-12">
+                          <TableRow className="border-none hover:bg-slate-900">
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center border-r border-white/10">Child Roll ID</TableHead>
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center border-r border-white/10">Width</TableHead>
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center border-r border-white/10">Length</TableHead>
+                            <TableHead className="text-white font-black text-[10px] uppercase text-center">Status / Dest</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(selectedJob?.parent_rolls || [selectedJob?.parent_roll]).filter(Boolean).map((pId: string, pIdx: number) => {
+                            const groupColor = GROUP_COLORS[pIdx % GROUP_COLORS.length];
+                            const children = selectedJob.child_rolls?.filter((cId: string) => cId.startsWith(pId + '-')) || [];
+                            
+                            return children.map((code: string) => {
+                              const roll = allRolls?.find(r => r.rollNo === code);
+                              const isStock = !roll?.jobNo;
+                              return (
+                                <TableRow key={code} className={cn("border-b border-slate-100 h-11 text-center", groupColor)}>
+                                  <TableCell className="font-bold border-r border-slate-200/50 text-slate-900 font-mono text-[12px]">{code}</TableCell>
+                                  <TableCell className="border-r border-slate-200/50 font-bold">{roll?.widthMm || "—"} mm</TableCell>
+                                  <TableCell className="border-r border-slate-200/50 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
+                                  <TableCell className="px-4">
+                                    <div className={cn(
+                                      "inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter",
+                                      isStock ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"
+                                    )}>
+                                      {isStock ? "Available Stock" : (roll?.jobName || "Assigned Job")}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            });
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                  <div className="border-2 border-black p-4 flex flex-col justify-end">
-                    <div className="border-t-2 border-black text-center pt-2">
-                      <p className="text-[9px] font-black uppercase">Supervisor Sign</p>
+                </div>
+
+                <div className="mt-16 grid grid-cols-3 gap-8">
+                  <div className="border-2 border-slate-100 rounded-2xl p-6 bg-slate-50 space-y-4">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b pb-2">Machine Run Log</p>
+                    <div className="space-y-3 text-[11px] font-bold text-slate-600">
+                      <p className="flex justify-between">START: <span className="opacity-30">____:____</span></p>
+                      <p className="flex justify-between">END: <span className="opacity-30">____:____</span></p>
+                      <p className="flex justify-between">WASTE: <span className="opacity-30">____ KG</span></p>
+                    </div>
+                  </div>
+                  <div className="border-2 border-slate-100 rounded-2xl p-6 bg-slate-50 flex flex-col">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b pb-2 mb-2">Operator Notes</p>
+                    <div className="flex-1 border-b border-slate-200 border-dashed" />
+                    <div className="flex-1 border-b border-slate-200 border-dashed" />
+                  </div>
+                  <div className="border-2 border-slate-100 rounded-2xl p-6 bg-slate-50 flex flex-col justify-end">
+                    <div className="text-center pt-4 border-t-2 border-slate-200">
+                      <p className="text-[10px] font-black uppercase text-slate-900">QC Supervisor Sign</p>
                     </div>
                   </div>
                 </div>
@@ -690,73 +706,6 @@ function JumboJobCardContent() {
         </DialogContent>
       </Dialog>
 
-      {/* LABEL PRINT DIALOG */}
-      <Dialog open={isLabelOpen} onOpenChange={setIsLabelOpen}>
-        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
-            <div className="flex items-center gap-4">
-              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
-              <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
-                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
-                  <SelectValue placeholder="Select Template" />
-                </SelectTrigger>
-                <SelectContent className="z-[110]">
-                  <SelectItem value="default" className="text-xs font-bold uppercase">Default Thermal (150x100)</SelectItem>
-                  {labelTemplates?.map(t => (
-                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Stream"}
-            </Button>
-          </div>
-          <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
-            <div id="label-batch" className="space-y-10">
-              {selectedJob?.child_rolls?.map((code: string) => {
-                const roll = allRolls?.find(r => r.rollNo === code);
-                return (
-                  <div key={code} className="flex flex-col items-center">
-                    {selectedLabelTemplateId === 'default' ? (
-                      <div className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
-                        <div className="border-b-4 border-black pb-4 flex justify-between items-center">
-                          <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
-                          <span className="text-xl font-bold">REEL ID</span>
-                        </div>
-                        <div className="mt-6 flex justify-between gap-6">
-                          <div className="flex-1 space-y-4">
-                            <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{code}</p></div>
-                            <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll?.paperType || "SUBSTRATE"}</p></div>
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll?.id || code.replace(/\//g, '-')}` : (roll?.id || code.replace(/\//g, '-'))} size={120} /></div>
-                            <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
-                          </div>
-                        </div>
-                        <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
-                          <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll?.widthMm} MM</span></div>
-                          <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll?.lengthMeters} MTR</span></div>
-                        </div>
-                        <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
-                          <span>Dest: {roll?.jobNo ? 'JOB' : 'STOCK'}</span>
-                          <span>Card: {selectedJob?.job_card_no}</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <TemplateRenderer 
-                        template={activeLabelTemplate} 
-                        data={prepareRollData(roll)} 
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       <style jsx global>{`
         @media print {
           body * { visibility: hidden !important; }
@@ -767,6 +716,8 @@ function JumboJobCardContent() {
             left: 0 !important; top: 0 !important;
             width: 210mm !important;
             display: block !important;
+            background: white !important;
+            padding: 15mm !important;
           }
 
           .label-print-item {
@@ -779,7 +730,7 @@ function JumboJobCardContent() {
           }
 
           .no-print { display: none !important; }
-          @page { margin: 0; size: auto; }
+          @page { margin: 0; size: A4 portrait; }
         }
       `}</style>
     </div>
