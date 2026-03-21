@@ -10,7 +10,7 @@ import { collection, doc } from 'firebase/firestore';
 export type PermissionKey = 
   | 'dashboard' | 'estimates' | 'quotations' | 'salesOrders' | 'createJob' 
   | 'jobPlanning' | 'artwork' | 'purchaseOrders' | 'grn' 
-  | 'stockDashboard' | 'stockRegistry' | 'slitting' | 'finishedGoods' | 'dieManagement'
+  | 'stockDashboard' | 'stockRegistry' | 'slitting' | 'finishedGoods' | 'dieManagement' | 'stockAudit'
   | 'jobCards' | 'bom' | 'workOrders' | 'liveFloor'
   | 'qualityControl' | 'dispatch' | 'billing' | 'reports' | 'admin'
   | 'client_add' | 'client_edit' | 'client_delete' | 'client_credit_edit'

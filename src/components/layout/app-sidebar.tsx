@@ -36,7 +36,8 @@ import {
   ChevronRight,
   UserCog,
   LayoutTemplate,
-  NotebookPen
+  NotebookPen,
+  ScanLine
 } from "lucide-react"
 import {
   Sidebar,
@@ -147,6 +148,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Inventory Hub",
     items: [
       { name: 'Paper Stock', icon: Boxes, href: '/paper-stock', permission: 'stockRegistry' },
+      { name: 'Physical Stock Check', icon: ScanLine, href: '/inventory/physical-check', permission: 'stockAudit' },
       { name: 'Slitting', icon: Scissors, href: '/inventory/slitting', permission: 'slitting' },
       { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods', permission: 'finishedGoods' },
       { name: 'Die Tooling', icon: Wrench, href: '/die', permission: 'dieManagement' },
@@ -321,7 +323,7 @@ export function AppSidebar() {
                     asChild 
                     isActive={pathname === item.href} 
                     className="px-4 py-1.5 h-9" 
-                    onClick={handleNavClick}
+                    onClick={handleNavClick} 
                     tooltip={item.name}
                   >
                     <Link href={item.href}>

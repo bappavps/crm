@@ -110,7 +110,8 @@ async function seedSystemRoles(db: any) {
         dieManagement: true, jobCards: true, bom: true, workOrders: true, liveFloor: true,
         qualityControl: true, dispatch: true, billing: true, reports: true, admin: true,
         client_add: true, client_edit: true, client_delete: true, client_credit_edit: true,
-        rawMaterials: true, bomMaster: true, quotationTemplates: true, printStudio: true
+        rawMaterials: true, bomMaster: true, quotationTemplates: true, printStudio: true,
+        stockAudit: true
       }
     },
     {
@@ -126,7 +127,7 @@ async function seedSystemRoles(db: any) {
       name: 'Production Operator',
       permissions: {
         dashboard: true, slitting: true, jobCards: true, bom: true, workOrders: true,
-        liveFloor: true, qualityControl: true
+        liveFloor: true, qualityControl: true, stockAudit: true
       }
     }
   ];

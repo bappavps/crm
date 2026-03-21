@@ -23,6 +23,7 @@ const routePermissionMap: Record<string, PermissionKey> = {
   "/artwork": "artwork",
   "/purchase": "purchaseOrders",
   "/paper-stock": "stockRegistry",
+  "/inventory/physical-check": "stockAudit",
   "/stock-import": "stockRegistry",
   "/inventory/dashboard": "stockDashboard",
   "/inventory/slitting": "slitting",
