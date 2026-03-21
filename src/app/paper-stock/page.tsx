@@ -508,16 +508,15 @@ export default function PaperStockPage() {
   };
 
   /**
-   * PRECISION ISOLATED PRINT HANDLER (M11)
-   * Ensures perfect 1:1 scale and center alignment.
+   * PRECISION ISOLATED PRINT HANDLER (FINAL)
    */
   const handleExecutePrint = (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
     if (!printContent) return;
 
-    const template = templateType === 'label' ? activeLabelTemplate : activeReportTemplate;
-    const paperW = template?.paperWidth || (templateType === 'label' ? 150 : 210);
-    const paperH = template?.paperHeight || (templateType === 'label' ? 100 : 297);
+    const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeReportTemplate || { paperWidth: 210, paperHeight: 297 });
+    const paperW = template.paperWidth;
+    const paperH = template.paperHeight;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -525,86 +524,72 @@ export default function PaperStockPage() {
       return;
     }
 
-    // Capture HTML and wrap each item in a centering container
-    const renderedHTML = Array.from(printContent.children).map(child => `
-      <div class="label-wrapper">
-        ${child.innerHTML}
-      </div>
-    `).join('');
+    // Grab outerHTML of rendered items to preserve designer styles exactly as seen in preview
+    const renderedItems = Array.from(printContent.querySelectorAll('.label-print-item, .template-renderer-root')).map(el => {
+      return `
+        <div class="print-label">
+          <div class="print-canvas">
+            ${el.outerHTML}
+          </div>
+        </div>
+      `;
+    }).join('');
 
     printWindow.document.write(`
       <html>
         <head>
-          <title>Shree Label Print Queue</title>
+          <title>Technical Print Queue</title>
           <style>
-            @media print {
-              @page {
-                size: ${paperW}mm ${paperH}mm;
-                margin: 0;
-              }
-
-              body {
-                margin: 0;
-                padding: 0;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-              }
-
-              #print-root {
-                width: 100%;
-              }
-
-              .label-wrapper {
-                width: ${paperW}mm;
-                height: ${paperH}mm;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                page-break-after: always;
-                break-inside: avoid;
-                overflow: hidden;
-                position: relative;
-              }
-              
-              /* Force centering and 1:1 scale for the template root */
-              .label-wrapper > div {
-                position: relative !important;
-                margin: 0 !important;
-                transform: none !important;
-                box-shadow: none !important;
-                border: none !important;
-                flex-shrink: 0;
-              }
+            @page {
+              size: ${paperW}mm ${paperH}mm;
+              margin: 0;
             }
-            
-            /* UI Style for Screen Preview */
-            body { 
-              margin: 0; 
-              background: #f0f0f0; 
-              display: flex; 
-              flex-direction: column; 
-              align-items: center; 
-              padding: 40px 0; 
+
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: 100%;
+              height: 100%;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              background: white;
             }
-            .label-wrapper { 
-              background: white; 
-              margin-bottom: 20px; 
-              box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+
+            .print-label {
               width: ${paperW}mm;
               height: ${paperH}mm;
+              page-break-after: always;
+              break-inside: avoid;
               display: flex;
               justify-content: center;
               align-items: center;
               position: relative;
               overflow: hidden;
             }
+
+            .print-canvas {
+              position: relative;
+              width: ${paperW}mm;
+              height: ${paperH}mm;
+              overflow: hidden;
+            }
+
+            /* Strip decorative borders and force 1:1 scale for the actual content */
+            .print-canvas > div {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              margin: 0 !important;
+              border: none !important;
+              box-shadow: none !important;
+              transform: none !important;
+              background: transparent !important;
+            }
           </style>
         </head>
         <body>
-          <div id="print-root">
-            ${renderedHTML}
-          </div>
+          ${renderedItems}
           <script>
             window.onload = () => {
               setTimeout(() => {
@@ -949,7 +934,7 @@ export default function PaperStockPage() {
           <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="report-container">
               {selectedReportTemplateId === 'default' ? (
-                <div className="w-full">
+                <div className="w-full label-print-item">
                   <div className="border-b-4 border-black pb-6 flex justify-between items-end">
                     <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Industrial Technical Registry Report</p></div>
                     <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>

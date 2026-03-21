@@ -1,4 +1,3 @@
-
 "use client"
 
 import React from 'react'
@@ -49,13 +48,12 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
 
   /**
    * REPLACEMENT ENGINE: Detects {{placeholder}} and replaces with live data.
-   * Supports embedded text: "Width: {{width}} MM" -> "Width: 1020 MM"
    */
   const processText = (text: string) => {
     if (!text) return "";
     return text.replace(/\{\{(.+?)\}\}/g, (match, key) => {
       const cleanKey = key.trim();
-      return data[cleanKey] !== undefined ? String(data[cleanKey]) : ""; // Return empty if not found to handle fallbacks correctly
+      return data[cleanKey] !== undefined ? String(data[cleanKey]) : "";
     });
   };
 
@@ -167,8 +165,6 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
         );
       case 'qr':
         let qrVal = processText(el.placeholder || "");
-        
-        // FIX: If placeholder resolution returns empty, use fallbacks to avoid "NA"
         if (!qrVal || qrVal.trim() === "") {
           qrVal = data.roll_url || data.rollNo || data.id || "NA";
         }
@@ -208,45 +204,28 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
   };
 
   return (
-    <>
-      <style dangerouslySetInnerHTML={{
-        __html: `
-          @media print {
-            @page {
-              size: ${paperWidth}mm ${paperHeight}mm;
-              margin: 0;
-            }
-            body { margin: 0; }
-            .print-page-break {
-              page-break-after: always;
-            }
-          }
-        `
-      }} />
-      
-      <div 
-        className="bg-white relative shadow-sm border border-slate-200 print:border-none print:shadow-none overflow-hidden print-page-break"
-        style={{ 
-          width: `${paperWidth * MM_TO_PX}px`, 
-          height: `${paperHeight * MM_TO_PX}px`,
-          transform: `scale(${scale})`,
-          transformOrigin: 'top center',
-          margin: scale !== 1 ? '0 auto' : '0'
-        }}
-      >
-        {/* Background Layer */}
-        {template.background?.image && (
-          <div className="absolute inset-0 pointer-events-none z-0" style={{ opacity: template.background.opacity || 1 }}>
-            <img src={template.background.image} className="w-full h-full object-contain" alt="Background" />
-          </div>
-        )}
+    <div 
+      className="bg-white relative overflow-hidden print-page-break template-renderer-root"
+      style={{ 
+        width: `${paperWidth * MM_TO_PX}px`, 
+        height: `${paperHeight * MM_TO_PX}px`,
+        transform: `scale(${scale})`,
+        transformOrigin: 'top center',
+        margin: scale !== 1 ? '0 auto' : '0'
+      }}
+    >
+      {/* Background Layer */}
+      {template.background?.image && (
+        <div className="absolute inset-0 pointer-events-none z-0" style={{ opacity: template.background.opacity || 1 }}>
+          <img src={template.background.image} className="w-full h-full object-contain" alt="Background" />
+        </div>
+      )}
 
-        {elements.map((el: any) => (
-          <React.Fragment key={el.id}>
-            {renderElement(el)}
-          </React.Fragment>
-        ))}
-      </div>
-    </>
+      {elements.map((el: any) => (
+        <React.Fragment key={el.id}>
+          {renderElement(el)}
+        </React.Fragment>
+      ))}
+    </div>
   );
 }
