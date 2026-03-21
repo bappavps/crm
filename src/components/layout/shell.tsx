@@ -1,6 +1,6 @@
-
 "use client"
 
+import { useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/layout/app-sidebar"
@@ -76,7 +76,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return doc(firestore, 'company_settings', 'global');
   }, [firestore]);
   const { data: companySettings } = useDoc(companyDocRef);
+  
   const companyName = companySettings?.name || "Shree Label";
+
+  // Dynamic Browser Tab Title Update
+  useEffect(() => {
+    if (companyName) {
+      document.title = `${companyName} ERP`;
+    }
+  }, [companyName]);
 
   const isLoginPage = pathname === "/login"
   const isUnauthorizedPage = pathname === "/unauthorized"

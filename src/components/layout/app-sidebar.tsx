@@ -36,7 +36,8 @@ import {
   UserCog,
   LayoutTemplate,
   NotebookPen,
-  ScanLine
+  ScanLine,
+  ShieldCheck as ShieldIcon
 } from "lucide-react"
 import {
   Sidebar,
@@ -57,7 +58,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import Link from "next/link"
+import Link from "link"
 import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { usePermissions, PermissionKey } from "@/components/auth/permission-context"
@@ -234,16 +235,16 @@ export function AppSidebar() {
     <Sidebar variant="sidebar" collapsible="icon" className="bg-sidebar border-none shadow-xl font-sans transition-all duration-300">
       <SidebarHeader className="p-6">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shrink-0 overflow-hidden">
+          <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center shadow-lg shrink-0 overflow-hidden border border-white/20">
             {companyLogo ? (
               <img src={companyLogo} alt="Logo" className="w-full h-full object-contain p-1 bg-white" />
             ) : (
-              <Lock className="text-white w-6 h-6" />
+              <ShieldIcon className="text-white w-6 h-6" />
             )}
           </div>
           {state === "expanded" && (
-            <div className="animate-in fade-in duration-500">
-              <span className="block font-semibold text-white text-lg tracking-tight uppercase whitespace-nowrap">
+            <div className="animate-in fade-in duration-500 overflow-hidden">
+              <span className="block font-semibold text-white text-lg tracking-tight uppercase whitespace-nowrap truncate max-w-[160px]">
                 {companyName}
               </span>
               <span className="block text-[9px] text-muted-foreground uppercase tracking-[0.2em] font-bold whitespace-nowrap">ERP Solutions</span>
