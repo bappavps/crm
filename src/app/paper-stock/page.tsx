@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -255,7 +256,7 @@ export default function PaperStockPage() {
   const { data: labelTemplates } = useCollection(labelTemplatesQuery);
   const { data: reportTemplates } = useCollection(reportTemplatesQuery);
 
-  // Suggestions for Add Roll modal
+  // Suggestions for Add Roll modal (PAPER STOCK PAGE SPECIFIC)
   const uniqueCompanies = useMemo(() => Array.from(new Set(rolls?.map(r => r.paperCompany).filter(Boolean))).sort(), [rolls]);
   const uniqueTypes = useMemo(() => Array.from(new Set(rolls?.map(r => r.paperType).filter(Boolean))).sort(), [rolls]);
 
@@ -443,7 +444,7 @@ export default function PaperStockPage() {
     
     const rollId = formData.rollNo.trim().replace(/\//g, '-');
     
-    // DUPLICATE PREVENTION
+    // DUPLICATE PREVENTION (PAPER STOCK PAGE SPECIFIC)
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
       toast({ variant: "destructive", title: "Duplicate Roll ID", description: `Roll Number "${rollId}" already exists.` });
       return;
@@ -759,6 +760,7 @@ export default function PaperStockPage() {
 
       <PaperStockFilters data={rolls || []} filters={filters} setFilters={setFilters} onReset={handleResetAll} />
 
+      {/* INCREASED TABLE HEIGHT WRAPPER (PAPER STOCK PAGE SPECIFIC) */}
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-6">
@@ -772,7 +774,7 @@ export default function PaperStockPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            {/* HIDDEN SCANNER BUTTON */}
+            {/* HIDDEN SCANNER BUTTON AS REQUESTED */}
             <div className="hidden">
               <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl"><QrCode className="h-4 w-4 mr-2" /> Live Scanner</Button>
             </div>
@@ -868,6 +870,7 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
+      {/* ADD/EDIT MODAL WITH LOCAL AUTO-SUGGESTIONS (PAPER STOCK PAGE SPECIFIC) */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <form onSubmit={handleSave} className="flex flex-col h-full overflow-hidden">
@@ -883,6 +886,8 @@ export default function PaperStockPage() {
                 <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} /></div>
                 <div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label><Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger><SelectContent className="z-[100]">{STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}<SelectSeparator /><SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem></SelectContent></Select>{isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}</div>
+                
+                {/* LOCAL AUTO-SUGGESTIONS USING DATALIST */}
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Company</Label>
                   <Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" />
@@ -893,6 +898,7 @@ export default function PaperStockPage() {
                   <Input list="types-list" value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" />
                   <datalist id="types-list">{uniqueTypes.map(t => <option key={t} value={t} />)}</datalist>
                 </div>
+                
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
               </div>
@@ -919,7 +925,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* RESTORED SCANNER DIALOG */}
+      {/* RESTORED SCANNER DIALOG (HIDDEN TRIGGER) */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader><DialogTitle>Scan Paper Roll QR</DialogTitle></DialogHeader>
@@ -927,7 +933,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* RESTORED VIEW DIALOG */}
+      {/* VIEW DIALOG (USING SHARED ACTIONMODAL/POPOVER BUT LOCAL MAPPING) */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6">
@@ -968,7 +974,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* RESTORED REPORT DIALOG */}
+      {/* REPORT DIALOG (USES SHARED TEMPLATERENDERER WITH LOCAL DATA MAPPING) */}
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
@@ -1012,7 +1018,7 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* RESTORED PRINT DIALOG */}
+      {/* PRINT DIALOG (USES SHARED TEMPLATERENDERER WITH LOCAL DATA MAPPING) */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
@@ -1063,51 +1069,6 @@ export default function PaperStockPage() {
               </div>
             ))}
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* RESTORED MANUAL JOB CARD DIALOG */}
-      <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
-        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-6">
-            <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
-              <IdCard className="h-5 w-5 text-primary" /> Create Manual Job Card
-            </DialogTitle>
-            <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Direct floor release bypassing production planning</DialogDescription>
-          </div>
-          <div className="p-8 space-y-6 bg-slate-50">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase opacity-50">Machine</Label>
-                <Select value={manualMachine} onValueChange={setManualMachine}>
-                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Machine" /></SelectTrigger>
-                  <SelectContent className="z-[110]">
-                    {machines?.map(m => <SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase opacity-50">Operator</Label>
-                <Select value={manualOperator} onValueChange={setManualOperator}>
-                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Operator" /></SelectTrigger>
-                  <SelectContent className="z-[110]">
-                    {operators.map(o => <SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="p-4 bg-white rounded-xl border-2 border-primary/10 space-y-2">
-              <p className="text-[10px] font-black uppercase text-primary">Selected Configuration</p>
-              <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase">Parent Roll:</span><span className="font-black text-sm">{manualParentRoll}</span></div>
-              <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase">Child Units:</span><Badge className="bg-primary text-white font-black text-[10px]">{manualChildRolls.length}</Badge></div>
-            </div>
-          </div>
-          <DialogFooter className="p-6 bg-white border-t">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
-            <Button disabled={isProcessing} className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl" onClick={handleCreateManualJobCard}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />} Initialize Card
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
