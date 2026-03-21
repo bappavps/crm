@@ -107,6 +107,17 @@ export default function PhysicalStockAuditPage() {
   }, [firestore]);
   const { data: sessions, isLoading: sessionsLoading } = useCollection(sessionsQuery);
 
+  // Ensure unique session entries for the dropdown to prevent duplicate rendering
+  const uniqueSessions = useMemo(() => {
+    if (!sessions) return [];
+    const seen = new Set();
+    return sessions.filter(s => {
+      if (!s.id || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  }, [sessions]);
+
   const activeSessionRef = useMemoFirebase(() => {
     if (!firestore || !activeSessionId) return null;
     return doc(firestore, 'inventory_audits', activeSessionId);
@@ -400,12 +411,12 @@ export default function PhysicalStockAuditPage() {
               <SelectValue placeholder="Select Audit Session" />
             </SelectTrigger>
             <SelectContent className="z-[100]">
-              {sessions?.map(s => (
+              {uniqueSessions.map(s => (
                 <SelectItem key={s.id} value={s.id} className="font-bold text-[10px] uppercase">
                   {s.sessionName} ({s.status})
                 </SelectItem>
               ))}
-              {sessions?.length === 0 && <SelectItem value="none" disabled>No Sessions Found</SelectItem>}
+              {uniqueSessions.length === 0 && !sessionsLoading && <SelectItem value="none" disabled>No Sessions Found</SelectItem>}
             </SelectContent>
           </Select>
           <Button onClick={() => setIsNewSessionOpen(true)} className="h-11 px-6 bg-primary shadow-lg rounded-xl font-black uppercase text-[10px] tracking-widest">
