@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
+import { Switch } from "@/components/ui/switch"
 import { 
   Scissors, 
   Plus, 
@@ -78,6 +79,7 @@ interface RollConfig {
   jobName: string;
   jobSize: string;
   runs: SlitRun[];
+  remainderAction?: 'STOCK' | 'ADJUST';
 }
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -122,6 +124,7 @@ function SlittingHubContent() {
   const [slittingReport, setSlittingReport] = useState<any>(null)
   const [selectedSupplier, setSelectedSupplier] = useState<string>("all")
   const [selectionMap, setSelectionMap] = useState<Record<string, number>>({})
+  const [wastagePreferences, setWastagePreferences] = useState<Record<string, 'STOCK' | 'ADJUST'>>({})
 
   const [modal, setModal] = useState<{ isOpen: boolean; type: ModalType; title: string; description?: string }>({ 
     isOpen: false, type: 'SUCCESS', title: '' 
@@ -129,10 +132,14 @@ function SlittingHubContent() {
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // Planning Data
+  // Planning Data - Fixed: Remove hidden limits and include all relevant statuses
   const planningJobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'planning_tables/label-printing/rows'), where('values.printing_planning', '!=', 'Completed'));
+    return query(
+      collection(firestore, 'planning_tables/label-printing/rows'), 
+      where('values.printing_planning', '!=', 'Completed'),
+      limit(1000) // Professional headroom
+    );
   }, [firestore]);
   const { data: planningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
 
@@ -161,7 +168,7 @@ function SlittingHubContent() {
         }
       });
     }
-  }, [initialRollData]);
+  }, [initialRollData, selectedRolls.length]);
 
   // Handle Search & Add
   const handleSearch = async () => {
@@ -298,7 +305,7 @@ function SlittingHubContent() {
     }));
   }
 
-  // EXECUTION
+  // EXECUTION - Enhanced with Remainder Strategy (Part 1)
   const handleExecuteSlitting = async () => {
     if (!firestore || !user || selectedRolls.length === 0) return;
     
@@ -318,8 +325,9 @@ function SlittingHubContent() {
         for (const parent of selectedRolls) {
           const config = rollConfigs[parent.id];
           const calc = calculateRollStatus(parent.id);
-          const parentRef = doc(firestore, 'paper_stock', parent.id);
+          const remainderAction = config.remainderAction || 'STOCK'; // Defaults to STOCK for manual preservation
           
+          const parentRef = doc(firestore, 'paper_stock', parent.id);
           transaction.update(parentRef, { 
             status: "Consumed", 
             dateOfUsed: new Date().toISOString().split('T')[0],
@@ -360,7 +368,8 @@ function SlittingHubContent() {
             }
           }
 
-          if (calc.remainder > 0) {
+          // Part 1: Conditional Remainder Creation
+          if (calc.remainder > 0 && remainderAction === 'STOCK') {
             const suffix = getChildSuffix(parent.rollNo, childIdx);
             const remainderId = sanitizeDocId(`${parent.rollNo}-${suffix}`);
             const remainderRef = doc(firestore, 'paper_stock', remainderId);
@@ -421,7 +430,7 @@ function SlittingHubContent() {
     }
   }
 
-  // --- AUTO PLANNER LOGIC (PRESERVED) ---
+  // --- AUTO PLANNER LOGIC (Fixed: PART 1 wastage) ---
   const availableOptions = useMemo(() => {
     if (!selectedPlanningJob || !stockData) return [];
     const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
@@ -469,7 +478,8 @@ function SlittingHubContent() {
           jobNo: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
           jobName: selectedPlanningJob.values.name || "",
           jobSize: selectedPlanningJob.values.size || "",
-          runs: [{ id: crypto.randomUUID(), widthMm: targetWidth, lengthMeters: r.lengthMeters, parts: opt.splits }]
+          runs: [{ id: crypto.randomUUID(), widthMm: targetWidth, lengthMeters: r.lengthMeters, parts: opt.splits }],
+          remainderAction: wastagePreferences[key] || 'STOCK' // Apply Part 1 preference
         };
       });
     });
@@ -484,6 +494,16 @@ function SlittingHubContent() {
   const activeConfig = activeRollId ? rollConfigs[activeRollId] : null;
   const activeRoll = activeRollId ? selectedRolls.find(r => r.id === activeRollId) : null;
   const activeCalc = activeRollId ? calculateRollStatus(activeRollId) : null;
+
+  const filteredPlannerJobs = useMemo(() => {
+    if (!planningJobs) return [];
+    if (!plannerSearch) return planningJobs;
+    const q = plannerSearch.toLowerCase();
+    return planningJobs.filter(j => 
+      String(j.values.name || "").toLowerCase().includes(q) || 
+      String(j.values.sn || "").toLowerCase().includes(q)
+    );
+  }, [planningJobs, plannerSearch]);
 
   if (!isMounted) return null;
 
@@ -506,7 +526,7 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- AUTO SLITTING PLANNER PANEL (PRESERVED) --- */}
+      {/* --- AUTO SLITTING PLANNER PANEL (Fixed Sync) --- */}
       <Card className="shadow-2xl border-none rounded-3xl overflow-hidden bg-white mx-4">
         <CardHeader className="bg-slate-900 text-white p-6">
           <div className="flex items-center justify-between">
@@ -519,28 +539,43 @@ function SlittingHubContent() {
         <CardContent className="p-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <div className="space-y-4">
-              <Label className="text-[10px] font-black uppercase text-slate-400">Search Planning Job</Label>
+              <Label className="text-[10px] font-black uppercase text-slate-400">Search Active Planning Job</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input placeholder="Search job name or SN..." className="h-10 pl-10 rounded-xl" value={plannerSearch} onChange={e => setPlannerSearch(e.target.value)} />
               </div>
-              <div className="space-y-2 max-h-[200px] overflow-y-auto industrial-scroll pr-2">
-                {planningJobs?.slice(0, 5).map(job => (
-                  <div key={job.id} onClick={() => setSelectedJob(job)} className={cn("p-3 rounded-xl border-2 cursor-pointer flex justify-between items-center transition-all", selectedPlanningJob?.id === job.id ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20")}>
-                    <span className="text-xs font-black uppercase">{job.values.name}</span>
-                    <span className="text-[9px] font-bold opacity-50">{job.values.material} | {job.values.size}</span>
+              <div className="space-y-2 max-h-[350px] overflow-y-auto industrial-scroll pr-2 border rounded-2xl p-2 bg-slate-50/50">
+                {planningLoading ? (
+                  <div className="py-10 text-center"><Loader2 className="animate-spin h-6 w-6 mx-auto text-primary" /></div>
+                ) : filteredPlannerJobs.length === 0 ? (
+                  <div className="py-10 text-center text-muted-foreground italic text-xs">No active planning jobs found.</div>
+                ) : filteredPlannerJobs.map(job => (
+                  <div key={job.id} onClick={() => setSelectedJob(job)} className={cn("p-3 rounded-xl border-2 cursor-pointer flex justify-between items-center transition-all", selectedPlanningJob?.id === job.id ? "border-primary bg-primary/5" : "border-white bg-white hover:border-primary/20 shadow-sm")}>
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-black uppercase tracking-tight">{job.values.name}</span>
+                      <span className="text-[9px] font-bold opacity-50 uppercase">{job.values.material} | {job.values.size}</span>
+                    </div>
+                    <Badge variant="outline" className="text-[8px] font-black border-primary/20 text-primary">{job.values.printing_planning}</Badge>
                   </div>
                 ))}
               </div>
             </div>
             <div className="flex flex-col justify-center items-center p-6 bg-slate-50 rounded-2xl border-2 border-dashed">
               {selectedPlanningJob ? (
-                <div className="text-center space-y-4">
-                  <p className="text-[10px] font-black uppercase text-primary">Targeting {availableOptions.length} Stock Options</p>
-                  <Button onClick={() => setIsOptionsModalOpen(true)} className="h-12 px-8 rounded-xl bg-slate-900 text-white font-black uppercase text-[10px]">Analyze Stock Options</Button>
+                <div className="text-center space-y-4 animate-in fade-in zoom-in-95">
+                  <div className="p-4 bg-white rounded-2xl shadow-sm border space-y-1 mb-4">
+                    <p className="text-[10px] font-black uppercase text-slate-400">Targeting Substrate</p>
+                    <p className="text-lg font-black text-primary">{selectedPlanningJob.values.material}</p>
+                    <p className="text-[9px] font-bold uppercase opacity-50">Width: {selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size}</p>
+                  </div>
+                  <p className="text-[10px] font-black uppercase text-slate-500">Found {availableOptions.length} Stock Configurations</p>
+                  <Button onClick={() => setIsOptionsModalOpen(true)} className="h-12 px-10 rounded-xl bg-slate-900 text-white font-black uppercase text-[10px] shadow-xl hover:bg-black">Analyze Stock Options</Button>
                 </div>
               ) : (
-                <p className="text-[10px] font-black uppercase text-slate-400">Select job from planning to auto-populate</p>
+                <div className="text-center opacity-30 space-y-3">
+                  <LayoutGrid className="h-10 w-10 mx-auto" />
+                  <p className="text-[10px] font-black uppercase tracking-widest">Select job from technical board to auto-populate terminal</p>
+                </div>
               )}
             </div>
           </div>
@@ -579,7 +614,7 @@ function SlittingHubContent() {
                     onClick={() => setActiveRollId(r.id)}
                     className={cn(
                       "p-3 rounded-xl border-2 transition-all cursor-pointer relative group",
-                      activeRollId === r.id ? "border-primary bg-primary/5" : "border-slate-50 hover:bg-slate-50"
+                      activeRollId === r.id ? "border-primary bg-primary/5 shadow-inner" : "border-slate-50 hover:bg-slate-50"
                     )}
                   >
                     <button onClick={(e) => { e.stopPropagation(); setSelectedRolls(selectedRolls.filter(x => x.id !== r.id)); if(activeRollId === r.id) setActiveRollId(null); }} className="absolute top-1 right-1 h-5 w-5 bg-white border rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center hover:text-rose-500 transition-opacity"><X className="h-3 w-3" /></button>
@@ -711,14 +746,14 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- PLANNER OPTIONS MODAL (PRESERVED) --- */}
+      {/* --- PLANNER OPTIONS MODAL (Fixed Part 1: Wastage Strategy) --- */}
       <Dialog open={isOptionsModalOpen} onOpenChange={setIsOptionsModalOpen}>
-        <DialogContent className="sm:max-w-[1100px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-slate-50 flex flex-col h-[90vh]">
+        <DialogContent className="sm:max-w-[1200px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-slate-50 flex flex-col h-[90vh]">
           <div className="bg-slate-900 text-white p-8 shrink-0">
             <div className="flex justify-between items-center">
               <div className="space-y-1">
                 <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-3"><Sparkles className="h-5 w-5 text-primary" /> Stock Decision Support</DialogTitle>
-                <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase">Compare efficiencies and select optimal jumbos</DialogDescription>
+                <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase">Compare efficiencies and define technical waste strategies</DialogDescription>
               </div>
               <div className="flex gap-4">
                 <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl">
@@ -735,24 +770,44 @@ function SlittingHubContent() {
           <div className="flex-1 overflow-auto p-8 industrial-scroll">
             <Table>
               <TableHeader className="bg-slate-100/50"><TableRow className="h-12">
-                <TableHead className="font-black text-[9px] uppercase pl-6">Roll ID</TableHead>
-                <TableHead className="font-black text-[9px] uppercase">Dimensions</TableHead>
+                <TableHead className="font-black text-[9px] uppercase pl-6">Dimension Class</TableHead>
+                <TableHead className="font-black text-[9px] uppercase text-center">Wastage (MM)</TableHead>
+                <TableHead className="font-black text-[9px] uppercase text-center">Remainder Action</TableHead>
                 <TableHead className="font-black text-[9px] uppercase">Yield</TableHead>
                 <TableHead className="font-black text-[9px] uppercase text-center">Efficiency</TableHead>
-                <TableHead className="font-black text-[9px] uppercase text-right pr-6">Selection</TableHead>
+                <TableHead className="font-black text-[9px] uppercase text-right pr-6">Batch Selection</TableHead>
               </TableRow></TableHeader>
               <TableBody>
                 {availableOptions.filter((o: any) => selectedSupplier === 'all' || o.company === selectedSupplier).map((opt: any) => (
-                  <TableRow key={opt.key} className="h-16 hover:bg-slate-50">
-                    <TableCell className="pl-6 font-black text-xs font-mono text-primary">{opt.exampleId}</TableCell>
-                    <TableCell className="text-xs font-bold">{opt.width}mm x {opt.length}m</TableCell>
-                    <TableCell className="text-[10px] font-bold text-emerald-600">{opt.splits} slits ({(opt.splits * opt.length).toLocaleString()} mtr)</TableCell>
+                  <TableRow key={opt.key} className="h-16 hover:bg-white transition-colors">
+                    <TableCell className="pl-6">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black">{opt.width}mm x {opt.length}m</span>
+                        <span className="text-[9px] font-bold opacity-40 uppercase">{opt.company}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className="border-rose-200 text-rose-600 font-black h-6 px-3">{opt.waste} MM</Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <div className="flex items-center justify-center gap-3">
+                        <span className={cn("text-[8px] font-black", wastagePreferences[opt.key] === 'ADJUST' ? "text-primary" : "text-slate-400")}>ADJUST</span>
+                        <Switch 
+                          checked={wastagePreferences[opt.key] !== 'ADJUST'} 
+                          onCheckedChange={(val) => setWastagePreferences({...wastagePreferences, [opt.key]: val ? 'STOCK' : 'ADJUST'})}
+                        />
+                        <span className={cn("text-[8px] font-black", (wastagePreferences[opt.key] || 'STOCK') === 'STOCK' ? "text-emerald-600" : "text-slate-400")}>STOCK</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-[10px] font-bold text-slate-600">
+                      {opt.splits} units @ {opt.length} mtr
+                    </TableCell>
                     <TableCell className="text-center"><Progress value={opt.efficiency * 100} className="h-1 w-20 mx-auto" /></TableCell>
                     <TableCell className="text-right pr-6">
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.max(0, (selectionMap[opt.key] || 0) - 1)})}>-</Button>
-                        <span className="w-8 text-center font-black text-xs">{selectionMap[opt.key] || 0}</span>
-                        <Button variant="ghost" size="sm" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.min(opt.availableCount, (selectionMap[opt.key] || 0) + 1)})}>+</Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.max(0, (selectionMap[opt.key] || 0) - 1)})}>-</Button>
+                        <span className="w-10 text-center font-black text-xs bg-white border h-8 flex items-center justify-center rounded-lg">{selectionMap[opt.key] || 0}</span>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.min(opt.availableCount, (selectionMap[opt.key] || 0) + 1)})}>+</Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -761,7 +816,7 @@ function SlittingHubContent() {
             </Table>
           </div>
           <div className="p-8 bg-white border-t flex justify-end">
-            <Button onClick={handleInitializeTerminalFromPlanner} size="lg" className="h-14 px-12 rounded-xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl">Apply Selection to Batch</Button>
+            <Button onClick={handleInitializeTerminalFromPlanner} size="lg" className="h-14 px-12 rounded-xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl">Deploy Selection to Terminal</Button>
           </div>
         </DialogContent>
       </Dialog>
