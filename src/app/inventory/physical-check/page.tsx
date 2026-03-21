@@ -54,8 +54,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.4)
- * Enhanced with duplicate detection, append logic, and sound-loop prevention.
+ * PHYSICAL PAPER STOCK CHECK (V1.5)
+ * Fixed: Robust Session Deduplication & Fetch Stability.
  */
 
 interface ScannedRoll {
@@ -98,22 +98,30 @@ export default function PhysicalStockAuditPage() {
     if (!firestore || !user) return null;
     return doc(firestore, 'adminUsers', user.uid);
   }, [firestore, user]);
-  const { data: adminData } = useDoc(adminDocRef);
+  const { data: adminData, isLoading: adminCheckLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
   const sessionsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
-    return query(collection(firestore, 'inventory_audits'), orderBy('createdAt', 'desc'), limit(50));
+    return query(collection(firestore, 'inventory_audits'), orderBy('createdAt', 'desc'), limit(100));
   }, [firestore]);
+  
   const { data: sessions, isLoading: sessionsLoading } = useCollection(sessionsQuery);
 
-  // Ensure unique session entries for the dropdown to prevent duplicate rendering
+  /**
+   * ROBUST SESSION DEDUPLICATION
+   * Ensures uniqueness by both ID and Name to handle potential naming conflicts or cache artifacts.
+   */
   const uniqueSessions = useMemo(() => {
     if (!sessions) return [];
-    const seen = new Set();
+    const seenIds = new Set();
+    const seenNames = new Set();
     return sessions.filter(s => {
-      if (!s.id || seen.has(s.id)) return false;
-      seen.add(s.id);
+      const id = s.id;
+      const name = s.sessionName;
+      if (!id || seenIds.has(id) || (name && seenNames.has(name))) return false;
+      seenIds.add(id);
+      if (name) seenNames.add(name);
       return true;
     });
   }, [sessions]);
@@ -134,11 +142,10 @@ export default function PhysicalStockAuditPage() {
 
   /**
    * AUDIO FEEDBACK SYNTHESIZER
-   * Debounced to prevent loops from fast scanner input.
    */
   const triggerScanFeedback = (type: 'success' | 'error' | 'warning') => {
     const now = Date.now();
-    if (now - lastSoundTime.current < 500) return; // Prevent rapid firing
+    if (now - lastSoundTime.current < 500) return; 
     lastSoundTime.current = now;
 
     try {
@@ -213,14 +220,12 @@ export default function PhysicalStockAuditPage() {
   const processRollId = async (rollNoRaw: string) => {
     if (!rollNoRaw || !activeSessionId || !firestore || !user) return;
 
-    // NORMALIZE INPUT: Extract Roll ID if URL is provided
     let rollNo = rollNoRaw.trim();
     if (rollNo.includes('/')) {
       rollNo = rollNo.split('/').pop() || rollNo;
     }
     rollNo = rollNo.toUpperCase();
 
-    // DUPLICATE CHECK
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
       triggerScanFeedback('error');
       toast({ 
@@ -271,7 +276,7 @@ export default function PhysicalStockAuditPage() {
     if (e) e.preventDefault();
     if (!scanInput) return;
     const value = scanInput;
-    setScanInput(""); // Clear immediately to allow next scan
+    setScanInput(""); 
     await processRollId(value);
   };
 
@@ -411,7 +416,9 @@ export default function PhysicalStockAuditPage() {
               <SelectValue placeholder="Select Audit Session" />
             </SelectTrigger>
             <SelectContent className="z-[100]">
-              {uniqueSessions.map(s => (
+              {sessionsLoading ? (
+                <div className="flex items-center justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+              ) : uniqueSessions.map(s => (
                 <SelectItem key={s.id} value={s.id} className="font-bold text-[10px] uppercase">
                   {s.sessionName} ({s.status})
                 </SelectItem>
@@ -497,11 +504,6 @@ export default function PhysicalStockAuditPage() {
                         </Button>
                       </div>
                     </div>
-                    <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest text-center italic">
-                      {scanFeedback === 'success' ? "Roll Verified" : 
-                       scanFeedback === 'error' ? "Duplicate Scan Blocked" : 
-                       scanFeedback === 'warning' ? "Extra Roll Recorded" : "* Tip: Input auto-focuses after each scan"}
-                    </p>
                   </form>
                 </div>
 
