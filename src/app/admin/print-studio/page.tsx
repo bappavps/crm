@@ -88,8 +88,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V13.0)
- * Integrated enhanced import/export, asset library tabs, and restored editor controls.
+ * PRINT TEMPLATE STUDIO (V13.1)
+ * Fixed z-index conflict and tab state stickiness for reliable asset management.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -586,8 +586,8 @@ export default function PrintTemplateStudio() {
           </Tabs>
         </>
       ) : (
-        <div className="fixed inset-0 z-[100] bg-slate-100 flex flex-col font-sans print-studio-editor">
-          <div className="h-16 border-b flex items-center justify-between px-6 shrink-0 bg-white shadow-sm z-[110] print:hidden">
+        <div className="fixed inset-0 z-40 bg-slate-100 flex flex-col font-sans print-studio-editor">
+          <div className="h-16 border-b flex items-center justify-between px-6 shrink-0 bg-white shadow-sm z-50 print:hidden">
             <div className="flex items-center gap-4">
               <Button variant="ghost" onClick={() => setIsEditorOpen(false)} className="font-bold"><Undo2 className="mr-2 h-4 w-4" /> Exit Studio</Button>
               <Separator orientation="vertical" className="h-6" />
@@ -677,7 +677,7 @@ export default function PrintTemplateStudio() {
 
             <div className="w-80 border-l flex flex-col bg-white overflow-y-auto shrink-0 industrial-scroll print:hidden">
               {selectedElement ? (
-                <div className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-300">
+                <div key={`props-${selectedElement.id}`} className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-300">
                   <div className="flex justify-between items-center bg-slate-50 -m-6 p-6 mb-4 border-b">
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2"><Settings2 className="h-4 w-4" /> Properties</h4>
                     <div className="flex gap-1">
@@ -691,7 +691,7 @@ export default function PrintTemplateStudio() {
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Image Source</Label>
                       
-                      <Tabs defaultValue="library" className="w-full">
+                      <Tabs key={`tabs-${selectedElement.id}`} defaultValue="library" className="w-full">
                         <TabsList className="grid w-full grid-cols-2 h-9 bg-slate-100 rounded-lg">
                           <TabsTrigger value="upload" className="text-[9px] font-black uppercase">Direct Upload</TabsTrigger>
                           <TabsTrigger value="library" className="text-[9px] font-black uppercase">Global Library</TabsTrigger>
@@ -776,7 +776,7 @@ export default function PrintTemplateStudio() {
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase opacity-50">Background Layer</Label>
                       
-                      <Tabs defaultValue="library" className="w-full">
+                      <Tabs key="bg-tabs" defaultValue="library" className="w-full">
                         <TabsList className="grid w-full grid-cols-2 h-9 bg-slate-100 rounded-lg">
                           <TabsTrigger value="upload" className="text-[9px] font-black uppercase">Direct Upload</TabsTrigger>
                           <TabsTrigger value="library" className="text-[9px] font-black uppercase">Global Library</TabsTrigger>
@@ -838,7 +838,7 @@ export default function PrintTemplateStudio() {
 
       {/* GLOBAL IMAGE LIBRARY DIALOG */}
       <Dialog open={isLibraryOpen} onOpenChange={setIsLibraryOpen}>
-        <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl flex flex-col h-[80vh]">
+        <DialogContent className="sm:max-w-[900px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl flex flex-col h-[80vh] z-[150]">
           <div className="bg-slate-900 text-white p-8 shrink-0">
             <div className="flex justify-between items-center">
               <div className="space-y-1">
@@ -880,7 +880,7 @@ export default function PrintTemplateStudio() {
       </Dialog>
 
       <Dialog open={isNewDialogOpen} onOpenChange={setIsNewDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] rounded-3xl">
+        <DialogContent className="sm:max-w-[425px] rounded-3xl z-[150]">
           <form onSubmit={handleCreateTemplate}>
             <DialogHeader><DialogTitle className="text-xl font-black uppercase flex items-center gap-2"><Plus className="h-5 w-5 text-primary" /> Create Design</DialogTitle></DialogHeader>
             <div className="grid gap-6 py-6">
