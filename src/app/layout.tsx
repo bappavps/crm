@@ -19,6 +19,14 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'Shree Label Creation CRM',
   description: 'Specialized ERP for Narrow Web Flexo Printing',
+  manifest: '/manifest.json',
+  themeColor: '#E4892B',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'ShreeERP',
+  },
 };
 
 /**
@@ -32,6 +40,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+      </head>
       <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")} suppressHydrationWarning>
         <Suspense fallback={null}>
           <FirebaseClientProvider>
