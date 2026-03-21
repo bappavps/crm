@@ -59,8 +59,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V2.0)
- * Enhanced Reconciliation: Selectable adjustments & advanced metrics.
+ * PHYSICAL PAPER STOCK CHECK (V2.1)
+ * Enhanced Reconciliation: Selectable adjustments & robust session deduplication.
  */
 
 interface ScannedRoll {
@@ -117,14 +117,19 @@ export default function PhysicalStockAuditPage() {
   
   const { data: sessions, isLoading: sessionsLoading } = useCollection(sessionsQuery);
 
+  /**
+   * ROBUST SESSION DEDUPLICATION
+   * Filters by unique ID to ensure the select dropdown is clean.
+   */
   const uniqueSessions = useMemo(() => {
     if (!sessions) return [];
-    const seenIds = new Set();
-    return sessions.filter(s => {
-      if (seenIds.has(s.id)) return false;
-      seenIds.add(s.id);
-      return true;
+    const map = new Map();
+    sessions.forEach(s => {
+      if (s.id && !map.has(s.id)) {
+        map.set(s.id, s);
+      }
     });
+    return Array.from(map.values());
   }, [sessions]);
 
   const activeSessionRef = useMemoFirebase(() => {
