@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -80,7 +79,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
+} from "@/dropdown-menu"
 import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@/firebase"
 import { 
   collection, 
@@ -760,7 +759,6 @@ export default function PaperStockPage() {
 
       <PaperStockFilters data={rolls || []} filters={filters} setFilters={setFilters} onReset={handleResetAll} />
 
-      {/* INCREASED TABLE HEIGHT WRAPPER (PAPER STOCK PAGE SPECIFIC) */}
       <Card className="flex-1 overflow-hidden flex flex-col border-slate-200 shadow-xl rounded-2xl bg-white border-none">
         <div className="bg-slate-900 text-white p-4 px-8 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-6">
@@ -774,7 +772,6 @@ export default function PaperStockPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            {/* HIDDEN SCANNER BUTTON AS REQUESTED */}
             <div className="hidden">
               <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl"><QrCode className="h-4 w-4 mr-2" /> Live Scanner</Button>
             </div>
@@ -870,7 +867,6 @@ export default function PaperStockPage() {
         </div>
       </Card>
 
-      {/* ADD/EDIT MODAL WITH LOCAL AUTO-SUGGESTIONS (PAPER STOCK PAGE SPECIFIC) */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <form onSubmit={handleSave} className="flex flex-col h-full overflow-hidden">
@@ -887,7 +883,6 @@ export default function PaperStockPage() {
                 <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} /></div>
                 <div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label><Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger><SelectContent className="z-[100]">{STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}<SelectSeparator /><SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem></SelectContent></Select>{isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}</div>
                 
-                {/* LOCAL AUTO-SUGGESTIONS USING DATALIST */}
                 <div className="space-y-2">
                   <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Company</Label>
                   <Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" />
@@ -925,7 +920,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* RESTORED SCANNER DIALOG (HIDDEN TRIGGER) */}
       <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader><DialogTitle>Scan Paper Roll QR</DialogTitle></DialogHeader>
@@ -933,7 +927,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* VIEW DIALOG (USING SHARED ACTIONMODAL/POPOVER BUT LOCAL MAPPING) */}
       <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6">
@@ -974,7 +967,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* REPORT DIALOG (USES SHARED TEMPLATERENDERER WITH LOCAL DATA MAPPING) */}
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
@@ -1018,7 +1010,6 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      {/* PRINT DIALOG (USES SHARED TEMPLATERENDERER WITH LOCAL DATA MAPPING) */}
       <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
