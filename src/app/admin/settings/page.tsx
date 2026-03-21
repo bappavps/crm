@@ -24,13 +24,24 @@ import {
   Phone, 
   MapPin, 
   FileText,
-  Shield 
+  Shield,
+  Tag,
+  Filter,
+  AlertTriangle
 } from "lucide-react"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
-import { doc, setDoc, serverTimestamp, collection, deleteDoc } from "firebase/firestore"
+import { doc, setDoc, serverTimestamp, collection, deleteDoc, getDocs, query, where } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
-import Image from "next/image"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+
+const ASSET_TAGS = [
+  { id: 'logo', label: 'Company Logo' },
+  { id: 'template', label: 'Label Asset' },
+  { id: 'background', label: 'Background' },
+  { id: 'qr', label: 'QR/Identity' },
+  { id: 'other', label: 'Misc' },
+];
 
 export default function SettingsPage() {
   const { toast } = useToast()
@@ -39,6 +50,8 @@ export default function SettingsPage() {
   const [isMounted, setIsMounted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [activeTagFilter, setActiveTagFilter] = useState("all")
+  const [uploadTag, setUploadTag] = useState("template")
 
   useEffect(() => { setIsMounted(true) }, [])
 
@@ -47,7 +60,7 @@ export default function SettingsPage() {
     if (!firestore) return null;
     return doc(firestore, 'company_settings', 'global');
   }, [firestore]);
-  const { data: companySettings, isLoading: companyLoading } = useDoc(companyDocRef);
+  const { data: companySettings } = useDoc(companyDocRef);
 
   // 2. Image Library Subscription
   const libraryQuery = useMemoFirebase(() => {
@@ -55,6 +68,13 @@ export default function SettingsPage() {
     return collection(firestore, 'image_library');
   }, [firestore]);
   const { data: libraryImages, isLoading: libraryLoading } = useCollection(libraryQuery);
+
+  // 3. Templates for usage check
+  const templatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return collection(firestore, 'print_templates');
+  }, [firestore]);
+  const { data: allTemplates } = useCollection(templatesQuery);
 
   const [companyForm, setCompanyForm] = useState({
     name: "",
@@ -64,7 +84,8 @@ export default function SettingsPage() {
     contact: "",
     email: "",
     website: "",
-    logo: ""
+    logo: "",
+    company_id: "default_company"
   })
 
   useEffect(() => {
@@ -77,7 +98,8 @@ export default function SettingsPage() {
         contact: companySettings.contact || "",
         email: companySettings.email || "",
         website: companySettings.website || "",
-        logo: companySettings.logo || ""
+        logo: companySettings.logo || "",
+        company_id: companySettings.company_id || "default_company"
       });
     }
   }, [companySettings]);
@@ -124,6 +146,8 @@ export default function SettingsPage() {
           id,
           name: file.name,
           url: base64,
+          tag: uploadTag,
+          company_id: "default_company",
           uploadedAt: serverTimestamp(),
           uploadedBy: user.uid,
           size: file.size,
@@ -139,15 +163,38 @@ export default function SettingsPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleDeleteAsset = async (id: string) => {
-    if (!firestore || !confirm("Delete this asset permanently?")) return;
+  const handleDeleteAsset = async (asset: any) => {
+    if (!firestore) return;
+
+    // PROTECTION LOGIC
+    const isUsedInLogo = companyForm.logo === asset.url;
+    const isUsedInTemplate = allTemplates?.some(t => 
+      t.elements?.some((el: any) => el.type === 'image' && el.content === asset.url) ||
+      t.background?.image === asset.url
+    );
+
+    if (isUsedInLogo || isUsedInTemplate) {
+      toast({ 
+        variant: "destructive", 
+        title: "Delete Blocked", 
+        description: "This asset is currently in use by a template or company profile." 
+      });
+      return;
+    }
+
+    if (!confirm("Delete this asset permanently?")) return;
+    
     try {
-      await deleteDoc(doc(firestore, 'image_library', id));
+      await deleteDoc(doc(firestore, 'image_library', asset.id));
       toast({ title: "Asset Removed" });
     } catch (e) {
       toast({ variant: "destructive", title: "Error deleting" });
     }
   };
+
+  const filteredAssets = libraryImages?.filter(img => 
+    activeTagFilter === "all" || img.tag === activeTagFilter
+  ) || [];
 
   if (!isMounted) return null;
 
@@ -257,30 +304,54 @@ export default function SettingsPage() {
 
         <TabsContent value="library">
           <div className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div className="space-y-1">
-                <h3 className="text-xl font-black uppercase tracking-tight">Image Assets</h3>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">Global library for logos, background patterns, and technical drawings</p>
+                <h3 className="text-xl font-black uppercase tracking-tight">Asset Repository</h3>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-widest">Global library for branding and technical media</p>
               </div>
-              <Label htmlFor="library-upload" className="cursor-pointer h-12 px-8 rounded-xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[10px] tracking-widest flex items-center justify-center shadow-xl transition-all active:scale-95">
-                {isUploading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2 text-primary" />}
-                Add New Asset
-                <input id="library-upload" type="file" accept="image/*" className="hidden" onChange={handleLibraryUpload} />
-              </Label>
+              
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+                  <Button variant={activeTagFilter === 'all' ? 'default' : 'ghost'} size="sm" onClick={() => setActiveTagFilter('all')} className="text-[9px] font-black uppercase h-8 px-4 rounded-lg">All</Button>
+                  {ASSET_TAGS.map(t => (
+                    <Button key={t.id} variant={activeTagFilter === t.id ? 'default' : 'ghost'} size="sm" onClick={() => setActiveTagFilter(t.id)} className="text-[9px] font-black uppercase h-8 px-4 rounded-lg">{t.label}</Button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Select value={uploadTag} onValueChange={setUploadTag}>
+                    <SelectTrigger className="h-12 w-40 rounded-xl border-2 font-bold text-[10px] uppercase">
+                      <SelectValue placeholder="Category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ASSET_TAGS.map(t => <SelectItem key={t.id} value={t.id} className="text-[10px] font-bold uppercase">{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  
+                  <Label htmlFor="library-upload" className="cursor-pointer h-12 px-8 rounded-xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[10px] tracking-widest flex items-center justify-center shadow-xl transition-all active:scale-95">
+                    {isUploading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2 text-primary" />}
+                    Upload Media
+                    <input id="library-upload" type="file" accept="image/*" className="hidden" onChange={handleLibraryUpload} />
+                  </Label>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
               {libraryLoading ? (
                 <div className="col-span-full py-20 text-center"><Loader2 className="animate-spin h-10 w-10 mx-auto text-primary" /></div>
-              ) : libraryImages?.length === 0 ? (
+              ) : filteredAssets.length === 0 ? (
                 <div className="col-span-full py-20 border-4 border-dashed rounded-3xl flex flex-col items-center justify-center opacity-30 gap-4">
                   <ImageIcon className="h-16 w-16" />
-                  <p className="text-sm font-black uppercase tracking-widest">Your Asset Library is Empty</p>
+                  <p className="text-sm font-black uppercase tracking-widest">No assets found in this category</p>
                 </div>
-              ) : libraryImages?.map((asset) => (
+              ) : filteredAssets.map((asset) => (
                 <Card key={asset.id} className="group border-none shadow-lg rounded-2xl overflow-hidden bg-white transition-all hover:scale-105">
                   <div className="aspect-square bg-slate-50 relative flex items-center justify-center p-4">
                     <img src={asset.url} alt={asset.name} className="w-full h-full object-contain" />
+                    <div className="absolute top-2 left-2">
+                      <Badge className="bg-slate-900/60 text-white text-[8px] font-black border-none uppercase backdrop-blur-md">{asset.tag}</Badge>
+                    </div>
                     <div className="absolute inset-0 bg-slate-900/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-4">
                       <Button variant="ghost" size="sm" className="w-full text-white hover:bg-white/10 font-bold uppercase text-[9px]" onClick={() => { navigator.clipboard.writeText(asset.url); toast({ title: "URL Copied" }); }}>
                         <Copy className="h-3 w-3 mr-2" /> Copy URL
@@ -290,7 +361,7 @@ export default function SettingsPage() {
                           <Download className="h-3 w-3 mr-2" /> Export
                         </a>
                       </Button>
-                      <Button variant="ghost" size="sm" className="w-full text-rose-400 hover:bg-rose-500 hover:text-white font-bold uppercase text-[9px]" onClick={() => handleDeleteAsset(asset.id)}>
+                      <Button variant="ghost" size="sm" className="w-full text-rose-400 hover:bg-rose-500 hover:text-white font-bold uppercase text-[9px]" onClick={() => handleDeleteAsset(asset)}>
                         <Trash2 className="h-3 w-3 mr-2" /> Delete
                       </Button>
                     </div>

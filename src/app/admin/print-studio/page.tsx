@@ -64,7 +64,10 @@ import {
   X,
   FileUp,
   FileDown,
-  LayoutTemplate
+  LayoutTemplate,
+  RotateCcw,
+  Magnet,
+  Maximize
 } from "lucide-react"
 import { 
   Dialog, 
@@ -82,10 +85,11 @@ import { cn } from "@/lib/utils"
 import { QRCodeSVG } from 'qrcode.react'
 import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V12.0)
- * Fixed "From Library" crash and implemented real-time thumbnail generation.
+ * PRINT TEMPLATE STUDIO (V13.0)
+ * Integrated enhanced import/export, asset library tabs, and restored editor controls.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -135,6 +139,7 @@ interface PrintTemplate {
   isSystemTemplate?: boolean;
   background?: BackgroundConfig;
   thumbnail?: string;
+  company_id?: string;
 }
 
 const PAPER_SIZES = [
@@ -196,6 +201,7 @@ export default function PrintTemplateStudio() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
   const [zoom, setZoom] = useState(1)
   const [isSaving, setIsSaving] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
   const [isPrinting, setIsPrinting] = useState(false)
   const [gridSnap, setGridSnap] = useState(5)
   const [showGuidelines, setShowGuidelines] = useState(true)
@@ -261,7 +267,11 @@ export default function PrintTemplateStudio() {
     let w, h;
     if (sizeId === 'Custom') { w = customWidth || 100; h = customHeight || 100; } 
     else { const size = PAPER_SIZES.find(s => s.id === sizeId) || PAPER_SIZES[0]; w = size.w; h = size.h; }
-    const newTemplate: PrintTemplate = { id: crypto.randomUUID(), name, documentType: type, paperWidth: w, paperHeight: h, elements: [], isDefault: false, background: { image: "", opacity: 1, mode: 'fit', locked: true } }
+    const newTemplate: PrintTemplate = { 
+      id: crypto.randomUUID(), name, documentType: type, paperWidth: w, paperHeight: h, elements: [], isDefault: false, 
+      background: { image: "", opacity: 1, mode: 'fit', locked: true },
+      company_id: "default_company"
+    }
     try {
       const docRef = doc(firestore, 'print_templates', newTemplate.id);
       await setDoc(docRef, { ...newTemplate, createdAt: serverTimestamp(), updatedAt: serverTimestamp() })
@@ -274,28 +284,62 @@ export default function PrintTemplateStudio() {
   const handleImportTemplate = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !firestore) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ variant: "destructive", title: "Template file too large", description: "Max limit is 2MB." });
+      return;
+    }
+
+    setIsImporting(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
         const json = JSON.parse(evt.target?.result as string);
+        
+        // VALIDATION
+        const required = ['name', 'paperWidth', 'paperHeight', 'elements'];
+        const missing = required.filter(k => !(k in json));
+        
+        if (missing.length > 0) {
+          throw new Error(`Invalid template structure. Missing: ${missing.join(', ')}`);
+        }
+
         const newId = crypto.randomUUID();
-        const imported = { ...json, id: newId, name: `${json.name} (Imported)`, isSystemTemplate: false, isDefault: false };
+        const imported = { 
+          ...json, 
+          id: newId, 
+          name: `${json.name} (Imported)`, 
+          isSystemTemplate: false, 
+          isDefault: false,
+          company_id: "default_company",
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        };
+
         await setDoc(doc(firestore, 'print_templates', newId), imported);
         toast({ title: "Template Imported Successfully" });
-      } catch (err) {
-        toast({ variant: "destructive", title: "Invalid JSON File" });
+        
+        // Auto-generate thumbnail in background
+        setTimeout(() => handleSaveTemplate(imported), 1000);
+
+      } catch (err: any) {
+        toast({ variant: "destructive", title: "Import Failed", description: err.message || "Invalid JSON File" });
+      } finally {
+        setIsImporting(false);
+        e.target.value = ""; // Reset file picker
       }
     };
     reader.readAsText(file);
   };
 
-  const handleExportTemplate = () => {
-    if (!currentTemplate) return;
-    const blob = new Blob([JSON.stringify(currentTemplate, null, 2)], { type: 'application/json' });
+  const handleExportTemplate = (tpl?: PrintTemplate) => {
+    const target = tpl || currentTemplate;
+    if (!target) return;
+    const blob = new Blob([JSON.stringify(target, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${currentTemplate.name.replace(/\s+/g, '_')}_template.json`;
+    a.download = `${target.name.replace(/\s+/g, '_')}_template.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast({ title: "Template JSON Exported" });
@@ -324,35 +368,42 @@ export default function PrintTemplateStudio() {
     toast({ title: "Asset Applied" });
   };
 
-  const handleSaveTemplate = async () => {
-    if (!firestore || !currentTemplate) return
-    if (currentTemplate.isSystemTemplate) { toast({ variant: "destructive", title: "Read Only", description: "System templates cannot be modified." }); return; }
+  const handleSaveTemplate = async (templateToSave?: any) => {
+    const target = templateToSave || currentTemplate;
+    if (!firestore || !target) return
+    if (target.isSystemTemplate) { toast({ variant: "destructive", title: "Read Only", description: "System templates cannot be modified." }); return; }
     setIsSaving(true)
     
     try {
       const canvasElement = document.getElementById('studio-canvas-print');
-      let thumbnail = currentTemplate.thumbnail || "";
+      let thumbnail = target.thumbnail || "";
       
+      // SAFE THUMBNAIL GENERATION
       if (canvasElement) {
-        const html2canvas = (await import('html2canvas')).default;
-        const canvas = await html2canvas(canvasElement, {
-          scale: 0.2, // Small scale for thumbnail
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
-        thumbnail = canvas.toDataURL('image/jpeg', 0.7);
+        try {
+          const html2canvas = (await import('html2canvas')).default;
+          const canvas = await html2canvas(canvasElement, {
+            scale: 0.2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          thumbnail = canvas.toDataURL('image/jpeg', 0.7);
+        } catch (thumbErr) {
+          console.warn("Thumbnail generation failed, skipping to preserve data.", thumbErr);
+        }
       }
 
       const updated = { 
-        ...currentTemplate, 
+        ...target, 
         thumbnail,
+        company_id: "default_company",
         updatedAt: serverTimestamp() 
       };
       
-      const docRef = doc(firestore, 'print_templates', currentTemplate.id);
+      const docRef = doc(firestore, 'print_templates', target.id);
       await setDoc(docRef, updated, { merge: true }); 
-      toast({ title: "Template Saved" }) 
+      if (!templateToSave) toast({ title: "Template Saved" }) 
     } catch (e: any) { 
       toast({ variant: "destructive", title: "Save Failed" }); 
     } finally { 
@@ -373,7 +424,16 @@ export default function PrintTemplateStudio() {
   const handleDuplicateTemplate = async (template: PrintTemplate) => {
     if (!firestore) return
     const newId = crypto.randomUUID()
-    const newTemplate = { ...template, id: newId, name: `${template.name} (Copy)`, isDefault: false, isSystemTemplate: false, createdAt: serverTimestamp(), updatedAt: serverTimestamp() }
+    const newTemplate = { 
+      ...template, 
+      id: newId, 
+      name: `${template.name} (Copy)`, 
+      isDefault: false, 
+      isSystemTemplate: false, 
+      company_id: "default_company",
+      createdAt: serverTimestamp(), 
+      updatedAt: serverTimestamp() 
+    }
     try { await setDoc(doc(firestore, 'print_templates', newId), newTemplate); toast({ title: "Template Cloned" }) } 
     catch (e: any) { errorEmitter.emit('permission-error', new FirestorePermissionError({ path: `print_templates/${newId}`, operation: 'create' })); }
   }
@@ -465,9 +525,13 @@ export default function PrintTemplateStudio() {
               <p className="text-muted-foreground font-medium text-sm">Industrial document & label designer.</p>
             </div>
             <div className="flex gap-2">
-              <Label htmlFor="import-tpl" className="cursor-pointer h-12 px-6 rounded-xl border-2 border-slate-200 hover:bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-widest flex items-center shadow-sm">
-                <FileUp className="h-4 w-4 mr-2" /> Import Template
-                <Input id="import-tpl" type="file" accept=".json" className="hidden" onChange={handleImportTemplate} />
+              <Label htmlFor="import-tpl" className={cn(
+                "cursor-pointer h-12 px-6 rounded-xl border-2 border-slate-200 hover:bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-widest flex items-center shadow-sm transition-all",
+                isImporting && "opacity-50 pointer-events-none"
+              )}>
+                {isImporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <FileUp className="h-4 w-4 mr-2" />}
+                Import Template
+                <Input id="import-tpl" type="file" accept=".json" className="hidden" onChange={handleImportTemplate} disabled={isImporting} />
               </Label>
               <Button onClick={() => setIsNewDialogOpen(true)} className="h-12 px-8 font-black uppercase shadow-xl">
                 <Plus className="mr-2 h-5 w-5" /> Create Design
@@ -503,6 +567,7 @@ export default function PrintTemplateStudio() {
                       </Button>
                       <div className="flex gap-2 w-full">
                         <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1" onClick={() => handleDuplicateTemplate(tpl)}><Copy className="h-4 w-4" /></Button>
+                        <Button variant="outline" size="icon" className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1" onClick={() => handleExportTemplate(tpl)}><FileDown className="h-4 w-4" /></Button>
                         {!tpl.isSystemTemplate && <Button variant="destructive" size="icon" className="flex-1" onClick={() => handleDeleteTemplate(tpl.id)}><Trash2 className="h-4 w-4" /></Button>}
                       </div>
                     </div>
@@ -533,15 +598,26 @@ export default function PrintTemplateStudio() {
                 <p className="text-[10px] text-muted-foreground font-bold tracking-widest">{currentTemplate?.documentType} • {currentTemplate?.paperWidth}x{currentTemplate?.paperHeight}mm</p>
               </div>
             </div>
+            
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleExportTemplate} className="font-bold">
+              {/* RESTORED EDITOR CONTROLS */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl mr-4 gap-1">
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(Math.max(0.2, zoom - 0.1))}><ChevronDown className="h-4 w-4" /></Button>
+                <Button variant="ghost" className="h-8 px-2 text-[10px] font-black" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</Button>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(Math.min(3, zoom + 0.1))}><ChevronUp className="h-4 w-4" /></Button>
+                <Separator orientation="vertical" className="h-4 mx-1" />
+                <Button variant={gridSnap > 0 ? "secondary" : "ghost"} size="icon" className={cn("h-8 w-8", gridSnap > 0 && "text-primary")} onClick={() => setGridSnap(gridSnap > 0 ? 0 : 5)}><Magnet className="h-4 w-4" /></Button>
+                <Button variant={showGuidelines ? "secondary" : "ghost"} size="icon" className={cn("h-8 w-8", showGuidelines && "text-primary")} onClick={() => setShowGuidelines(!showGuidelines)}><LayoutGrid className="h-4 w-4" /></Button>
+              </div>
+
+              <Button variant="outline" size="sm" onClick={() => handleExportTemplate()} className="font-bold">
                 <FileDown className="h-4 w-4 mr-2" /> Export JSON
               </Button>
               <Button disabled={isPrinting} variant="outline" size="sm" onClick={handleExecutePrint} className="font-bold">
                 {isPrinting ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />} Test Print
               </Button>
               {!currentTemplate?.isSystemTemplate ? (
-                <Button onClick={handleSaveTemplate} disabled={isSaving} className="font-black h-10 px-8 bg-primary shadow-lg">
+                <Button onClick={() => handleSaveTemplate()} disabled={isSaving} className="font-black h-10 px-8 bg-primary shadow-lg">
                   {isSaving ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />} Save Layout
                 </Button>
               ) : (
@@ -565,7 +641,7 @@ export default function PrintTemplateStudio() {
                     <ElementTool icon={TableIcon} label="Grid" onClick={() => addElement('table', 'SLIT_ROLLS')} />
                   </div>
                 </div>
-                {/* ... ERP Fields & Layers remain same ... */}
+                
                 <div className="space-y-4">
                   <Label className="text-[10px] font-black uppercase tracking-widest text-primary">ERP Field Directory</Label>
                   <div className="bg-white rounded-2xl border shadow-sm divide-y overflow-hidden">
@@ -610,49 +686,147 @@ export default function PrintTemplateStudio() {
                       {!currentTemplate?.isSystemTemplate && <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10" disabled={selectedElement.isLocked} onClick={() => deleteElement(selectedElement.id)}><Trash2 className="h-4 w-4" /></Button>}
                     </div>
                   </div>
-                  {/* ... Property Controls remain same ... */}
+                  
                   {selectedElement.type === 'image' && (
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Image Source</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" className="text-[9px] font-black uppercase h-10 border-2" onClick={() => { setLibraryContext('image'); setIsLibraryOpen(true); }}>
-                          <ImageIcon className="h-3 w-3 mr-2" /> From Library
-                        </Button>
-                        <div className="relative">
-                          <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase h-10 border-2">
-                            <Upload className="h-3 w-3 mr-2" /> Upload
+                      
+                      <Tabs defaultValue="library" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 h-9 bg-slate-100 rounded-lg">
+                          <TabsTrigger value="upload" className="text-[9px] font-black uppercase">Direct Upload</TabsTrigger>
+                          <TabsTrigger value="library" className="text-[9px] font-black uppercase">Global Library</TabsTrigger>
+                        </TabsList>
+                        
+                        <TabsContent value="upload" className="pt-4">
+                          <div className="relative">
+                            <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase h-14 border-2 border-dashed border-slate-200">
+                              <Upload className="h-4 w-4 mr-2 text-primary" /> Click to Upload
+                            </Button>
+                            <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
+                              const file = e.target.files?.[0]; if (!file) return;
+                              const reader = new FileReader(); reader.onload = (evt) => updateElement(selectedElement.id, { content: evt.target?.result as string });
+                              reader.readAsDataURL(file);
+                            }} />
+                          </div>
+                        </TabsContent>
+                        
+                        <TabsContent value="library" className="pt-4 space-y-4">
+                          <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto industrial-scroll p-1">
+                            {libraryImages?.filter(img => img.tag !== 'background').map(asset => (
+                              <button 
+                                key={asset.id} 
+                                onClick={() => updateElement(selectedElement.id, { content: asset.url })}
+                                className={cn(
+                                  "aspect-square rounded-lg border-2 overflow-hidden transition-all bg-slate-50",
+                                  selectedElement.content === asset.url ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-slate-300"
+                                )}
+                              >
+                                <img src={asset.url} className="w-full h-full object-contain" alt="Asset" />
+                              </button>
+                            ))}
+                          </div>
+                          <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase" onClick={() => { setLibraryContext('image'); setIsLibraryOpen(true); }}>
+                            Full Library Browser
                           </Button>
-                          <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
-                            const file = e.target.files?.[0]; if (!file) return;
-                            const reader = new FileReader(); reader.onload = (evt) => updateElement(selectedElement.id, { content: evt.target?.result as string });
-                            reader.readAsDataURL(file);
-                          }} />
-                        </div>
-                      </div>
+                        </TabsContent>
+                      </Tabs>
                     </div>
                   )}
+
+                  {/* RESTORED STYLE CONTROLS */}
+                  <div className="space-y-6">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Appearance</Label>
+                    
+                    {['text', 'title', 'field'].includes(selectedElement.type) && (
+                      <div className="grid gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-[9px] uppercase font-bold">Font Family</Label>
+                          <Select value={selectedElement.style.fontFamily} onValueChange={(val) => updateElementStyle(selectedElement.id, { fontFamily: val })}>
+                            <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent className="z-[150]">{FONT_FAMILIES.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label className="text-[9px] uppercase font-bold">Size (px)</Label>
+                            <Input type="number" value={selectedElement.style.fontSize} onChange={(e) => updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-9" />
+                          </div>
+                          <div className="space-y-2">
+                            <Label className="text-[9px] uppercase font-bold">Color</Label>
+                            <div className="flex gap-2">
+                              <Input type="color" value={selectedElement.style.color} onChange={(e) => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 w-12 p-1" />
+                              <Input value={selectedElement.style.color} onChange={(e) => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 font-mono text-[10px]" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label className="text-[9px] uppercase font-bold">Opacity: {Math.round((selectedElement.style.opacity || 1) * 100)}%</Label>
+                      <Slider value={[(selectedElement.style.opacity || 1) * 100]} onValueChange={([v]) => updateElementStyle(selectedElement.id, { opacity: v / 100 })} max={100} step={1} />
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="p-6 space-y-10 animate-in slide-in-from-right-4 duration-300">
                   <div className="space-y-8">
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2 border-b pb-4"><Wallpaper className="h-4 w-4" /> Canvas Setup</h4>
+                    
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase opacity-50">Background Layer</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" className="text-[9px] font-black uppercase h-10 border-2" onClick={() => { setLibraryContext('background'); setIsLibraryOpen(true); }}>
-                          <ImageIcon className="h-3 w-3 mr-2" /> From Library
-                        </Button>
-                        <div className="relative">
-                          <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase h-10 border-2">
-                            <Upload className="h-3 w-3 mr-2" /> Upload
+                      
+                      <Tabs defaultValue="library" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 h-9 bg-slate-100 rounded-lg">
+                          <TabsTrigger value="upload" className="text-[9px] font-black uppercase">Direct Upload</TabsTrigger>
+                          <TabsTrigger value="library" className="text-[9px] font-black uppercase">Global Library</TabsTrigger>
+                        </TabsList>
+                        
+                        <TabsContent value="upload" className="pt-4">
+                          <div className="relative">
+                            <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase h-14 border-2 border-dashed border-slate-200">
+                              <Upload className="h-4 w-4 mr-2 text-primary" /> Choose Image
+                            </Button>
+                            <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
+                              const file = e.target.files?.[0]; if (!file) return;
+                              const reader = new FileReader(); reader.onload = (evt) => setCurrentTemplate(prev => prev ? { ...prev, background: { ...prev.background!, image: evt.target?.result as string } } : null);
+                              reader.readAsDataURL(file);
+                            }} />
+                          </div>
+                        </TabsContent>
+                        
+                        <TabsContent value="library" className="pt-4 space-y-4">
+                          <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto industrial-scroll p-1">
+                            {libraryImages?.filter(img => img.tag === 'background' || img.tag === 'template').map(asset => (
+                              <button 
+                                key={asset.id} 
+                                onClick={() => setCurrentTemplate(prev => prev ? { ...prev, background: { ...prev.background!, image: asset.url } } : null)}
+                                className={cn(
+                                  "aspect-square rounded-lg border-2 overflow-hidden transition-all bg-slate-50",
+                                  currentTemplate?.background?.image === asset.url ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-slate-300"
+                                )}
+                              >
+                                <img src={asset.url} className="w-full h-full object-contain" alt="Asset" />
+                              </button>
+                            ))}
+                          </div>
+                          <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase" onClick={() => { setLibraryContext('background'); setIsLibraryOpen(true); }}>
+                            Full Library Browser
                           </Button>
-                          <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
-                            const file = e.target.files?.[0]; if (!file) return;
-                            const reader = new FileReader(); reader.onload = (evt) => setCurrentTemplate(prev => prev ? { ...prev, background: { ...prev.background!, image: evt.target?.result as string } } : null);
-                            reader.readAsDataURL(file);
-                          }} />
+                        </TabsContent>
+                      </Tabs>
+
+                      {currentTemplate?.background?.image && (
+                        <div className="space-y-4 pt-4 animate-in fade-in">
+                          <div className="space-y-2">
+                            <Label className="text-[9px] uppercase font-bold">Background Opacity</Label>
+                            <Slider value={[(currentTemplate.background?.opacity || 1) * 100]} onValueChange={([v]) => setCurrentTemplate(prev => prev ? { ...prev, background: { ...prev.background!, opacity: v/100 } } : null)} max={100} step={1} />
+                          </div>
+                          <Button variant="ghost" className="w-full text-rose-500 font-black uppercase text-[9px] h-8" onClick={() => setCurrentTemplate(prev => prev ? { ...prev, background: { ...prev.background!, image: "" } } : null)}>
+                            <Eraser className="h-3 w-3 mr-2" /> Remove Background
+                          </Button>
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -682,6 +856,9 @@ export default function PrintTemplateStudio() {
                 <Card key={asset.id} className="group cursor-pointer border-none shadow-lg rounded-2xl overflow-hidden bg-white transition-all hover:ring-4 hover:ring-primary/20" onClick={() => handleSelectFromLibrary(asset)}>
                   <div className="aspect-square relative flex items-center justify-center p-4 bg-white">
                     <img src={asset.url} alt={asset.name} className="w-full h-full object-contain" />
+                    <div className="absolute top-2 left-2">
+                      <Badge className="bg-slate-900 text-white text-[8px] font-black uppercase border-none">{asset.tag}</Badge>
+                    </div>
                     <div className="absolute inset-0 bg-primary/90 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                       <Button variant="secondary" className="font-black text-[9px] uppercase tracking-widest">Select Asset</Button>
                     </div>
@@ -703,7 +880,6 @@ export default function PrintTemplateStudio() {
       </Dialog>
 
       <Dialog open={isNewDialogOpen} onOpenChange={setIsNewDialogOpen}>
-        {/* ... New Template Dialog remains same ... */}
         <DialogContent className="sm:max-w-[425px] rounded-3xl">
           <form onSubmit={handleCreateTemplate}>
             <DialogHeader><DialogTitle className="text-xl font-black uppercase flex items-center gap-2"><Plus className="h-5 w-5 text-primary" /> Create Design</DialogTitle></DialogHeader>
@@ -729,14 +905,14 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
   const handleMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation(); onSelect(e); if (element.isLocked) return;
     isDragging.current = true; startPos.current = { x: e.clientX - element.x, y: e.clientY - element.y, w: 0, h: 0 };
-    const move = (m: MouseEvent) => { if (isDragging.current) onMove(Math.round((m.clientX - startPos.current.x) / gridSnap) * gridSnap, Math.round((m.clientY - startPos.current.y) / gridSnap) * gridSnap); }
+    const move = (m: MouseEvent) => { if (isDragging.current) onMove(Math.round((m.clientX - startPos.current.x) / (gridSnap || 1)) * (gridSnap || 1), Math.round((m.clientY - startPos.current.y) / (gridSnap || 1)) * (gridSnap || 1)); }
     const up = () => { isDragging.current = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
   }
   const handleResizeStart = (e: React.MouseEvent) => {
     e.stopPropagation(); if (element.isLocked) return;
     isResizing.current = true; startPos.current = { x: e.clientX, y: e.clientY, w: element.width, h: element.height };
-    const move = (m: MouseEvent) => { if (isResizing.current) onResize(Math.max(10, Math.round((startPos.current.w + (m.clientX - startPos.current.x)) / gridSnap) * gridSnap), element.type === 'line' ? element.height : Math.max(10, Math.round((startPos.current.h + (m.clientY - startPos.current.y)) / gridSnap) * gridSnap)); }
+    const move = (m: MouseEvent) => { if (isResizing.current) onResize(Math.max(10, Math.round((startPos.current.w + (m.clientX - startPos.current.x)) / (gridSnap || 1)) * (gridSnap || 1)), element.type === 'line' ? element.height : Math.max(10, Math.round((startPos.current.h + (m.clientY - startPos.current.y)) / (gridSnap || 1)) * (gridSnap || 1))); }
     const up = () => { isResizing.current = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
   }
