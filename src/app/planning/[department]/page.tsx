@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, use, useRef } from "react"
@@ -60,8 +59,8 @@ import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 
 /**
- * PRODUCTION PLANNING BOARD (V5.2)
- * Updated: Unified board view, Excel upload, and expanded Hold statuses.
+ * PRODUCTION PLANNING BOARD (V5.3)
+ * Updated: Auto Planner strictly filters Pending status. Excel Upload defaults to Pending.
  */
 
 const STATUS_COLORS: Record<string, string> = {
@@ -248,6 +247,14 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
             // Map by ID or Column Name
             let val = row[col.id] ?? row[col.name];
             if (col.type === 'Number') val = Number(val) || 0;
+            
+            // Excel Upload Default Status Logic
+            if (col.id === 'printing_planning') {
+              if (val === undefined || val === null || String(val).trim() === "") {
+                val = "Pending";
+              }
+            }
+
             values[col.id] = val || "";
           });
 

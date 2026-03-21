@@ -104,7 +104,7 @@ const sanitizeDocId = (id: string) => String(id || "").replace(/\//g, '-');
 // Unified Status Colors
 const getStatusColor = (status: string) => {
   const s = String(status || "").toLowerCase();
-  if (s.includes('pending')) return 'bg-slate-400';
+  if (s === 'pending') return 'bg-slate-400';
   if (s.includes('running') || s.includes('approved')) return 'bg-blue-500';
   if (s.includes('completed') || s.includes('slitted')) return 'bg-emerald-500';
   return 'bg-amber-500';
@@ -157,9 +157,9 @@ function SlittingHubContent() {
   const planningJobs = useMemo(() => {
     if (!rawPlanningJobs) return [];
     return rawPlanningJobs.filter(j => {
-      const status = String(j.values.printing_planning || "").toLowerCase();
-      // Hide completed or already slitted paper
-      return status !== 'completed' && status !== 'slitted' && status !== 'slitted paper';
+      const status = String(j.values.printing_planning || "").trim();
+      // Strictly show ONLY Pending jobs in the Auto Planner terminal
+      return status === 'Pending';
     });
   }, [rawPlanningJobs]);
 
