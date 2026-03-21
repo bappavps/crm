@@ -29,7 +29,9 @@ import {
   Package,
   ArrowLeft,
   Save,
-  MoreHorizontal
+  MoreHorizontal,
+  CalendarDays,
+  FilterX
 } from "lucide-react"
 import { 
   Dialog, 
@@ -46,13 +48,7 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
 import { collection, doc, query, orderBy, serverTimestamp, setDoc, deleteDoc, where } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
@@ -60,6 +56,24 @@ import { cn } from "@/lib/utils"
 import { QRCodeSVG } from 'qrcode.react'
 import { TemplateRenderer } from "@/components/printing/template-renderer"
 import { format } from "date-fns"
+
+const MONTHS = [
+  { value: "all", label: "All Months" },
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
+];
+
+const YEARS = ["2024", "2025", "2026"];
 
 function JumboJobCardContent() {
   const { toast } = useToast()
@@ -76,6 +90,8 @@ function JumboJobCardContent() {
   
   const [selectedJob, setSelectedJob] = useState<any>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [monthFilter, setMonthFilter] = useState("all")
+  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString())
   const [siteOrigin, setSiteOrigin] = useState("")
 
   // Template State
@@ -260,10 +276,10 @@ function JumboJobCardContent() {
           <head>
             <title>Shree Label Production</title>
             <style>
-              @page { size: ${paperW}mm ${paperH}mm; margin: 0; }
+              @page { size: A4; margin: 10mm; }
               body { margin: 0; padding: 0; background: white; }
-              .print-page { width: ${paperW}mm; height: ${paperH}mm; page-break-after: always; break-inside: avoid; display: flex; justify-content: center; align-items: center; overflow: hidden; }
-              img { width: 100%; height: 100%; object-fit: contain; image-rendering: -webkit-optimize-contrast; }
+              .print-page { width: 100%; height: auto; page-break-after: always; break-inside: avoid; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+              img { width: 100%; max-width: 190mm; height: auto; object-fit: contain; image-rendering: -webkit-optimize-contrast; }
             </style>
           </head>
           <body>${renderedOutput}</body>
@@ -290,11 +306,19 @@ function JumboJobCardContent() {
 
   const filteredJobs = useMemo(() => {
     if (!jobs) return [];
-    return jobs.filter(j => 
-      j.job_card_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (j.parent_roll && j.parent_roll.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  }, [jobs, searchQuery]);
+    return jobs.filter(j => {
+      const matchesSearch = j.job_card_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (j.parent_roll && j.parent_roll.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      if (!matchesSearch) return false;
+
+      const jobDate = new Date(j.createdAt);
+      const matchesYear = yearFilter === "all" || jobDate.getFullYear().toString() === yearFilter;
+      const matchesMonth = monthFilter === "all" || (jobDate.getMonth() + 1).toString() === monthFilter;
+
+      return matchesYear && matchesMonth;
+    });
+  }, [jobs, searchQuery, monthFilter, yearFilter]);
 
   const activeJobTemplate = jobTemplates?.find(t => t.id === selectedJobTemplateId);
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
@@ -365,68 +389,148 @@ function JumboJobCardContent() {
         </div>
       </div>
 
-      <Card className="border-none shadow-xl overflow-hidden rounded-3xl">
-        <CardHeader className="bg-slate-900 text-white p-6 px-8 flex flex-row items-center justify-between">
-          <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
-            <Scissors className="h-5 w-5 text-primary" /> Slitting Pipeline
-          </CardTitle>
-          <div className="relative w-64">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-500" />
-            <Input 
-              placeholder="Search ID or Roll..." 
-              className="h-9 bg-white/5 border-white/10 text-white rounded-xl pl-9 text-xs font-bold"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
+      <Tabs defaultValue="active" className="w-full">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-3xl shadow-sm border border-slate-100">
+          <TabsList className="bg-slate-100 p-1 rounded-2xl h-11">
+            <TabsTrigger value="active" className="px-8 font-bold uppercase text-[10px] tracking-widest gap-2">
+              <Clock className="h-3.5 w-3.5" /> Active Pipeline
+            </TabsTrigger>
+            <TabsTrigger value="history" className="px-8 font-bold uppercase text-[10px] tracking-widest gap-2">
+              <History className="h-3.5 w-3.5" /> History Archive
+            </TabsTrigger>
+          </TabsList>
+
+          <div className="flex items-center gap-3 flex-wrap md:flex-nowrap">
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Input 
+                placeholder="Search Job ID / Roll..." 
+                className="h-9 bg-slate-50 border-slate-200 rounded-xl pl-9 text-xs font-bold"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+              />
+            </div>
+            
+            <Select value={monthFilter} onValueChange={setMonthFilter}>
+              <SelectTrigger className="h-9 w-32 bg-slate-50 border-slate-200 rounded-xl text-[10px] font-bold uppercase">
+                <SelectValue placeholder="Month" />
+              </SelectTrigger>
+              <SelectContent className="z-[100]">
+                {MONTHS.map(m => <SelectItem key={m.value} value={m.value} className="text-xs font-bold uppercase">{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <Select value={yearFilter} onValueChange={setYearFilter}>
+              <SelectTrigger className="h-9 w-24 bg-slate-50 border-slate-200 rounded-xl text-[10px] font-bold uppercase">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent className="z-[100]">
+                <SelectItem value="all" className="text-xs font-bold uppercase">All Years</SelectItem>
+                {YEARS.map(y => <SelectItem key={y} value={y} className="text-xs font-bold uppercase">{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl hover:bg-slate-100" onClick={() => { setSearchQuery(""); setMonthFilter("all"); setYearFilter(new Date().getFullYear().toString()); }}>
+              <FilterX className="h-4 w-4 text-slate-400" />
+            </Button>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader className="bg-muted/30">
-              <TableRow>
-                <TableHead className="font-black text-[10px] uppercase pl-8">Job ID</TableHead>
-                <TableHead className="font-black text-[10px] uppercase">Primary Roll</TableHead>
-                <TableHead className="font-black text-[10px] uppercase">Operator</TableHead>
-                <TableHead className="font-black text-[10px] uppercase text-center">Output Content</TableHead>
-                <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
-                <TableHead className="text-right font-black text-[10px] uppercase pr-8">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {jobsLoading ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-20"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></TableCell></TableRow>
-              ) : filteredJobs.map((j) => (
-                <TableRow key={j.id} className="hover:bg-slate-50 transition-colors group">
-                  <TableCell className="font-black text-primary font-mono text-xs pl-8">{j.job_card_no}</TableCell>
-                  <TableCell className="font-bold text-sm">{j.parent_roll || "MULTI"}</TableCell>
-                  <TableCell className="text-[11px] font-bold uppercase text-slate-500">{j.operator || "UNASSIGNED"}</TableCell>
-                  <TableCell className="text-center">
-                    <div className="flex justify-center gap-2">
-                      <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0} TOTAL</Badge>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={cn(
-                      "text-[9px] font-black h-5 px-2",
-                      j.status === 'COMPLETED' ? "bg-emerald-500" : 
-                      j.status === 'RUNNING' ? "bg-blue-500" : "bg-amber-500"
-                    )}>
-                      {j.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right pr-8">
-                    <div className="flex justify-end gap-1.5">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600" onClick={() => { setSelectedJob(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-slate-700 text-white hover:bg-black" onClick={() => { setSelectedJob(j); setIsLabelOpen(true); }}><Printer className="h-4 w-4" /></Button>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white" onClick={() => handleDelete(j.id)}><Trash2 className="h-4 w-4" /></Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        </div>
+
+        <TabsContent value="active" className="mt-6">
+          <Card className="border-none shadow-xl overflow-hidden rounded-3xl">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead className="font-black text-[10px] uppercase pl-8">Job ID</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Primary Roll</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Operator</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase text-center">Output Content</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Status</TableHead>
+                    <TableHead className="text-right font-black text-[10px] uppercase pr-8">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobsLoading ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-20"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></TableCell></TableRow>
+                  ) : filteredJobs.filter(j => j.status !== 'COMPLETED').length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-20 text-muted-foreground italic uppercase text-[10px] font-bold tracking-widest opacity-30">No active jobs matching filters</TableCell></TableRow>
+                  ) : filteredJobs.filter(j => j.status !== 'COMPLETED').map((j) => (
+                    <TableRow key={j.id} className="hover:bg-slate-50 transition-colors group border-b last:border-0">
+                      <TableCell className="font-black text-primary font-mono text-xs pl-8">{j.job_card_no}</TableCell>
+                      <TableCell className="font-bold text-sm">{j.parent_roll || "MULTI"}</TableCell>
+                      <TableCell className="text-[11px] font-bold uppercase text-slate-500">{j.operator || "UNASSIGNED"}</TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex justify-center gap-2">
+                          <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0} TOTAL</Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={cn(
+                          "text-[9px] font-black h-5 px-2",
+                          j.status === 'RUNNING' ? "bg-blue-500" : "bg-amber-500"
+                        )}>
+                          {j.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right pr-8">
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 shadow-sm" onClick={() => { setSelectedJob(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-slate-700 text-white hover:bg-black shadow-sm" onClick={() => { setSelectedJob(j); setIsLabelOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white shadow-sm" onClick={() => handleDelete(j.id)}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+          <Card className="border-none shadow-xl overflow-hidden rounded-3xl">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead className="font-black text-[10px] uppercase pl-8">Job ID</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Completion Date</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Primary Roll</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Output Units</TableHead>
+                    <TableHead className="font-black text-[10px] uppercase">Operator</TableHead>
+                    <TableHead className="text-right font-black text-[10px] uppercase pr-8">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobsLoading ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-20"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></TableCell></TableRow>
+                  ) : filteredJobs.filter(j => j.status === 'COMPLETED').length === 0 ? (
+                    <TableRow><TableCell colSpan={6} className="text-center py-20 text-muted-foreground italic uppercase text-[10px] font-bold tracking-widest opacity-30">No completed jobs found in archive</TableCell></TableRow>
+                  ) : filteredJobs.filter(j => j.status === 'COMPLETED').map((j) => (
+                    <TableRow key={j.id} className="hover:bg-slate-50 transition-colors group border-b last:border-0">
+                      <TableCell className="font-black text-primary font-mono text-xs pl-8">{j.job_card_no}</TableCell>
+                      <TableCell className="text-xs font-bold text-slate-500">{j.endTime ? format(new Date(j.endTime), 'dd MMM yyyy, HH:mm') : format(new Date(j.createdAt), 'dd MMM yyyy')}</TableCell>
+                      <TableCell className="font-bold text-sm">{j.parent_roll || "MULTI"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-black text-[9px] h-5 border-slate-200">{j.child_rolls?.length || 0} SLITS</Badge>
+                      </TableCell>
+                      <TableCell className="text-[11px] font-bold uppercase text-slate-500">{j.operator}</TableCell>
+                      <TableCell className="text-right pr-8">
+                        <div className="flex justify-end gap-1.5">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 shadow-sm" onClick={() => { setSelectedJob(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-slate-700 text-white hover:bg-black shadow-sm" onClick={() => { setSelectedJob(j); setIsLabelOpen(true); }}><Printer className="h-4 w-4" /></Button>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white shadow-sm" onClick={() => handleDelete(j.id)}><Trash2 className="h-4 w-4" /></Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* CREATE DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if(!open && urlParentRoll) router.replace('/production/jobcards/jumbo-job'); }}>
@@ -559,7 +663,7 @@ function JumboJobCardContent() {
               <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
             </div>
           </div>
-          <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans overflow-y-auto max-h-[80vh]">
+          <div id="print-area" className="p-12 bg-white text-black min-h-[600px] font-sans overflow-y-auto max-h-[80vh] industrial-scroll">
             {selectedJobTemplateId === 'default' ? (
               <div className="label-print-item w-[210mm] mx-auto">
                 <div className="flex justify-between items-end border-b-[6px] border-slate-900 pb-8 mb-10">
@@ -586,7 +690,7 @@ function JumboJobCardContent() {
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-3">
-                    <div className="p-2 bg-slate-50 border-2 border-slate-100 rounded-2xl shadow-inner">
+                    <div className="p-2 bg-slate-50 border-2 border-slate-300 rounded-2xl shadow-inner">
                       <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${selectedJob?.id}` : (selectedJob?.id || "")} size={100} />
                     </div>
                     <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Technical Status QR</p>
@@ -599,7 +703,7 @@ function JumboJobCardContent() {
                     <h3 className="text-[11px] font-black uppercase text-slate-900 flex items-center gap-2">
                       <div className="w-1.5 h-4 bg-primary rounded-full" /> Source Material Allocation
                     </h3>
-                    <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
+                    <div className="rounded-2xl border-2 border-slate-800 overflow-hidden shadow-sm">
                       <Table>
                         <TableHeader className="bg-slate-900 border-none h-12">
                           <TableRow className="border-none hover:bg-slate-900">
@@ -614,10 +718,10 @@ function JumboJobCardContent() {
                             const roll = allRolls?.find(r => r.rollNo === rollId);
                             const groupColor = GROUP_COLORS[idx % GROUP_COLORS.length];
                             return (
-                              <TableRow key={rollId} className={cn("border-none h-12 text-center", groupColor)}>
-                                <TableCell className="font-black border-r border-slate-200/50 text-[13px]">{rollId}</TableCell>
-                                <TableCell className="border-r border-slate-200/50 font-bold uppercase text-[11px]">{roll?.paperType || "—"}</TableCell>
-                                <TableCell className="border-r border-slate-200/50 font-bold">{roll?.widthMm}mm × {roll?.lengthMeters}m</TableCell>
+                              <TableRow key={rollId} className={cn("border-b border-slate-300 h-12 text-center", groupColor)}>
+                                <TableCell className="font-black border-r border-slate-300 text-[13px]">{rollId}</TableCell>
+                                <TableCell className="border-r border-slate-300 font-bold uppercase text-[11px]">{roll?.paperType || "—"}</TableCell>
+                                <TableCell className="border-r border-slate-300 font-bold">{roll?.widthMm}mm × {roll?.lengthMeters}m</TableCell>
                                 <TableCell className="font-black text-primary text-[11px] uppercase truncate px-4">{roll?.jobName || "Allocated"}</TableCell>
                               </TableRow>
                             );
@@ -632,7 +736,7 @@ function JumboJobCardContent() {
                     <h3 className="text-[11px] font-black uppercase text-slate-900 flex items-center gap-2">
                       <div className="w-1.5 h-4 bg-primary rounded-full" /> Slitting Unit Outputs (Lineage)
                     </h3>
-                    <div className="rounded-2xl border-2 border-slate-100 overflow-hidden shadow-sm">
+                    <div className="rounded-2xl border-2 border-slate-800 overflow-hidden shadow-sm">
                       <Table>
                         <TableHeader className="bg-slate-900 border-none h-12">
                           <TableRow className="border-none hover:bg-slate-900">
@@ -651,10 +755,10 @@ function JumboJobCardContent() {
                               const roll = allRolls?.find(r => r.rollNo === code);
                               const isStock = !roll?.jobNo;
                               return (
-                                <TableRow key={code} className={cn("border-b border-slate-100 h-11 text-center", groupColor)}>
-                                  <TableCell className="font-bold border-r border-slate-200/50 text-slate-900 font-mono text-[12px]">{code}</TableCell>
-                                  <TableCell className="border-r border-slate-200/50 font-bold">{roll?.widthMm || "—"} mm</TableCell>
-                                  <TableCell className="border-r border-slate-200/50 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
+                                <TableRow key={code} className={cn("border-b border-slate-300 h-11 text-center", groupColor)}>
+                                  <TableCell className="font-bold border-r border-slate-300 text-slate-900 font-mono text-[12px]">{code}</TableCell>
+                                  <TableCell className="border-r border-slate-300 font-bold">{roll?.widthMm || "—"} mm</TableCell>
+                                  <TableCell className="border-r border-slate-300 font-bold">{roll?.lengthMeters || "—"} mtr</TableCell>
                                   <TableCell className="px-4">
                                     <div className={cn(
                                       "inline-flex px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter",
@@ -674,21 +778,21 @@ function JumboJobCardContent() {
                 </div>
 
                 <div className="mt-16 grid grid-cols-3 gap-8">
-                  <div className="border-2 border-slate-100 rounded-2xl p-6 bg-slate-50 space-y-4">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b pb-2">Machine Run Log</p>
+                  <div className="border-2 border-slate-300 rounded-2xl p-6 bg-slate-50 space-y-4">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-300 pb-2">Machine Run Log</p>
                     <div className="space-y-3 text-[11px] font-bold text-slate-600">
                       <p className="flex justify-between">START: <span className="opacity-30">____:____</span></p>
                       <p className="flex justify-between">END: <span className="opacity-30">____:____</span></p>
                       <p className="flex justify-between">WASTE: <span className="opacity-30">____ KG</span></p>
                     </div>
                   </div>
-                  <div className="border-2 border-slate-100 rounded-2xl p-6 bg-slate-50 flex flex-col">
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b pb-2 mb-2">Operator Notes</p>
-                    <div className="flex-1 border-b border-slate-200 border-dashed" />
-                    <div className="flex-1 border-b border-slate-200 border-dashed" />
+                  <div className="border-2 border-slate-300 rounded-2xl p-6 bg-slate-50 flex flex-col">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-300 pb-2 mb-2">Operator Notes</p>
+                    <div className="flex-1 border-b border-slate-300 border-dashed" />
+                    <div className="flex-1 border-b border-slate-300 border-dashed" />
                   </div>
-                  <div className="border-2 border-slate-100 rounded-2xl p-6 bg-slate-50 flex flex-col justify-end">
-                    <div className="text-center pt-4 border-t-2 border-slate-200">
+                  <div className="border-2 border-slate-300 rounded-2xl p-6 bg-slate-50 flex flex-col justify-end">
+                    <div className="text-center pt-4 border-t-2 border-slate-300">
                       <p className="text-[10px] font-black uppercase text-slate-900">QC Supervisor Sign</p>
                     </div>
                   </div>
@@ -709,28 +813,29 @@ function JumboJobCardContent() {
       <style jsx global>{`
         @media print {
           body * { visibility: hidden !important; }
-          #print-area, #print-area *, #label-batch, #label-batch * { visibility: visible !important; }
+          #print-area, #print-area * { visibility: visible !important; }
           
           #print-area {
             position: absolute !important;
             left: 0 !important; top: 0 !important;
-            width: 210mm !important;
+            width: 100% !important;
             display: block !important;
             background: white !important;
-            padding: 15mm !important;
+            padding: 0 !important;
+            margin: 0 !important;
           }
 
           .label-print-item {
             page-break-after: always;
-            margin: 0 !important;
+            margin: 0 auto !important;
             box-shadow: none !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
+            display: block !important;
+            width: 100% !important;
+            max-width: 190mm !important; /* A4 width minus 10mm margins */
           }
 
           .no-print { display: none !important; }
-          @page { margin: 0; size: A4 portrait; }
+          @page { size: A4; margin: 10mm; }
         }
       `}</style>
     </div>
