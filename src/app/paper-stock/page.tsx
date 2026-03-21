@@ -508,9 +508,8 @@ export default function PaperStockPage() {
   };
 
   /**
-   * ISOLATED PRINT HANDLER (M10)
-   * Opens a popup window, injects HTML from the specified container,
-   * and applies the required centering and sizing CSS.
+   * PRECISION ISOLATED PRINT HANDLER (M11)
+   * Ensures perfect 1:1 scale and center alignment.
    */
   const handleExecutePrint = (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
@@ -526,6 +525,13 @@ export default function PaperStockPage() {
       return;
     }
 
+    // Capture HTML and wrap each item in a centering container
+    const renderedHTML = Array.from(printContent.children).map(child => `
+      <div class="label-wrapper">
+        ${child.innerHTML}
+      </div>
+    `).join('');
+
     printWindow.document.write(`
       <html>
         <head>
@@ -533,63 +539,71 @@ export default function PaperStockPage() {
           <style>
             @media print {
               @page {
-                size: auto;
+                size: ${paperW}mm ${paperH}mm;
                 margin: 0;
               }
 
               body {
                 margin: 0;
+                padding: 0;
                 display: flex;
                 flex-direction: column;
-                justify-content: flex-start;
                 align-items: center;
               }
 
               #print-root {
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
                 width: 100%;
               }
 
               .label-wrapper {
-                position: relative;
-                page-break-after: always;
-                break-inside: avoid;
                 width: ${paperW}mm;
                 height: ${paperH}mm;
                 display: flex;
                 justify-content: center;
                 align-items: center;
+                page-break-after: always;
+                break-inside: avoid;
                 overflow: hidden;
+                position: relative;
+              }
+              
+              /* Force centering and 1:1 scale for the template root */
+              .label-wrapper > div {
+                position: relative !important;
+                margin: 0 !important;
+                transform: none !important;
+                box-shadow: none !important;
+                border: none !important;
+                flex-shrink: 0;
               }
             }
             
-            /* Screen Preview Fix */
-            body { margin: 0; background: #f0f0f0; }
-            #print-root { display: flex; flex-direction: column; align-items: center; padding: 20px; }
+            /* UI Style for Screen Preview */
+            body { 
+              margin: 0; 
+              background: #f0f0f0; 
+              display: flex; 
+              flex-direction: column; 
+              align-items: center; 
+              padding: 40px 0; 
+            }
             .label-wrapper { 
               background: white; 
               margin-bottom: 20px; 
               box-shadow: 0 5px 15px rgba(0,0,0,0.1);
               width: ${paperW}mm;
               height: ${paperH}mm;
-              position: relative;
               display: flex;
               justify-content: center;
               align-items: center;
+              position: relative;
               overflow: hidden;
             }
           </style>
         </head>
         <body>
           <div id="print-root">
-            ${Array.from(printContent.children).map(child => `
-              <div class="label-wrapper">
-                ${child.innerHTML}
-              </div>
-            `).join('')}
+            ${renderedHTML}
           </div>
           <script>
             window.onload = () => {
@@ -745,11 +759,11 @@ export default function PaperStockPage() {
         </div>
       </div>
 
-      {/* Top Summary Dashboard - Grouped by Company + Type */}
+      {/* Top Summary Dashboard */}
       <div className="space-y-3 no-print">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-2">
-            <LayoutGrid className="h-3 w-3 text-primary" /> Technical Inventory Summary (Company + Substrate)
+            <LayoutGrid className="h-3 w-3 text-primary" /> Technical Inventory Summary
           </h3>
           <div className="flex gap-4 items-center">
             <div className="flex items-center gap-2">
@@ -801,11 +815,6 @@ export default function PaperStockPage() {
               </CardContent>
             </Card>
           ))}
-          {metricsSummary.groups.length === 0 && (
-            <div className="col-span-full py-10 text-center border-2 border-dashed rounded-2xl opacity-30">
-              <p className="text-[10px] font-bold uppercase tracking-widest">No technical groups match current filters</p>
-            </div>
-          )}
         </div>
       </div>
 
@@ -944,20 +953,6 @@ export default function PaperStockPage() {
                   <div className="border-b-4 border-black pb-6 flex justify-between items-end">
                     <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Industrial Technical Registry Report</p></div>
                     <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
-                  </div>
-                  <div className="mt-8 grid grid-cols-3 gap-4 no-print">
-                    <div className="p-4 bg-slate-100 rounded-lg border">
-                      <p className="text-[9px] font-black uppercase opacity-50 mb-1">Active Filter Scope</p>
-                      <p className="text-xs font-bold truncate">{activeFiltersSummary}</p>
-                    </div>
-                    <div className="p-4 bg-slate-100 rounded-lg border text-center">
-                      <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
-                      <p className="text-xl font-black text-primary">{reportRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
-                    </div>
-                    <div className="p-4 bg-slate-100 rounded-lg border text-center">
-                      <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
-                      <p className="text-xl font-black">{reportRows.length}</p>
-                    </div>
                   </div>
                   <Table className="mt-10 border-2 border-black">
                     <TableHeader className="bg-slate-100">
