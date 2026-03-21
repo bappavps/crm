@@ -25,7 +25,9 @@ import {
   X,
   FileDown,
   Info,
-  PackageCheck
+  PackageCheck,
+  Camera,
+  StopCircle
 } from "lucide-react"
 import { 
   Dialog, 
@@ -42,10 +44,11 @@ import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { format } from "date-fns"
+import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.0)
- * Module for monthly physical-to-ERP substrate reconciliation.
+ * PHYSICAL PAPER STOCK CHECK (V1.1)
+ * Enhanced with mobile camera scanning support.
  */
 
 interface ScannedRoll {
@@ -67,12 +70,13 @@ export default function PhysicalStockAuditPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isCameraActive, setIsCameraActive] = useState(false)
   
   const scanInputRef = useRef<HTMLInputElement>(null)
+  const scannerInstance = useRef<Html5QrcodeScanner | null>(null)
 
   useEffect(() => { 
     setIsMounted(true);
-    // Auto-focus scanner input
     if (scanInputRef.current) scanInputRef.current.focus();
   }, [])
 
@@ -137,16 +141,14 @@ export default function PhysicalStockAuditPage() {
     };
   }, [erpRolls, scannedRolls]);
 
-  // 3. Handlers
-  const handleScan = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!scanInput || !activeSessionId || !firestore || !user) return;
+  // 3. Central Process Function
+  const processRollId = async (rollNoRaw: string) => {
+    if (!rollNoRaw || !activeSessionId || !firestore || !user) return;
 
-    const rollNo = scanInput.trim().toUpperCase();
-    setScanInput("");
+    const rollNo = rollNoRaw.trim().toUpperCase();
 
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
-      toast({ variant: "destructive", title: "Duplicate Scan", description: `Roll ${rollNo} already scanned in this session.` });
+      toast({ variant: "destructive", title: "Duplicate Scan", description: `Roll ${rollNo} already scanned.` });
       return;
     }
 
@@ -167,7 +169,39 @@ export default function PhysicalStockAuditPage() {
     }, { merge: true });
 
     toast({ title: erpMatch ? "Roll Verified" : "Extra Roll Logged", description: `Captured ${rollNo}` });
-  }
+    
+    // Auto-focus input for hardware scanners
+    if (scanInputRef.current) scanInputRef.current.focus();
+  };
+
+  const handleScan = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!scanInput) return;
+    await processRollId(scanInput);
+    setScanInput("");
+  };
+
+  const startCamera = () => {
+    setIsCameraActive(true);
+    setTimeout(() => {
+      const scanner = new Html5QrcodeScanner("camera-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
+      scanner.render((decodedText) => {
+        processRollId(decodedText);
+        // We keep it open for continuous scanning, but flash feedback
+      }, (error) => {
+        // Scan failed, silence logs
+      });
+      scannerInstance.current = scanner;
+    }, 100);
+  };
+
+  const stopCamera = () => {
+    if (scannerInstance.current) {
+      scannerInstance.current.clear().catch(console.error);
+      scannerInstance.current = null;
+    }
+    setIsCameraActive(false);
+  };
 
   const handleCreateSession = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -315,27 +349,46 @@ export default function PhysicalStockAuditPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-8 space-y-6">
-                <form onSubmit={handleScan} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-[10px] font-black uppercase opacity-50">Roll ID Input</Label>
-                    <div className="relative">
-                      <Input 
-                        ref={scanInputRef}
-                        placeholder="Scan or Type ID..."
-                        className="h-14 bg-white/5 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary pr-12"
-                        value={scanInput}
-                        onChange={e => setScanInput(e.target.value.toUpperCase())}
-                        disabled={sessionData?.status === 'Finalized'}
-                      />
-                      <Button type="submit" size="icon" variant="ghost" className="absolute right-2 top-2 h-10 w-10 text-primary hover:bg-white/5" disabled={sessionData?.status === 'Finalized'}>
-                        <ArrowRight className="h-6 w-6" />
+                <div className="space-y-4">
+                  {isCameraActive ? (
+                    <div className="space-y-4 animate-in zoom-in-95">
+                      <div id="camera-reader" className="w-full overflow-hidden rounded-2xl bg-black aspect-square" />
+                      <Button onClick={stopCamera} variant="destructive" className="w-full h-12 font-black uppercase text-[10px]">
+                        <StopCircle className="mr-2 h-4 w-4" /> Stop Camera Scan
                       </Button>
                     </div>
-                  </div>
-                  <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest text-center italic">
-                    * Tip: Terminal auto-focuses after each scan
-                  </p>
-                </form>
+                  ) : (
+                    <Button 
+                      onClick={startCamera} 
+                      className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl md:hidden"
+                      disabled={sessionData?.status === 'Finalized'}
+                    >
+                      <Camera className="mr-3 h-6 w-6 text-primary" /> Start Mobile Scan
+                    </Button>
+                  )}
+
+                  <form onSubmit={handleScan} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-[10px] font-black uppercase opacity-50">Roll ID Input</Label>
+                      <div className="relative">
+                        <Input 
+                          ref={scanInputRef}
+                          placeholder="Scan or Type ID..."
+                          className="h-14 bg-white/5 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary pr-12"
+                          value={scanInput}
+                          onChange={e => setScanInput(e.target.value.toUpperCase())}
+                          disabled={sessionData?.status === 'Finalized'}
+                        />
+                        <Button type="submit" size="icon" variant="ghost" className="absolute right-2 top-2 h-10 w-10 text-primary hover:bg-white/5" disabled={sessionData?.status === 'Finalized'}>
+                          <ArrowRight className="h-6 w-6" />
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-[9px] font-bold text-white/40 uppercase tracking-widest text-center italic">
+                      * Tip: Terminal auto-focuses after each scan
+                    </p>
+                  </form>
+                </div>
 
                 <div className="pt-6 border-t border-white/5 space-y-4">
                   <div className="flex justify-between items-center bg-white/5 p-4 rounded-2xl">
