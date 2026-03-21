@@ -101,6 +101,15 @@ const getChildSuffix = (parentRollNo: string, index: number): string => {
 const normalizeMaterial = (m: string) => String(m || "").toLowerCase().replace(/[\s-]/g, '').trim();
 const sanitizeDocId = (id: string) => String(id || "").replace(/\//g, '-');
 
+// Unified Status Colors
+const getStatusColor = (status: string) => {
+  const s = String(status || "").toLowerCase();
+  if (s.includes('pending')) return 'bg-slate-400';
+  if (s.includes('running') || s.includes('approved')) return 'bg-blue-500';
+  if (s.includes('completed') || s.includes('slitted')) return 'bg-emerald-500';
+  return 'bg-amber-500';
+};
+
 function SlittingHubContent() {
   const { toast } = useToast()
   const router = useRouter()
@@ -148,8 +157,9 @@ function SlittingHubContent() {
   const planningJobs = useMemo(() => {
     if (!rawPlanningJobs) return [];
     return rawPlanningJobs.filter(j => {
-      const status = j.values.printing_planning;
-      return status !== 'Completed' && status !== 'Slitted';
+      const status = String(j.values.printing_planning || "").toLowerCase();
+      // Hide completed or already slitted paper
+      return status !== 'completed' && status !== 'slitted' && status !== 'slitted paper';
     });
   }, [rawPlanningJobs]);
 
@@ -327,6 +337,15 @@ function SlittingHubContent() {
       const reportParentRolls: any[] = [];
 
       await runTransaction(firestore, async (transaction) => {
+        // Sync Job Planning Status
+        if (selectedPlanningJob) {
+          const jobRowRef = doc(firestore, `planning_tables/label-printing/rows`, selectedPlanningJob.id);
+          transaction.update(jobRowRef, {
+            "values.printing_planning": "Slitted Paper",
+            updatedAt: serverTimestamp()
+          });
+        }
+
         for (const parent of selectedRolls) {
           const config = rollConfigs[parent.id];
           const calc = calculateRollStatus(parent.id);
@@ -432,6 +451,7 @@ function SlittingHubContent() {
       setSelectedRolls([]);
       setRollConfigs({});
       setActiveRollId(null);
+      setSelectedJob(null);
       toast({ title: "Batch Processed Successfully" });
     } catch (e: any) {
       setModal({ isOpen: true, type: 'ERROR', title: 'Execution Failed', description: e.message });
@@ -498,6 +518,12 @@ function SlittingHubContent() {
       return b.efficiency - a.efficiency;
     });
   }, [selectedPlanningJob, stockData]);
+
+  const totalValidRollsSummary = useMemo(() => {
+    return availableOptions
+      .filter((o: any) => selectedSupplier === 'all' || o.company === selectedSupplier)
+      .reduce((acc, opt) => acc + opt.availableCount, 0);
+  }, [availableOptions, selectedSupplier]);
 
   const selectionInsights = useMemo(() => {
     if (!selectedPlanningJob) return { totalProduced: 0, remaining: 0, required: 0 };
@@ -660,12 +686,14 @@ function SlittingHubContent() {
                       <span className="text-[11px] font-black uppercase tracking-tight truncate">{job.values.name}</span>
                       <div className="flex items-center gap-3">
                         <span className="text-[9px] font-bold opacity-50 uppercase">{job.values.material} | {job.values.paper_size || job.values.size}</span>
-                        <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-primary/20 text-primary uppercase">
-                          Req: {job.values.allocate_mtrs} MTR
+                        <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-primary text-primary uppercase shadow-sm">
+                          REQ: {job.values.allocate_mtrs} MTR
                         </Badge>
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-[8px] font-black border-primary/20 text-primary">{job.values.printing_planning}</Badge>
+                    <Badge className={cn("text-[8px] font-black text-white px-2 py-0.5 rounded-full uppercase", getStatusColor(job.values.printing_planning))}>
+                      {job.values.printing_planning}
+                    </Badge>
                   </div>
                 ))}
               </div>
@@ -879,8 +907,15 @@ function SlittingHubContent() {
           <div className="bg-slate-900 text-white p-8 shrink-0">
             <div className="flex justify-between items-center">
               <div className="space-y-1">
-                <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-3"><Sparkles className="h-5 w-5 text-primary" /> Stock Decision Support</DialogTitle>
-                <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase">Compare efficiencies, requirements, and technical yield</DialogDescription>
+                <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-3">
+                  <Sparkles className="h-5 w-5 text-primary" /> Stock Decision Support
+                </DialogTitle>
+                <div className="flex items-center gap-4">
+                  <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase">Compare efficiencies and technical yield</DialogDescription>
+                  <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 font-black text-[9px] h-6 px-3">
+                    AVAILABLE FOR JOB: {totalValidRollsSummary} ROLLS
+                  </Badge>
+                </div>
               </div>
               <div className="flex gap-4">
                 <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl">
@@ -924,17 +959,17 @@ function SlittingHubContent() {
                       <TableRow key={opt.key} className="h-24 hover:bg-white transition-colors border-b last:border-none">
                         <TableCell className="pl-6">
                           <div className="flex flex-col gap-1">
-                            <span className="text-xs font-black">{opt.width}mm x {opt.length}m</span>
+                            <span className="text-[13px] font-black">{opt.width}mm x {opt.length}m</span>
                             <div className="flex items-center gap-2">
-                              <Badge className={cn(
-                                "text-[8px] font-black uppercase border-none px-2",
-                                opt.priorityLabel === "Best Fit" ? "bg-emerald-500" : 
-                                opt.priorityLabel === "Alternate" ? "bg-blue-500" : "bg-slate-500"
-                              )}>
-                                {opt.priorityLabel}
-                              </Badge>
-                              <span className="text-[8px] font-black text-primary font-mono tracking-tighter">Roll: {opt.exampleId}</span>
+                              <span className="text-[9px] font-black text-primary font-mono tracking-tighter">Roll: {opt.exampleId} | {opt.company}</span>
                             </div>
+                            <Badge className={cn(
+                              "text-[8px] font-black uppercase border-none px-2 w-fit",
+                              opt.priorityLabel === "Best Fit" ? "bg-emerald-500" : 
+                              opt.priorityLabel === "Alternate" ? "bg-blue-500" : "bg-slate-500"
+                            )}>
+                              {opt.priorityLabel}
+                            </Badge>
                           </div>
                         </TableCell>
                         <TableCell className="text-center">
