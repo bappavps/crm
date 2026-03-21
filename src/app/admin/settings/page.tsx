@@ -30,7 +30,8 @@ import {
   Filter,
   AlertTriangle,
   Smartphone,
-  Maximize
+  Maximize,
+  Wallpaper
 } from "lucide-react"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { doc, setDoc, serverTimestamp, collection, deleteDoc, getDocs, query, where } from "firebase/firestore"
@@ -88,6 +89,7 @@ export default function SettingsPage() {
     email: "",
     website: "",
     logo: "",
+    loginBackground: "",
     pwaIcon192: "",
     pwaIcon512: "",
     favicon16: "",
@@ -107,6 +109,7 @@ export default function SettingsPage() {
         email: companySettings.email || "",
         website: companySettings.website || "",
         logo: companySettings.logo || "",
+        loginBackground: companySettings.loginBackground || "",
         pwaIcon192: companySettings.pwaIcon192 || "",
         pwaIcon512: companySettings.pwaIcon512 || "",
         favicon16: companySettings.favicon16 || "",
@@ -118,9 +121,9 @@ export default function SettingsPage() {
   }, [companySettings]);
 
   /**
-   * Industrial Image Processor: PNG Conversion + Resize
+   * Industrial Image Processor: Format Normalization & Optimization
    */
-  const processImage = (file: File, size: number): Promise<string> => {
+  const processImage = (file: File, size: number, square: boolean = true): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -129,18 +132,29 @@ export default function SettingsPage() {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return reject("Canvas failure");
+          let width = img.width;
+          let height = img.height;
 
-          // Center Crop Logic
-          const minDim = Math.min(img.width, img.height);
-          const sx = (img.width - minDim) / 2;
-          const sy = (img.height - minDim) / 2;
-
-          ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
-          resolve(canvas.toDataURL('image/png'));
+          if (square) {
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject("Canvas failure");
+            const minDim = Math.min(img.width, img.height);
+            const sx = (img.width - minDim) / 2;
+            const sy = (img.height - minDim) / 2;
+            ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            // For backgrounds, scale down if too large but maintain aspect ratio
+            const scale = Math.min(size / width, 1);
+            canvas.width = width * scale;
+            canvas.height = height * scale;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject("Canvas failure");
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8)); // JPEG for backgrounds
+          }
         };
       };
       reader.onerror = reject;
@@ -157,7 +171,7 @@ export default function SettingsPage() {
         updatedAt: serverTimestamp(),
         updatedBy: user.uid
       }, { merge: true });
-      toast({ title: "Company Details Saved", description: "Global branding, PWA icons, and favicons have been updated." });
+      toast({ title: "Corporate Settings Saved", description: "Identity, branding, and PWA assets updated." });
     } catch (e) {
       toast({ variant: "destructive", title: "Save Failed" });
     } finally {
@@ -175,15 +189,15 @@ export default function SettingsPage() {
     }
 
     setIsUploading(true);
-    toast({ title: "Optimizing Branding...", description: "Generating full set of PWA icons and favicons." });
+    toast({ title: "Optimizing Branding...", description: "Generating PWA iconset and favicons." });
 
     try {
-      const mainLogo = await processImage(file, 512); 
-      const icon192 = await processImage(file, 192);
-      const icon512 = await processImage(file, 512);
-      const fav16 = await processImage(file, 16);
-      const fav32 = await processImage(file, 32);
-      const appleIcon = await processImage(file, 180);
+      const mainLogo = await processImage(file, 512, true); 
+      const icon192 = await processImage(file, 192, true);
+      const icon512 = await processImage(file, 512, true);
+      const fav16 = await processImage(file, 16, true);
+      const fav32 = await processImage(file, 32, true);
+      const appleIcon = await processImage(file, 180, true);
 
       setCompanyForm(prev => ({ 
         ...prev, 
@@ -195,9 +209,25 @@ export default function SettingsPage() {
         appleTouchIcon: appleIcon
       }));
       
-      toast({ title: "Branding Ready", description: "Logo optimized for web and app installation successfully." });
+      toast({ title: "Branding Ready", description: "Logo optimized for web and app installation." });
     } catch (err) {
       toast({ variant: "destructive", title: "Processing Error", description: "Could not generate technical icon set." });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleBackgroundUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    toast({ title: "Processing Wallpaper...", description: "Optimizing resolution for login portal." });
+    try {
+      const base64 = await processImage(file, 1920, false);
+      setCompanyForm(prev => ({ ...prev, loginBackground: base64 }));
+      toast({ title: "Background Ready", description: "Wallpaper will be applied to the login page." });
+    } catch (err) {
+      toast({ variant: "destructive", title: "Error", description: "Could not process background image." });
     } finally {
       setIsUploading(false);
     }
@@ -293,11 +323,11 @@ export default function SettingsPage() {
               <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
                 <Building2 className="h-5 w-5 text-primary" /> Corporate Identity
               </CardTitle>
-              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest">Global branding used for Invoices, Print Sheets, and PWA App Icons</CardDescription>
+              <CardDescription className="text-slate-400 text-xs font-medium uppercase tracking-widest">Branding used for Invoices, Portals, and PWA App Icons</CardDescription>
             </CardHeader>
             <CardContent className="p-8">
               <form onSubmit={handleSaveCompany} className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                {/* Logo & PWA Section */}
+                {/* Logo & Wallpaper Section */}
                 <div className="space-y-8">
                   <div className="space-y-4">
                     <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Master Brand Logo</Label>
@@ -306,7 +336,7 @@ export default function SettingsPage() {
                         <>
                           <img src={companyForm.logo} alt="Logo" className="w-full h-full object-contain p-8" />
                           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                            <Label htmlFor="logo-upload" className="cursor-pointer bg-white text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-xl">Change Logo</Label>
+                            <Label htmlFor="logo-upload" className="cursor-pointer bg-white text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase shadow-xl text-center">Change Logo</Label>
                           </div>
                         </>
                       ) : (
@@ -316,12 +346,30 @@ export default function SettingsPage() {
                         </Label>
                       )}
                       <input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} disabled={isUploading} />
-                      {isUploading && (
-                        <div className="absolute inset-0 bg-white/80 flex items-center justify-center backdrop-blur-sm">
-                          <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                        </div>
-                      )}
                     </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
+                      <Wallpaper className="h-3 w-3" /> Login Portal Wallpaper
+                    </Label>
+                    <div className="relative group aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl overflow-hidden flex flex-col items-center justify-center gap-2 transition-all hover:border-primary/40 hover:bg-primary/5">
+                      {companyForm.loginBackground ? (
+                        <>
+                          <img src={companyForm.loginBackground} alt="Wallpaper" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                            <Label htmlFor="bg-upload" className="cursor-pointer bg-white text-black px-4 py-1.5 rounded-lg font-black text-[9px] uppercase shadow-xl text-center">Update Wallpaper</Label>
+                          </div>
+                        </>
+                      ) : (
+                        <Label htmlFor="bg-upload" className="cursor-pointer flex flex-col items-center gap-1.5 group">
+                          <ImageIcon className="h-6 w-6 text-slate-300 group-hover:text-primary" />
+                          <span className="text-[9px] font-black uppercase text-slate-400">Add Background</span>
+                        </Label>
+                      )}
+                      <input id="bg-upload" type="file" accept="image/*" className="hidden" onChange={handleBackgroundUpload} disabled={isUploading} />
+                    </div>
+                    <p className="text-[8px] text-muted-foreground font-medium text-center uppercase tracking-tighter">Recommended resolution: 1920x1080px</p>
                   </div>
 
                   {/* Icon & Favicon Previews */}
@@ -357,7 +405,7 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex-1">
                         <p className="text-[9px] font-black uppercase text-slate-600">Browser Tab Favicon</p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase">Automatic 16px/32px generation</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase">Automatic generation active</p>
                       </div>
                     </div>
                   </div>
