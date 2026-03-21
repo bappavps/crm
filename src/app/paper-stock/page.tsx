@@ -784,10 +784,10 @@ export default function PaperStockPage() {
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
-                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5_rgba(0,0,0,0.1)]">
+                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
                   <div className="flex items-center justify-center h-full"><Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} /></div>
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5_rgba(0,0,0,0.1)]">Sl No</TableHead>
+                <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
                 {renderSortableHeader("Roll No", "rollNo", "w-[200px]", "100px")}
                 {renderSortableHeader("Status", "status", "w-[120px]")}
                 {renderSortableHeader("Paper Company", "paperCompany")}
@@ -806,7 +806,7 @@ export default function PaperStockPage() {
                 {renderSortableHeader("Lot / Batch No", "lotNo")}
                 {renderSortableHeader("Company Roll No", "companyRollNo")}
                 {renderSortableHeader("Remarks", "remarks")}
-                <TableHead className="text-center font-semibold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5_rgba(0,0,0,0.1)] w-[240px] p-0">Action</TableHead>
+                <TableHead className="text-center font-semibold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[240px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -818,9 +818,9 @@ export default function PaperStockPage() {
                 const isParent = !j.rollNo.includes('-');
                 return (
                   <TableRow key={j.id} className={cn("h-12 group transition-all text-center cursor-pointer select-none", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")} onDoubleClick={() => handleOpenDialog(j)}>
-                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} /></TableCell>
-                    <TableCell className={cn("text-center font-bold text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>{j.level > 0 && <span className="text-slate-400 font-mono font-bold mr-1">{j.isLast ? '└' : '├'}</span>}{j.rollNo}</div></TableCell>
+                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} /></TableCell>
+                    <TableCell className={cn("text-center font-bold text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>{j.level > 0 && <span className="text-slate-400 font-mono font-bold mr-1">{j.isLast ? '└' : '├'}</span>}{j.rollNo}</div></TableCell>
                     <TableCell className="border-r border-b text-center"><Badge className={cn("text-[10px] font-semibold text-white px-2", statusInfo.color)}>{j.status}</Badge></TableCell>
                     {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-medium border-r border-b px-3 text-center">{j.paperCompany}</TableCell>}
                     {visibleColumns['paperType'] && <TableCell className="text-[13px] font-medium border-r border-b px-3 text-center">{j.paperType}</TableCell>}
@@ -838,7 +838,7 @@ export default function PaperStockPage() {
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white shadow-sm" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm" onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}><Scissors className="h-4 w-4" /></Button>
@@ -919,13 +919,208 @@ export default function PaperStockPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}><DialogContent className="sm:max-w-[500px]"><DialogHeader><DialogTitle>Scan Paper Roll QR</DialogTitle></DialogHeader><div id="reader" className="w-full"></div></DialogContent></Dialog>
+      {/* RESTORED SCANNER DIALOG */}
+      <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Scan Paper Roll QR</DialogTitle></DialogHeader>
+          <div id="reader" className="w-full"></div>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}><DialogContent className="sm:max-w-[800px]"><DialogHeader><DialogTitle>Roll Profile: {viewingRoll?.rollNo}</DialogTitle></DialogHeader><div className="grid grid-cols-2 gap-6 p-4"><div><Label className="text-[10px] uppercase font-bold text-slate-400">Roll Details</Label><div className="space-y-2 mt-2"><p className="text-sm"><strong>Company:</strong> {viewingRoll?.paperCompany}</p><p className="text-sm"><strong>Type:</strong> {viewingRoll?.paperType}</p><p className="text-sm"><strong>Status:</strong> {viewingRoll?.status}</p></div></div><div><Label className="text-[10px] uppercase font-bold text-slate-400">Dimensions</Label><div className="space-y-2 mt-2"><p className="text-sm"><strong>Width:</strong> {viewingRoll?.widthMm} MM</p><p className="text-sm"><strong>Length:</strong> {viewingRoll?.lengthMeters} MTR</p><p className="text-sm"><strong>SQM:</strong> {viewingRoll?.sqm}</p></div></div></div></DialogContent></Dialog>
+      {/* RESTORED VIEW DIALOG */}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+        <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6">
+            <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
+              <Eye className="h-5 w-5 text-primary" /> Roll Profile: {viewingRoll?.rollNo}
+            </DialogTitle>
+          </div>
+          <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-50">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-black opacity-50">Technical Specs</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-white rounded-xl border-2 border-slate-100 shadow-sm">
+                    <p className="text-[9px] font-black text-slate-400 uppercase">Width</p>
+                    <p className="text-lg font-black">{viewingRoll?.widthMm} MM</p>
+                  </div>
+                  <div className="p-4 bg-white rounded-xl border-2 border-slate-100 shadow-sm">
+                    <p className="text-[9px] font-black text-slate-400 uppercase">Length</p>
+                    <p className="text-lg font-black">{viewingRoll?.lengthMeters} MTR</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-4 bg-white rounded-xl border-2 border-slate-100 shadow-sm">
+                <p className="text-[9px] font-black text-slate-400 uppercase">Material Type</p>
+                <p className="text-sm font-bold">{viewingRoll?.paperType} - {viewingRoll?.gsm} GSM</p>
+              </div>
+            </div>
+            <div className="space-y-6 flex flex-col items-center justify-center">
+              <div className="p-4 bg-white rounded-2xl shadow-xl border-2 border-primary/10">
+                <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.id}` : (viewingRoll?.id || "")} size={180} />
+              </div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Scan to access full technical logs</p>
+            </div>
+          </div>
+          <DialogFooter className="p-6 bg-white border-t">
+            <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsViewOpen(false)}>Close Inspector</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}><DialogContent className="sm:max-w-[1000px]"><DialogHeader><DialogTitle>Technical Audit Preview</DialogTitle></DialogHeader><div className="p-4"><Button onClick={() => handleExecutePrint('report-container', 'report')}>Execute Print Stream</Button><div id="report-container" className="mt-4 p-4 border bg-white text-black"><h1 className="text-2xl font-bold">Paper Stock Audit</h1><Table className="mt-4"><TableHeader><TableRow>{COLUMN_KEYS.map(col => <TableHead key={col.id}>{col.label}</TableHead>)}</TableRow></TableHeader><TableBody>{filteredRows.map((r, i) => (<TableRow key={i}>{COLUMN_KEYS.map(col => <TableCell key={col.id}>{r[col.id] || '-'}</TableCell>)}</TableRow>))}</TableBody></Table></div></div></DialogContent></Dialog>
+      {/* RESTORED REPORT DIALOG */}
+      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
+        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Audit Stream</DialogTitle>
+              <Select value={selectedReportTemplateId} onValueChange={setSelectedReportTemplateId}>
+                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
+                  <SelectValue placeholder="Select Template" />
+                </SelectTrigger>
+                <SelectContent className="z-[110]">
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default Audit Grid</SelectItem>
+                  {reportTemplates?.map(t => <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                Execute Print
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setIsReportOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
+            </div>
+          </div>
+          <div id="report-container" className="flex-1 overflow-y-auto bg-white p-12 industrial-scroll">
+            {selectedReportTemplateId === 'default' ? (
+              <div className="label-print-item w-[210mm] mx-auto text-black">
+                <h1 className="text-3xl font-black mb-8 border-b-4 border-black pb-4">PAPER STOCK AUDIT - {new Date().toLocaleDateString()}</h1>
+                <Table className="border-2 border-black">
+                  <TableHeader className="bg-slate-100"><TableRow className="border-b-2 border-black">{COLUMN_KEYS.map(col => <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black text-center">{col.label}</TableHead>)}</TableRow></TableHeader>
+                  <TableBody>{filteredRows.map((r, i) => (<TableRow key={i} className="border-b border-black last:border-b-0">{COLUMN_KEYS.map(col => <TableCell key={col.id} className="text-[9px] font-bold border-r border-black p-2 text-center">{r[col.id] || '-'}</TableCell>)}</TableRow>))}</TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-10">
+                {filteredRows.slice(0, 100).map((r, i) => (
+                  <TemplateRenderer key={i} template={activeReportTemplate} data={prepareRollData(r)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
-      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}><DialogContent className="sm:max-w-[800px]"><DialogHeader><DialogTitle>Thermal Label Queue</DialogTitle></DialogHeader><div className="p-4"><Button onClick={() => handleExecutePrint('label-batch', 'label')}>Execute Print Stream</Button><div id="label-batch" className="mt-4 space-y-4">{printingRolls.map((roll, i) => (<div key={i} className="label-print-item p-4 border bg-white text-black"><div className="flex justify-between"><div><h2 className="text-xl font-bold">SHREE LABEL</h2><p className="text-4xl font-black">{roll.rollNo}</p></div><QRCodeSVG value={roll.rollNo} size={100} /></div><div className="grid grid-cols-2 mt-4"><p>W: {roll.widthMm} MM</p><p>L: {roll.lengthMeters} MTR</p></div></div>))}</div></div></DialogContent></Dialog>
+      {/* RESTORED PRINT DIALOG */}
+      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
+        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Spooler</DialogTitle>
+              <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
+                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
+                  <SelectValue placeholder="Select Template" />
+                </SelectTrigger>
+                <SelectContent className="z-[110]">
+                  <SelectItem value="default" className="text-xs font-bold uppercase">Default Thermal (150x100)</SelectItem>
+                  {labelTemplates?.map(t => <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                Execute Spooler
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
+            </div>
+          </div>
+          <div id="label-batch" className="flex-1 overflow-y-auto bg-slate-50 p-12 industrial-scroll flex flex-col items-center gap-10">
+            {printingRolls.map((roll, i) => (
+              <div key={i} className="flex flex-col items-center">
+                {selectedLabelTemplateId === 'default' ? (
+                  <div className="label-print-item bg-white p-8 border-4 border-black relative overflow-hidden" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
+                    <div className="border-b-4 border-black pb-4 flex justify-between items-center"><span className="text-3xl font-black tracking-tighter">SHREE LABEL</span><span className="text-xl font-bold">REEL ID</span></div>
+                    <div className="mt-6 flex justify-between gap-6">
+                      <div className="flex-1 space-y-4">
+                        <div><p className="text-[10px] font-black opacity-50 uppercase">Roll Identity</p><p className="text-6xl font-black tracking-tighter leading-none">{roll.rollNo}</p></div>
+                        <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll.paperType || "SUBSTRATE"}</p></div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")} size={120} /></div>
+                        <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
+                      </div>
+                    </div>
+                    <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
+                      <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll.widthMm} MM</span></div>
+                      <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll.lengthMeters} MTR</span></div>
+                    </div>
+                  </div>
+                ) : (
+                  <TemplateRenderer template={activeLabelTemplate} data={prepareRollData(roll)} />
+                )}
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* RESTORED MANUAL JOB CARD DIALOG */}
+      <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
+        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6">
+            <DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3">
+              <IdCard className="h-5 w-5 text-primary" /> Create Manual Job Card
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Direct floor release bypassing production planning</DialogDescription>
+          </div>
+          <div className="p-8 space-y-6 bg-slate-50">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase opacity-50">Machine</Label>
+                <Select value={manualMachine} onValueChange={setManualMachine}>
+                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Machine" /></SelectTrigger>
+                  <SelectContent className="z-[110]">
+                    {machines?.map(m => <SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase opacity-50">Operator</Label>
+                <Select value={manualOperator} onValueChange={setManualOperator}>
+                  <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Operator" /></SelectTrigger>
+                  <SelectContent className="z-[110]">
+                    {operators.map(o => <SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="p-4 bg-white rounded-xl border-2 border-primary/10 space-y-2">
+              <p className="text-[10px] font-black uppercase text-primary">Selected Configuration</p>
+              <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase">Parent Roll:</span><span className="font-black text-sm">{manualParentRoll}</span></div>
+              <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase">Child Units:</span><Badge className="bg-primary text-white font-black text-[10px]">{manualChildRolls.length}</Badge></div>
+            </div>
+          </div>
+          <DialogFooter className="p-6 bg-white border-t">
+            <Button variant="outline" className="flex-1 h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
+            <Button disabled={isProcessing} className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl" onClick={handleCreateManualJobCard}>
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />} Initialize Card
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #report-container, #report-container *, #label-batch, #label-batch * { visibility: visible !important; }
+          #report-container, #label-batch { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; display: block !important; background: white !important; }
+          .label-print-item { page-break-after: always; margin: 0 !important; box-shadow: none !important; display: flex !important; justify-content: center !important; align-items: center !important; }
+          .no-print { display: none !important; }
+          @page { margin: 0; size: auto; }
+        }
+      `}</style>
     </div>
   );
 }
