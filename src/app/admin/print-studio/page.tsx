@@ -92,8 +92,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V14.0)
- * Restored FULL element property controls and arrangement layers.
+ * PRINT TEMPLATE STUDIO (V15.0)
+ * Fixed element selection persistence and restored full property controls.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -712,7 +712,7 @@ export default function PrintTemplateStudio() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label className="text-[9px] uppercase font-bold">Rotation: {selectedElement.rotate}°</Label>
+                      <Label className="text-[9px] uppercase font-bold">Rotation: {selectedElement.rotate || 0}°</Label>
                       <Slider value={[selectedElement.rotate || 0]} onValueChange={([v]) => updateElement(selectedElement.id, { rotate: v })} min={0} max={360} step={1} />
                     </div>
                   </div>
@@ -1018,7 +1018,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
       default: return null;
     }
   }
-  return (<div className={cn("absolute select-none group flex items-center justify-center transition-shadow", !element.isLocked && "cursor-move", isSelected && "ring-2 ring-primary ring-offset-2 z-[60] shadow-2xl", !isSelected && "hover:ring-1 hover:ring-primary/30")} style={{ left: `${element.x}px`, top: `${element.y}px`, width: `${element.width}px`, height: `${element.height}px`, transform: `rotate(${element.rotate}deg)` }} onMouseDown={handleMouseDown}>{element.isLocked && <div className="absolute top-[-10px] right-[-10px] z-[70] bg-slate-900 text-white rounded-full p-1 shadow-md"><Lock className="h-2 w-2" /></div>}{renderContent()}{isSelected && !element.isLocked && <div className="absolute bottom-[-6px] right-[-6px] w-4 h-4 bg-primary cursor-nwse-resize rounded-full border-2 border-white shadow-lg z-[70] print:hidden" onMouseDown={handleResizeStart} />}</div>)
+  return (<div className={cn("absolute select-none group flex items-center justify-center transition-shadow", !element.isLocked && "cursor-move", isSelected && "ring-2 ring-primary ring-offset-2 z-[60] shadow-2xl", !isSelected && "hover:ring-1 hover:ring-primary/30")} style={{ left: `${element.x}px`, top: `${element.y}px`, width: `${element.width}px`, height: `${element.height}px`, transform: `rotate(${element.rotate}deg)` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()}>{element.isLocked && <div className="absolute top-[-10px] right-[-10px] z-[70] bg-slate-900 text-white rounded-full p-1 shadow-md"><Lock className="h-2 w-2" /></div>}{renderContent()}{isSelected && !element.isLocked && <div className="absolute bottom-[-6px] right-[-6px] w-4 h-4 bg-primary cursor-nwse-resize rounded-full border-2 border-white shadow-lg z-[70] print:hidden" onMouseDown={handleResizeStart} />}</div>)
 }
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
