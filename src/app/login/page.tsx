@@ -27,7 +27,7 @@ export default function LoginPage() {
   }, [firestore]);
   const { data: companySettings } = useDoc(companyDocRef);
   
-  const companyName = companySettings?.name || "ERP System";
+  const companyName = companySettings?.name || "SHREE LABEL CREATION";
   const companyLogo = companySettings?.logo;
 
   // Listen for login errors
@@ -81,26 +81,29 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
-      <div className="mb-8 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 duration-700">
-        <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-2xl overflow-hidden border-2 border-white/50">
+      {/* NEW PROFESSIONAL BRANDING HEADER */}
+      <div className="mb-10 flex flex-col items-center gap-6 animate-in fade-in slide-in-from-top-4 duration-1000">
+        <div className="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl overflow-hidden border-2 border-slate-100 p-3">
           {companyLogo ? (
-            <img src={companyLogo} alt="Logo" className="w-full h-full object-contain p-2 bg-white" />
+            <img src={companyLogo} alt="Logo" className="w-full h-full object-contain" />
           ) : (
-            <ShieldCheck className="text-white w-10 h-10" />
+            <ShieldCheck className="text-primary w-10 h-10" />
           )}
         </div>
-        <div>
-          <h1 className="text-3xl font-black tracking-tighter uppercase text-slate-900 leading-none">
+        <div className="space-y-2 text-center">
+          <h1 className="text-2xl md:text-3xl font-semibold tracking-[0.15em] uppercase text-slate-900 leading-none">
             {companyName}
           </h1>
-          <p className="text-[10px] text-muted-foreground uppercase tracking-[0.3em] font-bold mt-1">Enterprise Resources Planning</p>
+          <p className="text-xs md:text-sm text-slate-400 font-medium uppercase tracking-[0.1em]">
+            Narrow Web Flexo Printing ERP
+          </p>
         </div>
       </div>
 
       <Card className="w-full max-w-md shadow-2xl border-none rounded-3xl overflow-hidden bg-white">
         <CardHeader className="space-y-1 text-center bg-slate-900 text-white p-8">
           <CardTitle className="text-xl font-black uppercase tracking-widest">Operator Login</CardTitle>
-          <CardDescription className="text-slate-400 font-medium uppercase text-[10px] tracking-widest">Enter credentials to access {companyName}</CardDescription>
+          <CardDescription className="text-slate-400 font-medium uppercase text-[10px] tracking-widest">Enter credentials to access the system</CardDescription>
         </CardHeader>
         <CardContent className="p-8 space-y-6">
           <form onSubmit={handleLogin} className="space-y-4">
