@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -204,7 +203,7 @@ function JumboJobCardContent() {
   };
 
   /**
-   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE
+   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE (DIRECT IFRAME)
    */
   const handleExecutePrint = async (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
@@ -213,7 +212,10 @@ function JumboJobCardContent() {
     const html2canvas = (await import('html2canvas')).default;
     
     setIsProcessing(true);
-    toast({ title: "Processing Technical Snapshots", description: "Preparing precision output..." });
+    toast({ title: "Streamlining Print Pipeline", description: "Applying technical snapshot enhancements..." });
+
+    // Sync fonts before capture
+    await document.fonts.ready;
 
     const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeJobTemplate || { paperWidth: 210, paperHeight: 297 });
     const paperW = template.paperWidth;
@@ -225,7 +227,7 @@ function JumboJobCardContent() {
     try {
       for (const el of elements) {
         const canvas = await html2canvas(el as HTMLElement, {
-          scale: 3, 
+          scale: 4, 
           useCORS: true,
           allowTaint: true,
           logging: false,
@@ -236,18 +238,20 @@ function JumboJobCardContent() {
         images.push(canvas.toDataURL('image/png', 1.0));
       }
     } catch (err) {
-      console.error("Print snapshot error:", err);
-      toast({ variant: "destructive", title: "Rendering Failed", description: "Technical hardware incompatibility detected." });
+      toast({ variant: "destructive", title: "Print Optimization Error", description: "Technical hardware incompatibility detected." });
       setIsProcessing(false);
       return;
     }
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast({ variant: "destructive", title: "Popup Blocked", description: "Please enable popups to print." });
-      setIsProcessing(false);
-      return;
-    }
+    // Direct Print via Hidden Iframe (UX Cleaned)
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
 
     const renderedOutput = images.map(img => `
       <div class="print-page">
@@ -255,54 +259,33 @@ function JumboJobCardContent() {
       </div>
     `).join('');
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Shree Label Production Print</title>
-          <style>
-            @page {
-              size: ${paperW}mm ${paperH}mm;
-              margin: 0;
-            }
-            html, body {
-              margin: 0;
-              padding: 0;
-              background: white;
-            }
-            .print-page {
-              width: ${paperW}mm;
-              height: ${paperH}mm;
-              page-break-after: always;
-              break-inside: avoid;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              overflow: hidden;
-            }
-            img {
-              width: 100%;
-              height: 100%;
-              object-fit: contain;
-              image-rendering: -webkit-optimize-contrast;
-              image-rendering: crisp-edges;
-            }
-          </style>
-        </head>
-        <body>
-          ${renderedOutput}
-          <script>
-            window.onload = () => {
-              setTimeout(() => {
-                window.print();
-                window.onafterprint = () => window.close();
-              }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setIsProcessing(false);
+    const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (iframeDoc) {
+      iframeDoc.write(`
+        <html>
+          <head>
+            <title>Shree Label Production</title>
+            <style>
+              @page { size: ${paperW}mm ${paperH}mm; margin: 0; }
+              body { margin: 0; padding: 0; background: white; }
+              .print-page { width: ${paperW}mm; height: ${paperH}mm; page-break-after: always; break-inside: avoid; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+              img { width: 100%; height: 100%; object-fit: contain; image-rendering: -webkit-optimize-contrast; }
+            </style>
+          </head>
+          <body>${renderedOutput}</body>
+        </html>
+      `);
+      iframeDoc.close();
+
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          setIsProcessing(false);
+        }, 1000);
+      }, 500);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -575,7 +558,7 @@ function JumboJobCardContent() {
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('print-area', 'report')}>
                 {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
-                Print Technical Sheet
+                Execute Print Stream
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
             </div>
@@ -722,7 +705,7 @@ function JumboJobCardContent() {
               </Select>
             </div>
             <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Batch"}
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Stream"}
             </Button>
           </div>
           <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">

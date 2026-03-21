@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -508,7 +507,7 @@ export default function PaperStockPage() {
   };
 
   /**
-   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE
+   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE (DIRECT IFRAME)
    */
   const handleExecutePrint = async (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
@@ -517,7 +516,10 @@ export default function PaperStockPage() {
     const html2canvas = (await import('html2canvas')).default;
     
     setIsProcessing(true);
-    toast({ title: "Processing Print Batch", description: "Converting technical data to high-fidelity output images..." });
+    toast({ title: "Optimizing Print Stream", description: "Applying industrial resolution enhancements..." });
+
+    // Ensure all fonts are ready before technical capture
+    await document.fonts.ready;
 
     const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeReportTemplate || { paperWidth: 210, paperHeight: 297 });
     const paperW = template.paperWidth;
@@ -528,31 +530,33 @@ export default function PaperStockPage() {
 
     try {
       for (const el of elements) {
-        // High-res capture for scannable industrial output
+        // High-res (4x) capture for sharp industrial output
         const canvas = await html2canvas(el as HTMLElement, {
-          scale: 3, 
+          scale: 4, 
           useCORS: true,
           allowTaint: true,
           logging: false,
           backgroundColor: '#ffffff',
-          width: paperW * 3.78, // Correct mm to px conversion
+          width: paperW * 3.78, 
           height: paperH * 3.78
         });
         images.push(canvas.toDataURL('image/png', 1.0));
       }
     } catch (err) {
-      console.error("Print pipeline capture error:", err);
-      toast({ variant: "destructive", title: "Print Failed", description: "Could not generate technical snapshots." });
+      toast({ variant: "destructive", title: "Render Error", description: "Technical hardware capture failed." });
       setIsProcessing(false);
       return;
     }
 
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-      toast({ variant: "destructive", title: "Popup Blocked", description: "Please enable popups to print." });
-      setIsProcessing(false);
-      return;
-    }
+    // Direct Print via Hidden Iframe (Clean UX)
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
 
     const renderedItems = images.map(img => `
       <div class="print-page">
@@ -560,57 +564,33 @@ export default function PaperStockPage() {
       </div>
     `).join('');
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Industrial Print Queue</title>
-          <style>
-            @page {
-              size: ${paperW}mm ${paperH}mm;
-              margin: 0;
-            }
+    const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (iframeDoc) {
+      iframeDoc.write(`
+        <html>
+          <head>
+            <title>Industrial Print</title>
+            <style>
+              @page { size: ${paperW}mm ${paperH}mm; margin: 0; }
+              body { margin: 0; padding: 0; background: white; display: flex; flex-direction: column; align-items: center; }
+              .print-page { width: ${paperW}mm; height: ${paperH}mm; page-break-after: always; break-inside: avoid; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+              img { width: 100%; height: 100%; object-fit: contain; image-rendering: -webkit-optimize-contrast; }
+            </style>
+          </head>
+          <body>${renderedItems}</body>
+        </html>
+      `);
+      iframeDoc.close();
 
-            html, body {
-              margin: 0;
-              padding: 0;
-              background: white;
-            }
-
-            .print-page {
-              width: ${paperW}mm;
-              height: ${paperH}mm;
-              page-break-after: always;
-              break-inside: avoid;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              overflow: hidden;
-            }
-
-            img {
-              width: 100%;
-              height: 100%;
-              object-fit: contain;
-              image-rendering: -webkit-optimize-contrast;
-              image-rendering: crisp-edges;
-            }
-          </style>
-        </head>
-        <body>
-          ${renderedItems}
-          <script>
-            window.onload = () => {
-              setTimeout(() => {
-                window.print();
-                window.onafterprint = () => window.close();
-              }, 500);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    setIsProcessing(false);
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          setIsProcessing(false);
+        }, 1000);
+      }, 500);
+    }
   };
 
   const startScanner = () => {
@@ -940,7 +920,7 @@ export default function PaperStockPage() {
               </Select>
             </div>
             <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Batch"}
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Stream"}
             </Button>
           </div>
           <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
@@ -1008,7 +988,7 @@ export default function PaperStockPage() {
               </Select>
             </div>
             <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Batch"}
+              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Stream"}
             </Button>
           </div>
           <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
