@@ -81,9 +81,9 @@ import Barcode from 'react-barcode'
 import { ActionModal, ModalType } from "@/components/action-modal"
 
 /**
- * PRINT TEMPLATE STUDIO (V9.5)
- * WYSIWYG Technical Design Canvas with Strict Clipping & Yellow Boundary.
- * Ensures Print Output = Designer Preview.
+ * PRINT TEMPLATE STUDIO (V10.0)
+ * simplified WYSIWYG Technical Design Canvas with Strict Clipping.
+ * Ensures stable and predictable Industrial Output.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -596,18 +596,16 @@ export default function PrintTemplateStudio() {
                 {Array.from({ length: 20 }).map((_, i) => (<div key={i} className="flex-1 border-l border-slate-300 h-2 text-[8px] text-slate-400 pl-1">{i * 50}</div>))}
               </div>
               
-              {/* WYSIWYG Technical Design Area */}
+              {/* WYSIWYG Technical Design Area - Simple and Stable Clipping */}
               <div 
                 id="studio-canvas-print" 
-                className="bg-white shadow-2xl relative overflow-hidden canvas-surface print:border-none print:shadow-none transition-all duration-200" 
+                className="bg-white shadow-2xl relative overflow-hidden transition-all duration-200" 
                 style={{ 
                   width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, 
                   height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`, 
                   transform: `scale(${zoom})`, 
                   transformOrigin: 'top center',
-                  outline: '2px solid #fbbf24', // Yellow safety boundary
-                  outlineOffset: '0px',
-                  contain: 'paint' // Enforce strict hardware clipping
+                  outline: '2px solid #fbbf24' // Design-time safety boundary
                 }} 
                 onMouseDown={() => setSelectedElementId(null)}
               >
@@ -685,26 +683,6 @@ export default function PrintTemplateStudio() {
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        /* WYSIWYG Print Studio Safety Boundary Styling */
-        #studio-canvas-print::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          z-index: 100;
-          outline: 2px dashed #fbbf24;
-          outline-offset: -2px;
-          opacity: 0.5;
-        }
-        
-        @media print {
-          #studio-canvas-print::before {
-            display: none !important;
-          }
-        }
-      `}</style>
 
       <Dialog open={isNewDialogOpen} onOpenChange={setIsNewDialogOpen}>
         <DialogContent className="sm:max-w-[425px] rounded-3xl">
