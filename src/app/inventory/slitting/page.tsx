@@ -43,7 +43,9 @@ import {
   ArrowUpRight,
   Settings2,
   Settings,
-  Activity
+  Activity,
+  Target,
+  ShoppingCart
 } from "lucide-react"
 import { 
   Dialog, 
@@ -132,16 +134,24 @@ function SlittingHubContent() {
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // Planning Data - Fixed: Remove hidden limits and include all relevant statuses
+  // Planning Data - Fixed: Filter out completed/slitted jobs
   const planningJobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(
       collection(firestore, 'planning_tables/label-printing/rows'), 
-      where('values.printing_planning', '!=', 'Completed'),
-      limit(1000) // Professional headroom
+      limit(1000)
     );
   }, [firestore]);
-  const { data: planningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
+  const { data: rawPlanningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
+
+  // Client-side filter for Job Status (Part 5)
+  const planningJobs = useMemo(() => {
+    if (!rawPlanningJobs) return [];
+    return rawPlanningJobs.filter(j => {
+      const status = j.values.printing_planning;
+      return status !== 'Completed' && status !== 'Slitted';
+    });
+  }, [rawPlanningJobs]);
 
   const stockQuery = useMemoFirebase(() => {
     if (!firestore) return null;
@@ -305,11 +315,10 @@ function SlittingHubContent() {
     }));
   }
 
-  // EXECUTION - Enhanced with Remainder Strategy (Part 1)
+  // EXECUTION
   const handleExecuteSlitting = async () => {
     if (!firestore || !user || selectedRolls.length === 0) return;
     
-    // Check all valid
     const allValid = selectedRolls.every(r => calculateRollStatus(r.id).isValid);
     if (!allValid) {
       toast({ variant: "destructive", title: "Pattern Conflict", description: "One or more rolls have invalid slitting patterns." });
@@ -325,7 +334,7 @@ function SlittingHubContent() {
         for (const parent of selectedRolls) {
           const config = rollConfigs[parent.id];
           const calc = calculateRollStatus(parent.id);
-          const remainderAction = config.remainderAction || 'STOCK'; // Defaults to STOCK for manual preservation
+          const remainderAction = config.remainderAction || 'STOCK'; 
           
           const parentRef = doc(firestore, 'paper_stock', parent.id);
           transaction.update(parentRef, { 
@@ -368,7 +377,6 @@ function SlittingHubContent() {
             }
           }
 
-          // Part 1: Conditional Remainder Creation
           if (calc.remainder > 0 && remainderAction === 'STOCK') {
             const suffix = getChildSuffix(parent.rollNo, childIdx);
             const remainderId = sanitizeDocId(`${parent.rollNo}-${suffix}`);
@@ -430,15 +438,21 @@ function SlittingHubContent() {
     }
   }
 
-  // --- AUTO PLANNER LOGIC (Fixed: PART 1 wastage) ---
+  // --- AUTO PLANNER LOGIC (Part 1, 2, 3) ---
   const availableOptions = useMemo(() => {
     if (!selectedPlanningJob || !stockData) return [];
     const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
     const targetWidth = parseInt(String(rawWidth).replace(/[^0-9]/g, '')) || 0;
     const jobMaterial = normalizeMaterial(selectedPlanningJob.values.material);
     const jobLengthRequired = Number(selectedPlanningJob.values.allocate_mtrs) || 0;
+    
     if (targetWidth <= 0) return [];
-    const matchingStock = stockData.filter(roll => normalizeMaterial(roll.paperType) === jobMaterial && (Number(roll.widthMm) || 0) >= targetWidth);
+
+    const matchingStock = stockData.filter(roll => 
+      normalizeMaterial(roll.paperType) === jobMaterial && 
+      (Number(roll.widthMm) || 0) >= targetWidth
+    );
+
     const groups: Record<string, any> = {};
     matchingStock.forEach(roll => {
       const key = `${roll.widthMm}-${roll.lengthMeters}-${roll.paperCompany}`;
@@ -448,19 +462,63 @@ function SlittingHubContent() {
         const splits = Math.floor(rw / targetWidth);
         const waste = rw % targetWidth;
         const efficiency = (splits * targetWidth) / rw;
-        const usableLengthPerRoll = rl * splits;
-        const requiredRolls = usableLengthPerRoll > 0 ? Math.ceil(jobLengthRequired / usableLengthPerRoll) : 1;
-        groups[key] = { key, width: rw, length: rl, company: roll.paperCompany, material: roll.paperType, splits, waste, efficiency, requiredForJob: requiredRolls, availableCount: 0, rolls: [], exampleId: roll.rollNo };
+        
+        const yieldPerRoll = rl * splits;
+        const requiredRolls = yieldPerRoll > 0 ? Math.ceil(jobLengthRequired / yieldPerRoll) : 1;
+
+        // Smart Priority Logic (Part 3)
+        let priorityLabel = "Alternate";
+        if (rw === targetWidth) priorityLabel = "Best Fit";
+        else if (rw >= 1000) priorityLabel = "Use Jumbo if required";
+
+        groups[key] = { 
+          key, 
+          width: rw, 
+          length: rl, 
+          company: roll.paperCompany, 
+          material: roll.paperType, 
+          splits, 
+          waste, 
+          efficiency, 
+          requiredForJob: requiredRolls, 
+          yieldPerRoll,
+          priorityLabel,
+          availableCount: 0, 
+          rolls: [], 
+          exampleId: roll.rollNo 
+        };
       }
       groups[key].availableCount += 1;
       groups[key].rolls.push(roll);
     });
+
     return Object.values(groups).sort((a: any, b: any) => {
-      if (a.width === targetWidth && b.width !== targetWidth) return -1;
-      if (b.width === targetWidth && a.width !== targetWidth) return 1;
+      // Sorting: Best Fit first, then by efficiency
+      if (a.priorityLabel === "Best Fit" && b.priorityLabel !== "Best Fit") return -1;
+      if (b.priorityLabel === "Best Fit" && a.priorityLabel !== "Best Fit") return 1;
       return b.efficiency - a.efficiency;
     });
   }, [selectedPlanningJob, stockData]);
+
+  // Insight Calculations (Part 4)
+  const selectionInsights = useMemo(() => {
+    if (!selectedPlanningJob) return { totalProduced: 0, remaining: 0, required: 0 };
+    const required = Number(selectedPlanningJob.values.allocate_mtrs) || 0;
+    
+    let totalProduced = 0;
+    Object.entries(selectionMap).forEach(([key, qty]) => {
+      const opt = availableOptions.find((o: any) => o.key === key) as any;
+      if (opt) {
+        totalProduced += (opt.yieldPerRoll * qty);
+      }
+    });
+
+    return {
+      totalProduced,
+      required,
+      remaining: Math.max(0, required - totalProduced)
+    };
+  }, [selectionMap, availableOptions, selectedPlanningJob]);
 
   const handleInitializeTerminalFromPlanner = () => {
     const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
@@ -479,7 +537,7 @@ function SlittingHubContent() {
           jobName: selectedPlanningJob.values.name || "",
           jobSize: selectedPlanningJob.values.size || "",
           runs: [{ id: crypto.randomUUID(), widthMm: targetWidth, lengthMeters: r.lengthMeters, parts: opt.splits }],
-          remainderAction: wastagePreferences[key] || 'STOCK' // Apply Part 1 preference
+          remainderAction: wastagePreferences[key] || 'STOCK'
         };
       });
     });
@@ -487,7 +545,7 @@ function SlittingHubContent() {
     setSelectedRolls(allSelected);
     setRollConfigs(newConfigs);
     setActiveRollId(allSelected[0].id);
-    setIsSummaryModalOpen(false);
+    setIsOptionsModalOpen(false);
     toast({ title: "Terminal Initialized" });
   };
 
@@ -513,8 +571,8 @@ function SlittingHubContent() {
 
       <div className="flex items-center justify-between print:hidden px-4">
         <div className="space-y-1">
-          <h1 className="text-[28px] font-black tracking-tight text-slate-900 uppercase">Independent Slitting Terminal</h1>
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Multi-Roll manual controller with unique pattern support</p>
+          <h1 className="text-[28px] font-black tracking-tight text-slate-900 uppercase">Industrial Slitting Terminal</h1>
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Decision Support & Multi-Unit technical controller</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" onClick={() => window.print()} disabled={selectedRolls.length === 0} className="font-bold text-[10px] uppercase h-10 px-6 border-2 rounded-xl">
@@ -526,7 +584,7 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- AUTO SLITTING PLANNER PANEL (Fixed Sync) --- */}
+      {/* --- AUTO SLITTING PLANNER PANEL (Part 1 Required Mtr) --- */}
       <Card className="shadow-2xl border-none rounded-3xl overflow-hidden bg-white mx-4">
         <CardHeader className="bg-slate-900 text-white p-6">
           <div className="flex items-center justify-between">
@@ -551,9 +609,14 @@ function SlittingHubContent() {
                   <div className="py-10 text-center text-muted-foreground italic text-xs">No active planning jobs found.</div>
                 ) : filteredPlannerJobs.map(job => (
                   <div key={job.id} onClick={() => setSelectedJob(job)} className={cn("p-3 rounded-xl border-2 cursor-pointer flex justify-between items-center transition-all", selectedPlanningJob?.id === job.id ? "border-primary bg-primary/5" : "border-white bg-white hover:border-primary/20 shadow-sm")}>
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-black uppercase tracking-tight">{job.values.name}</span>
-                      <span className="text-[9px] font-bold opacity-50 uppercase">{job.values.material} | {job.values.size}</span>
+                    <div className="flex flex-col flex-1 min-w-0">
+                      <span className="text-[11px] font-black uppercase tracking-tight truncate">{job.values.name}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[9px] font-bold opacity-50 uppercase">{job.values.material} | {job.values.size}</span>
+                        <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-primary/20 text-primary uppercase">
+                          Req: {job.values.allocate_mtrs} MTR
+                        </Badge>
+                      </div>
                     </div>
                     <Badge variant="outline" className="text-[8px] font-black border-primary/20 text-primary">{job.values.printing_planning}</Badge>
                   </div>
@@ -562,14 +625,27 @@ function SlittingHubContent() {
             </div>
             <div className="flex flex-col justify-center items-center p-6 bg-slate-50 rounded-2xl border-2 border-dashed">
               {selectedPlanningJob ? (
-                <div className="text-center space-y-4 animate-in fade-in zoom-in-95">
-                  <div className="p-4 bg-white rounded-2xl shadow-sm border space-y-1 mb-4">
-                    <p className="text-[10px] font-black uppercase text-slate-400">Targeting Substrate</p>
-                    <p className="text-lg font-black text-primary">{selectedPlanningJob.values.material}</p>
-                    <p className="text-[9px] font-bold uppercase opacity-50">Width: {selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size}</p>
+                <div className="text-center space-y-4 animate-in fade-in zoom-in-95 w-full max-w-sm">
+                  <div className="p-6 bg-white rounded-3xl shadow-sm border space-y-4 mb-4">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-black uppercase text-slate-400">Targeting Substrate</p>
+                      <p className="text-lg font-black text-primary">{selectedPlanningJob.values.material}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-slate-50 p-3 rounded-2xl">
+                        <p className="text-[8px] font-black uppercase text-slate-400">Job Width</p>
+                        <p className="text-sm font-black">{selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size}</p>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-2xl">
+                        <p className="text-[8px] font-black uppercase text-slate-400">Goal Meter</p>
+                        <p className="text-sm font-black">{selectedPlanningJob.values.allocate_mtrs} M</p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-[10px] font-black uppercase text-slate-500">Found {availableOptions.length} Stock Configurations</p>
-                  <Button onClick={() => setIsOptionsModalOpen(true)} className="h-12 px-10 rounded-xl bg-slate-900 text-white font-black uppercase text-[10px] shadow-xl hover:bg-black">Analyze Stock Options</Button>
+                  <Button onClick={() => setIsOptionsModalOpen(true)} className="h-14 w-full rounded-2xl bg-slate-900 text-white font-black uppercase text-xs tracking-widest shadow-xl hover:bg-black group">
+                    Analyze Stock Options 
+                    <ChevronRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </Button>
                 </div>
               ) : (
                 <div className="text-center opacity-30 space-y-3">
@@ -746,14 +822,14 @@ function SlittingHubContent() {
         </div>
       </div>
 
-      {/* --- PLANNER OPTIONS MODAL (Fixed Part 1: Wastage Strategy) --- */}
+      {/* --- PLANNER OPTIONS MODAL (Parts 1, 2, 3, 4) --- */}
       <Dialog open={isOptionsModalOpen} onOpenChange={setIsOptionsModalOpen}>
         <DialogContent className="sm:max-w-[1200px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-slate-50 flex flex-col h-[90vh]">
           <div className="bg-slate-900 text-white p-8 shrink-0">
             <div className="flex justify-between items-center">
               <div className="space-y-1">
                 <DialogTitle className="text-sm font-black uppercase tracking-widest flex items-center gap-3"><Sparkles className="h-5 w-5 text-primary" /> Stock Decision Support</DialogTitle>
-                <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase">Compare efficiencies and define technical waste strategies</DialogDescription>
+                <DialogDescription className="text-slate-400 text-[10px] font-bold uppercase">Compare efficiencies, requirements, and technical yield</DialogDescription>
               </div>
               <div className="flex gap-4">
                 <div className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-xl">
@@ -767,56 +843,105 @@ function SlittingHubContent() {
               </div>
             </div>
           </div>
+
           <div className="flex-1 overflow-auto p-8 industrial-scroll">
-            <Table>
-              <TableHeader className="bg-slate-100/50"><TableRow className="h-12">
-                <TableHead className="font-black text-[9px] uppercase pl-6">Dimension Class</TableHead>
-                <TableHead className="font-black text-[9px] uppercase text-center">Wastage (MM)</TableHead>
-                <TableHead className="font-black text-[9px] uppercase text-center">Remainder Action</TableHead>
-                <TableHead className="font-black text-[9px] uppercase">Yield</TableHead>
-                <TableHead className="font-black text-[9px] uppercase text-center">Efficiency</TableHead>
-                <TableHead className="font-black text-[9px] uppercase text-right pr-6">Batch Selection</TableHead>
-              </TableRow></TableHeader>
-              <TableBody>
-                {availableOptions.filter((o: any) => selectedSupplier === 'all' || o.company === selectedSupplier).map((opt: any) => (
-                  <TableRow key={opt.key} className="h-16 hover:bg-white transition-colors">
-                    <TableCell className="pl-6">
-                      <div className="flex flex-col">
-                        <span className="text-xs font-black">{opt.width}mm x {opt.length}m</span>
-                        <span className="text-[9px] font-bold opacity-40 uppercase">{opt.company}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant="outline" className="border-rose-200 text-rose-600 font-black h-6 px-3">{opt.waste} MM</Badge>
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-3">
-                        <span className={cn("text-[8px] font-black", wastagePreferences[opt.key] === 'ADJUST' ? "text-primary" : "text-slate-400")}>ADJUST</span>
-                        <Switch 
-                          checked={wastagePreferences[opt.key] !== 'ADJUST'} 
-                          onCheckedChange={(val) => setWastagePreferences({...wastagePreferences, [opt.key]: val ? 'STOCK' : 'ADJUST'})}
-                        />
-                        <span className={cn("text-[8px] font-black", (wastagePreferences[opt.key] || 'STOCK') === 'STOCK' ? "text-emerald-600" : "text-slate-400")}>STOCK</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-[10px] font-bold text-slate-600">
-                      {opt.splits} units @ {opt.length} mtr
-                    </TableCell>
-                    <TableCell className="text-center"><Progress value={opt.efficiency * 100} className="h-1 w-20 mx-auto" /></TableCell>
-                    <TableCell className="text-right pr-6">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.max(0, (selectionMap[opt.key] || 0) - 1)})}>-</Button>
-                        <span className="w-10 text-center font-black text-xs bg-white border h-8 flex items-center justify-center rounded-lg">{selectionMap[opt.key] || 0}</span>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.min(opt.availableCount, (selectionMap[opt.key] || 0) + 1)})}>+</Button>
-                      </div>
-                    </TableCell>
+            <div className="grid grid-cols-1 gap-6">
+              <Table>
+                <TableHeader className="bg-slate-100/50">
+                  <TableRow className="h-12">
+                    <TableHead className="font-black text-[9px] uppercase pl-6">Dimension & Priority</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase text-center">Wastage</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase text-center">Estimation (Part 2)</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase">Yield Details (Part 1)</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase text-center">Efficiency</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase text-right pr-6">Batch Selection</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {availableOptions.filter((o: any) => selectedSupplier === 'all' || o.company === selectedSupplier).map((opt: any) => {
+                    const shortage = Math.max(0, opt.requiredForJob - opt.availableCount);
+                    return (
+                      <TableRow key={opt.key} className="h-20 hover:bg-white transition-colors border-b last:border-none">
+                        <TableCell className="pl-6">
+                          <div className="flex flex-col gap-1">
+                            <span className="text-xs font-black">{opt.width}mm x {opt.length}m</span>
+                            <div className="flex items-center gap-2">
+                              <Badge className={cn(
+                                "text-[8px] font-black uppercase border-none px-2",
+                                opt.priorityLabel === "Best Fit" ? "bg-emerald-500" : 
+                                opt.priorityLabel === "Alternate" ? "bg-blue-500" : "bg-slate-500"
+                              )}>
+                                {opt.priorityLabel}
+                              </Badge>
+                              <span className="text-[8px] font-bold opacity-40 uppercase tracking-tighter">{opt.company}</span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline" className="border-rose-200 text-rose-600 font-black h-6 px-3">{opt.waste} MM</Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex flex-col items-center justify-center gap-1">
+                            <div className="text-[10px] font-black">Req: {opt.requiredForJob} | Avail: {opt.availableCount}</div>
+                            {shortage > 0 && <Badge variant="destructive" className="h-4 text-[7px] font-black uppercase px-1.5 animate-pulse">Shortage: {shortage}</Badge>}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-bold text-slate-600">
+                              {opt.splits} units @ {opt.length} mtr
+                            </div>
+                            <div className="text-[9px] font-black text-primary uppercase">
+                              Total Output: {opt.yieldPerRoll.toLocaleString()} M
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="text-[9px] font-black">{Math.round(opt.efficiency * 100)}%</span>
+                            <Progress value={opt.efficiency * 100} className="h-1 w-16 mx-auto" />
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right pr-6">
+                          <div className="flex items-center justify-end gap-2">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.max(0, (selectionMap[opt.key] || 0) - 1)})}>-</Button>
+                            <span className="w-10 text-center font-black text-xs bg-white border h-8 flex items-center justify-center rounded-lg">{selectionMap[opt.key] || 0}</span>
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setSelectionMap({...selectionMap, [opt.key]: Math.min(opt.availableCount, (selectionMap[opt.key] || 0) + 1)})}>+</Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </div>
-          <div className="p-8 bg-white border-t flex justify-end">
-            <Button onClick={handleInitializeTerminalFromPlanner} size="lg" className="h-14 px-12 rounded-xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl">Deploy Selection to Terminal</Button>
+
+          {/* Selection Insight Panel (Part 4) */}
+          <div className="p-8 bg-white border-t border-slate-100 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
+            <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="flex-1 w-full space-y-4">
+                <div className="flex justify-between items-end">
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-black uppercase text-slate-400">Total Production Progress</p>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-2xl font-black text-slate-900">{selectionInsights.totalProduced.toLocaleString()} M</span>
+                      <span className="text-xs font-bold text-slate-400">of {selectionInsights.required.toLocaleString()} M required</span>
+                    </div>
+                  </div>
+                  <Badge variant={selectionInsights.remaining === 0 ? "default" : "outline"} className={cn(
+                    "h-6 font-black text-[10px] uppercase border-2",
+                    selectionInsights.remaining === 0 ? "bg-emerald-500 border-emerald-500" : "text-amber-600 border-amber-200"
+                  )}>
+                    {selectionInsights.remaining === 0 ? "Target Achieved" : `Remaining: ${selectionInsights.remaining.toLocaleString()} M`}
+                  </Badge>
+                </div>
+                <Progress value={(selectionInsights.totalProduced / selectionInsights.required) * 100} className="h-2 bg-slate-100" />
+              </div>
+              <Button onClick={handleInitializeTerminalFromPlanner} size="lg" className="h-16 px-12 rounded-2xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl hover:shadow-2xl transition-all">
+                Deploy Selection to Terminal
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
