@@ -524,19 +524,26 @@ function SlittingHubContent() {
     if (selectedEntries.length === 0) return;
     const allSelected: any[] = [];
     const newConfigs: Record<string, RollConfig> = {};
-    const targetWidth = parseInt(String(selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size).replace(/[^0-9]/g, '')) || 0;
+    const rawTargetWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
+    const targetWidth = parseInt(String(rawTargetWidth).replace(/[^0-9]/g, '')) || 0;
 
     selectedEntries.forEach(([key, qty]) => {
       const opt = availableOptions.find((o: any) => o.key === key) as any;
       const rolls = opt.rolls.slice(0, qty);
+      const preference = wastagePreferences[key] || 'STOCK';
+      
       allSelected.push(...rolls);
       rolls.forEach((r: any) => {
+        const finalWidth = preference === 'ADJUST' 
+          ? (Number(r.widthMm) / opt.splits) 
+          : targetWidth;
+
         newConfigs[r.id] = {
           jobNo: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
           jobName: selectedPlanningJob.values.name || "",
           jobSize: selectedPlanningJob.values.size || "",
-          runs: [{ id: crypto.randomUUID(), widthMm: targetWidth, lengthMeters: r.lengthMeters, parts: opt.splits }],
-          remainderAction: wastagePreferences[key] || 'STOCK'
+          runs: [{ id: crypto.randomUUID(), widthMm: finalWidth, lengthMeters: r.lengthMeters, parts: opt.splits }],
+          remainderAction: preference
         };
       });
     });
@@ -611,7 +618,7 @@ function SlittingHubContent() {
                     <div className="flex flex-col flex-1 min-w-0">
                       <span className="text-[11px] font-black uppercase tracking-tight truncate">{job.values.name}</span>
                       <div className="flex items-center gap-3">
-                        <span className="text-[9px] font-bold opacity-50 uppercase">{job.values.material} | {job.values.size}</span>
+                        <span className="text-[9px] font-bold opacity-50 uppercase">{job.values.material} | {job.values.paper_size || job.values.size}</span>
                         <Badge variant="outline" className="h-4 px-1.5 text-[8px] font-black border-primary/20 text-primary uppercase">
                           Req: {job.values.allocate_mtrs} MTR
                         </Badge>
@@ -850,7 +857,7 @@ function SlittingHubContent() {
                   <TableRow className="h-12">
                     <TableHead className="font-black text-[9px] uppercase pl-6">Dimension & Priority</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-center">Wastage Control</TableHead>
-                    <TableHead className="font-black text-[9px] uppercase text-center">Estimation</TableHead>
+                    <TableHead className="font-black text-[9px] uppercase">Slitting Result</TableHead>
                     <TableHead className="font-black text-[9px] uppercase">Yield Details</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-center">Efficiency</TableHead>
                     <TableHead className="font-black text-[9px] uppercase text-right pr-6">Batch Selection</TableHead>
@@ -858,7 +865,13 @@ function SlittingHubContent() {
                 </TableHeader>
                 <TableBody>
                   {availableOptions.filter((o: any) => selectedSupplier === 'all' || o.company === selectedSupplier).map((opt: any) => {
-                    const shortage = Math.max(0, opt.requiredForJob - opt.availableCount);
+                    const preference = wastagePreferences[opt.key] || 'STOCK';
+                    const targetWidth = parseInt(String(selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size).replace(/[^0-9]/g, '')) || 0;
+                    
+                    const slittingText = preference === 'STOCK' 
+                      ? `${targetWidth} mm x ${opt.splits}${opt.waste > 0 ? ` + ${opt.waste} mm (Stock)` : ''}`
+                      : `${(opt.width / opt.splits).toFixed(1)} mm x ${opt.splits} (Adjusted)`;
+
                     return (
                       <TableRow key={opt.key} className="h-20 hover:bg-white transition-colors border-b last:border-none">
                         <TableCell className="pl-6">
@@ -878,27 +891,26 @@ function SlittingHubContent() {
                         </TableCell>
                         <TableCell className="text-center">
                           <div className="flex flex-col items-center gap-2">
-                            <Badge variant="outline" className="border-rose-200 text-rose-600 font-black h-6 px-3">{opt.waste} MM</Badge>
-                            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg scale-75 shadow-inner">
+                            <p className="text-[9px] font-black uppercase text-slate-400">Wastage: {opt.waste} mm</p>
+                            <div className="flex items-center bg-slate-200 p-1 rounded-xl shadow-inner scale-90">
                               <Button 
-                                variant={wastagePreferences[opt.key] !== 'ADJUST' ? "secondary" : "ghost"} 
+                                variant={preference === 'STOCK' ? "default" : "ghost"} 
                                 size="sm" 
-                                className="h-6 px-2 text-[8px] font-black tracking-tighter"
+                                className={cn("h-7 px-4 text-[9px] font-black uppercase rounded-lg", preference === 'STOCK' && "bg-white text-slate-900 shadow-sm hover:bg-white")}
                                 onClick={() => setWastagePreferences({...wastagePreferences, [opt.key]: 'STOCK'})}
                               >STOCK</Button>
                               <Button 
-                                variant={wastagePreferences[opt.key] === 'ADJUST' ? "secondary" : "ghost"} 
+                                variant={preference === 'ADJUST' ? "default" : "ghost"} 
                                 size="sm" 
-                                className="h-6 px-2 text-[8px] font-black tracking-tighter"
+                                className={cn("h-7 px-4 text-[9px] font-black uppercase rounded-lg", preference === 'ADJUST' && "bg-white text-slate-900 shadow-sm hover:bg-white")}
                                 onClick={() => setWastagePreferences({...wastagePreferences, [opt.key]: 'ADJUST'})}
-                              >WASTE</Button>
+                              >ADJUST</Button>
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex flex-col items-center justify-center gap-1">
-                            <div className="text-[10px] font-black">Req: {opt.requiredForJob} | Avail: {opt.availableCount}</div>
-                            {shortage > 0 && <Badge variant="destructive" className="h-4 text-[7px] font-black uppercase px-1.5 animate-pulse">Shortage: {shortage}</Badge>}
+                        <TableCell>
+                          <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 inline-block">
+                            <p className="text-[10px] font-black text-primary uppercase tracking-tight">{slittingText}</p>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -906,8 +918,8 @@ function SlittingHubContent() {
                             <div className="text-[10px] font-bold text-slate-600">
                               {opt.splits} units @ {opt.length} mtr
                             </div>
-                            <div className="text-[9px] font-black text-primary uppercase">
-                              Total Output: {opt.yieldPerRoll.toLocaleString()} M
+                            <div className="text-[9px] font-black text-slate-400 uppercase">
+                              Output: {opt.yieldPerRoll.toLocaleString()} M
                             </div>
                           </div>
                         </TableCell>
@@ -946,7 +958,7 @@ function SlittingHubContent() {
                   </div>
                   <Badge variant={selectionInsights.remaining === 0 ? "default" : "outline"} className={cn(
                     "h-6 font-black text-[10px] uppercase border-2",
-                    selectionInsights.remaining === 0 ? "bg-emerald-500 border-emerald-500" : "text-amber-600 border-amber-200"
+                    selectionInsights.remaining === 0 ? "bg-emerald-500 border-emerald-500 text-white" : "text-amber-600 border-amber-200"
                   )}>
                     {selectionInsights.remaining === 0 ? "Target Achieved" : `Remaining: ${selectionInsights.remaining.toLocaleString()} M`}
                   </Badge>
