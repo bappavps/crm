@@ -1,6 +1,7 @@
+
 "use client"
 
-import { useState, useMemo, useEffect, use } from "react"
+import { useState, useMemo, useEffect, use, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +22,9 @@ import {
   MoveHorizontal,
   GripHorizontal,
   Pencil,
-  RotateCcw
+  RotateCcw,
+  FileUp,
+  FileDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -54,16 +57,19 @@ import { useFirestore, useUser, useCollection, useMemoFirebase, useDoc } from "@
 import { collection, doc, serverTimestamp, setDoc, updateDoc, deleteDoc, query, orderBy, getDocs, writeBatch, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import * as XLSX from 'xlsx'
 
 /**
- * PRODUCTION PLANNING BOARD (V5.1)
- * Redesigned for Industrial Dominance, Compact Data, and Fixed Inline Editing.
+ * PRODUCTION PLANNING BOARD (V5.2)
+ * Updated: Unified board view, Excel upload, and expanded Hold statuses.
  */
 
 const STATUS_COLORS: Record<string, string> = {
   Running: "bg-blue-500",
   Completed: "bg-emerald-500",
   Hold: "bg-rose-500",
+  "Hold for Payment": "bg-amber-600",
+  "Hold for Approval": "bg-purple-600",
   Pending: "bg-slate-400"
 };
 
@@ -98,6 +104,7 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isMounted, setIsMounted] = useState(false)
   
   const [isSetupOpen, setIsSetupOpen] = useState(false)
@@ -108,12 +115,10 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
   const [editFormData, setEditFormData] = useState<any>({})
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   
-  // Column Reordering State
   const [columnOrder, setColumnOrder] = useState<string[]>([])
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // 1. Fetch Table Definition
   const tableRef = useMemoFirebase(() => {
     if (!firestore || !department) return null;
     return doc(firestore, 'planning_tables', department);
@@ -121,7 +126,6 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
   
   const { data: tableDef, isLoading: tableLoading } = useDoc(tableRef);
 
-  // 2. Fetch Rows
   const rowsQuery = useMemoFirebase(() => {
     if (!firestore || !department) return null;
     return query(collection(firestore, `planning_tables/${department}/rows`), orderBy('values.sn', 'asc'));
@@ -129,7 +133,6 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
 
   const { data: rows, isLoading: rowsLoading } = useCollection(rowsQuery);
 
-  // Initialize Column Order
   useEffect(() => {
     if (tableDef?.columns && columnOrder.length === 0) {
       setColumnOrder(tableDef.columns.map((c: any) => c.id));
@@ -183,7 +186,6 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
     if (!firestore || !editingId || isProcessing) return;
     setIsProcessing(true);
     try {
-      console.log("Saving Row Data:", editFormData);
       await updateDoc(doc(firestore, `planning_tables/${department}/rows`, editingId), {
         values: editFormData,
         updated_at: serverTimestamp()
@@ -221,6 +223,53 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !firestore || !tableDef) return;
+
+    setIsProcessing(true);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        if (data.length === 0) throw new Error("No data found in file");
+
+        const batch = writeBatch(firestore);
+        data.forEach((row: any) => {
+          const values: any = {};
+          tableDef.columns.forEach((col: any) => {
+            // Map by ID or Column Name
+            let val = row[col.id] ?? row[col.name];
+            if (col.type === 'Number') val = Number(val) || 0;
+            values[col.id] = val || "";
+          });
+
+          const rowId = crypto.randomUUID();
+          batch.set(doc(firestore, `planning_tables/${department}/rows`, rowId), {
+            id: rowId,
+            section: SECTIONS.MAIN,
+            values,
+            created_at: serverTimestamp()
+          });
+        });
+
+        await batch.commit();
+        toast({ title: "Import Successful", description: `Added ${data.length} jobs to planning board.` });
+      } catch (err: any) {
+        toast({ variant: "destructive", title: "Import Failed", description: err.message });
+      } finally {
+        setIsProcessing(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   const handleDeleteRow = async () => {
@@ -273,6 +322,11 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           <Button onClick={() => setIsRowCreateOpen(true)} className="h-10 px-6 font-bold uppercase text-[11px] tracking-widest rounded-lg bg-slate-900 text-white hover:bg-black transition-all shadow-md">
             <Plus className="mr-2 h-4 w-4 text-primary" /> Add Job Entry
           </Button>
+          <Button variant="outline" className="h-10 px-4 font-bold uppercase text-[11px] tracking-widest border-2 rounded-lg" onClick={() => fileInputRef.current?.click()}>
+            {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <FileUp className="h-4 w-4 mr-2 text-primary" />}
+            Import Excel
+            <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleExcelUpload} />
+          </Button>
           <Button variant="outline" className="h-10 px-4 font-bold uppercase text-[11px] tracking-widest border-2 rounded-lg" onClick={() => setIsSetupOpen(true)}>
             <Settings2 className="h-4 w-4 mr-2 text-primary" /> Board Layout
           </Button>
@@ -291,7 +345,6 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           editingId={editingId}
           editFormData={editFormData}
           onEdit={(r: any) => { 
-            console.log("Entering Edit Mode for Row:", r.id);
             setEditingId(r.id); 
             setEditFormData(r.values); 
           }}
@@ -300,13 +353,13 @@ export default function DynamicPlanningPage({ params }: { params: Promise<{ depa
           onFormChange={setEditFormData}
           onDelete={setDeleteConfirmId}
           onReorder={handleReorder}
-          height="h-[65vh] min-height-[500px]"
+          height="h-[75vh] min-height-[600px]"
           isProcessing={isProcessing}
         />
       </div>
 
-      {/* SECONDARY TABLES */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* SECONDARY TABLES (HIDDEN PER USER REQUEST) */}
+      <div className="hidden grid grid-cols-1 lg:grid-cols-2 gap-4">
         <BoardTable 
           title="Hold for Technical Reasons" 
           columns={orderedColumns} 
@@ -454,7 +507,6 @@ function BoardTable({
 
   const tableUniqueMaterials = useMemo(() => {
     const vals = new Set(rows.map((r: any) => r.values.material).filter(Boolean));
-    // Core defaults for Shree Label
     ["Chromo", "PP White", "Silver Metalic", "PE White", "Transparent"].forEach(m => vals.add(m));
     return Array.from(vals).sort();
   }, [rows]);
@@ -566,7 +618,6 @@ function BoardTable({
                             value={editFormData[col.id] || ''} 
                             onValueChange={v => {
                               const next = { ...editFormData, [col.id]: v };
-                              console.log("Editing Row (Status):", next);
                               onFormChange(next);
                             }}
                           >
@@ -574,7 +625,7 @@ function BoardTable({
                               <SelectValue placeholder="Status" />
                             </SelectTrigger>
                             <SelectContent className="z-[110]">
-                              {Object.keys(STATUS_COLORS).map(s => <SelectItem key={s} value={s} className="text-[11px] font-bold uppercase">{s}</SelectItem>)}
+                              {Object.keys(STATUS_COLORS).map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         ) : (
@@ -583,7 +634,6 @@ function BoardTable({
                             value={editFormData[col.id] || ''} 
                             onChange={e => {
                               const next = { ...editFormData, [col.id]: col.type === 'Number' ? Number(e.target.value) : e.target.value };
-                              console.log("Editing Row:", next);
                               onFormChange(next);
                             }} 
                             className="h-7 text-[13px] text-center border-none focus-visible:ring-0 p-0 bg-transparent font-bold"
