@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, useRef } from "react"
@@ -47,8 +48,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.1)
- * Enhanced with mobile camera scanning support.
+ * PHYSICAL PAPER STOCK CHECK (V1.2)
+ * Enhanced with audio-visual scan feedback and camera support.
  */
 
 interface ScannedRoll {
@@ -71,6 +72,10 @@ export default function PhysicalStockAuditPage() {
   const [isNewSessionOpen, setIsNewSessionOpen] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [isCameraActive, setIsCameraActive] = useState(false)
+  
+  // Feedback State
+  const [scanFeedback, setScanFeedback] = useState<'success' | 'error' | null>(null)
+  const feedbackTimeout = useRef<NodeJS.Timeout | null>(null)
   
   const scanInputRef = useRef<HTMLInputElement>(null)
   const scannerInstance = useRef<Html5QrcodeScanner | null>(null)
@@ -107,6 +112,43 @@ export default function PhysicalStockAuditPage() {
   const { data: erpRolls, isLoading: erpLoading } = useCollection(erpRollsQuery);
 
   const scannedRolls: ScannedRoll[] = sessionData?.scannedRolls || [];
+
+  /**
+   * AUDIO FEEDBACK SYNTHESIZER
+   */
+  const triggerScanFeedback = (type: 'success' | 'error') => {
+    // 1. Play Tone
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      
+      if (type === 'success') {
+        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch success
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.1);
+      } else {
+        oscillator.frequency.setValueAtTime(220, audioCtx.currentTime); // Low pitch error
+        oscillator.type = 'square';
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        oscillator.start();
+        oscillator.stop(audioCtx.currentTime + 0.2);
+      }
+    } catch (e) {
+      console.warn("Audio feedback failed:", e);
+    }
+
+    // 2. Trigger Visual Flash
+    setScanFeedback(type);
+    if (feedbackTimeout.current) clearTimeout(feedbackTimeout.current);
+    feedbackTimeout.current = setTimeout(() => setScanFeedback(null), 350);
+  };
 
   // 2. Reconciliation Logic
   const reconciliation = useMemo(() => {
@@ -149,6 +191,7 @@ export default function PhysicalStockAuditPage() {
 
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
       toast({ variant: "destructive", title: "Duplicate Scan", description: `Roll ${rollNo} already scanned.` });
+      triggerScanFeedback('error');
       return;
     }
 
@@ -168,7 +211,13 @@ export default function PhysicalStockAuditPage() {
       updatedAt: serverTimestamp()
     }, { merge: true });
 
-    toast({ title: erpMatch ? "Roll Verified" : "Extra Roll Logged", description: `Captured ${rollNo}` });
+    if (erpMatch) {
+      triggerScanFeedback('success');
+      toast({ title: "Roll Verified", description: `Captured ${rollNo}` });
+    } else {
+      triggerScanFeedback('error');
+      toast({ variant: "destructive", title: "Extra Roll Logged", description: `Roll ${rollNo} not found in ERP.` });
+    }
     
     // Auto-focus input for hardware scanners
     if (scanInputRef.current) scanInputRef.current.focus();
@@ -187,7 +236,6 @@ export default function PhysicalStockAuditPage() {
       const scanner = new Html5QrcodeScanner("camera-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
       scanner.render((decodedText) => {
         processRollId(decodedText);
-        // We keep it open for continuous scanning, but flash feedback
       }, (error) => {
         // Scan failed, silence logs
       });
@@ -342,7 +390,12 @@ export default function PhysicalStockAuditPage() {
           
           {/* SCAN TERMINAL */}
           <div className="lg:col-span-4 space-y-6">
-            <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-slate-900 text-white">
+            <Card className={cn(
+              "border-none shadow-2xl rounded-3xl overflow-hidden transition-all duration-300",
+              scanFeedback === 'success' ? "ring-8 ring-emerald-500/50 bg-emerald-950 scale-[1.02]" : 
+              scanFeedback === 'error' ? "ring-8 ring-rose-500/50 bg-rose-950 scale-[1.02]" : "bg-slate-900",
+              "text-white"
+            )}>
               <CardHeader className="bg-primary/10 border-b border-white/5 p-6">
                 <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
                   <ScanLine className="h-4 w-4 text-primary" /> Scan Terminal
@@ -374,7 +427,11 @@ export default function PhysicalStockAuditPage() {
                         <Input 
                           ref={scanInputRef}
                           placeholder="Scan or Type ID..."
-                          className="h-14 bg-white/5 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary pr-12"
+                          className={cn(
+                            "h-14 border-white/10 text-white text-xl font-black tracking-tighter placeholder:text-white/20 rounded-2xl focus-visible:ring-primary focus-visible:border-primary pr-12 transition-colors",
+                            scanFeedback === 'success' ? "bg-emerald-500/20" : 
+                            scanFeedback === 'error' ? "bg-rose-500/20" : "bg-white/5"
+                          )}
                           value={scanInput}
                           onChange={e => setScanInput(e.target.value.toUpperCase())}
                           disabled={sessionData?.status === 'Finalized'}
