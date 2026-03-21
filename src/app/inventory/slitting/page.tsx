@@ -45,7 +45,8 @@ import {
   Settings,
   Activity,
   Target,
-  ShoppingCart
+  ShoppingCart,
+  Building2
 } from "lucide-react"
 import { 
   Dialog, 
@@ -134,7 +135,7 @@ function SlittingHubContent() {
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // Planning Data - Fixed: Filter out completed/slitted jobs
+  // Planning Data
   const planningJobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(
@@ -144,7 +145,6 @@ function SlittingHubContent() {
   }, [firestore]);
   const { data: rawPlanningJobs, isLoading: planningLoading } = useCollection(planningJobsQuery);
 
-  // Client-side filter for Job Status
   const planningJobs = useMemo(() => {
     if (!rawPlanningJobs) return [];
     return rawPlanningJobs.filter(j => {
@@ -180,7 +180,6 @@ function SlittingHubContent() {
     }
   }, [initialRollData, selectedRolls.length]);
 
-  // Handle Search & Add
   const handleSearch = async () => {
     if (!firestore || !searchQuery) return;
     setIsProcessing(true);
@@ -217,7 +216,6 @@ function SlittingHubContent() {
     }
   }
 
-  // INDEPENDENT CALCULATION LOGIC
   const calculateRollStatus = (rollId: string) => {
     const roll = selectedRolls.find(r => r.id === rollId);
     const config = rollConfigs[rollId];
@@ -275,7 +273,6 @@ function SlittingHubContent() {
     return parts;
   };
 
-  // HANDLERS FOR INDEPENDENT CONFIG
   const addRun = (rollId: string) => {
     const roll = selectedRolls.find(r => r.id === rollId);
     if (!roll) return;
@@ -315,7 +312,6 @@ function SlittingHubContent() {
     }));
   }
 
-  // EXECUTION
   const handleExecuteSlitting = async () => {
     if (!firestore || !user || selectedRolls.length === 0) return;
     
@@ -328,7 +324,7 @@ function SlittingHubContent() {
     setIsProcessing(true);
     try {
       const reportChildRolls: any[] = [];
-      const reportParentRollNos: string[] = [];
+      const reportParentRolls: any[] = [];
 
       await runTransaction(firestore, async (transaction) => {
         for (const parent of selectedRolls) {
@@ -342,7 +338,7 @@ function SlittingHubContent() {
             dateOfUsed: new Date().toISOString().split('T')[0],
             updatedAt: serverTimestamp() 
           });
-          reportParentRollNos.push(parent.rollNo);
+          reportParentRolls.push(parent);
 
           let childIdx = 0;
           for (const run of config.runs) {
@@ -366,8 +362,8 @@ function SlittingHubContent() {
                 jobSize: config.jobSize || "",
                 parentRollNo: parent.rollNo,
                 sqm: Number(((finalWidth / 1000) * finalLength).toFixed(2)),
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
                 createdById: user.uid
               };
 
@@ -385,7 +381,7 @@ function SlittingHubContent() {
             const remWidth = calc.mode === 'WIDTH' ? calc.remainder : Number(parent.widthMm);
             const remLength = calc.mode === 'LENGTH' ? calc.remainder : Number(parent.lengthMeters);
 
-            transaction.set(remainderRef, {
+            const remData = {
               ...parent,
               id: remainderId,
               rollNo: remainderId,
@@ -397,11 +393,13 @@ function SlittingHubContent() {
               jobSize: "",
               parentRollNo: parent.rollNo,
               sqm: Number(((remWidth / 1000) * remLength).toFixed(2)),
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
               createdById: user.uid,
               remarks: `Remainder from slitting ${parent.rollNo}`
-            });
+            };
+            transaction.set(remainderRef, remData);
+            reportChildRolls.push(remData);
           }
         }
 
@@ -410,7 +408,7 @@ function SlittingHubContent() {
         transaction.set(jobCardRef, {
           id: jobId,
           job_card_no: jobId,
-          parent_rolls: reportParentRollNos,
+          parent_rolls: reportParentRolls.map(r => r.rollNo),
           child_rolls: reportChildRolls.map(r => r.rollNo),
           status: "PENDING",
           createdAt: new Date().toISOString(),
@@ -422,15 +420,19 @@ function SlittingHubContent() {
         });
       });
 
-      setModal({ 
-        isOpen: true, 
-        type: 'SUCCESS', 
-        title: 'Batch Complete', 
-        description: `Successfully slitted ${selectedRolls.length} unique jumbo units.` 
+      setSlittingReport({ 
+        parents: reportParentRolls, 
+        children: reportChildRolls, 
+        job: selectedPlanningJob ? { name: selectedPlanningJob.values.name, id: selectedPlanningJob.values.sn } : null,
+        date: new Date().toLocaleDateString(),
+        operator: user.displayName || user.email
       });
+      setIsReportModalOpen(true);
+      
       setSelectedRolls([]);
       setRollConfigs({});
       setActiveRollId(null);
+      toast({ title: "Batch Processed Successfully" });
     } catch (e: any) {
       setModal({ isOpen: true, type: 'ERROR', title: 'Execution Failed', description: e.message });
     } finally {
@@ -438,7 +440,6 @@ function SlittingHubContent() {
     }
   }
 
-  // --- AUTO PLANNER LOGIC ---
   const availableOptions = useMemo(() => {
     if (!selectedPlanningJob || !stockData) return [];
     const rawWidth = selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size;
@@ -466,7 +467,6 @@ function SlittingHubContent() {
         const yieldPerRoll = rl * splits;
         const requiredRolls = yieldPerRoll > 0 ? Math.ceil(jobLengthRequired / yieldPerRoll) : 1;
 
-        // Smart Priority Logic
         let priorityLabel = "Alternate";
         if (rw === targetWidth) priorityLabel = "Best Fit";
         else if (rw >= 1000) priorityLabel = "Use Jumbo if required";
@@ -499,7 +499,6 @@ function SlittingHubContent() {
     });
   }, [selectedPlanningJob, stockData]);
 
-  // Insight Calculations
   const selectionInsights = useMemo(() => {
     if (!selectedPlanningJob) return { totalProduced: 0, remaining: 0, required: 0 };
     const required = Number(selectedPlanningJob.values.allocate_mtrs) || 0;
@@ -542,7 +541,7 @@ function SlittingHubContent() {
           jobNo: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
           jobName: selectedPlanningJob.values.name || "",
           jobSize: selectedPlanningJob.values.size || "",
-          runs: [{ id: crypto.randomUUID(), widthMm: finalWidth, lengthMeters: r.lengthMeters, parts: opt.splits }],
+          runs: [{ id: crypto.randomUUID(), widthMm: Number(finalWidth.toFixed(2)), lengthMeters: r.lengthMeters, parts: opt.splits }],
           remainderAction: preference
         };
       });
@@ -569,6 +568,50 @@ function SlittingHubContent() {
     );
   }, [planningJobs, plannerSearch]);
 
+  const handlePrintReport = async () => {
+    const reportContent = document.getElementById('slitting-report-a4');
+    if (!reportContent) return;
+
+    const html2canvas = (await import('html2canvas')).default;
+    setIsProcessing(true);
+
+    try {
+      const canvas = await html2canvas(reportContent, {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed'; iframe.style.right = '0'; iframe.style.bottom = '0';
+      iframe.style.width = '0'; iframe.style.height = '0'; iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
+      if (iframeDoc) {
+        iframeDoc.write(`
+          <html>
+            <head><title>Slitting Traceability Report</title>
+            <style>@page { size: A4 portrait; margin: 0; } body { margin: 0; padding: 0; display: flex; justify-content: center; } img { width: 210mm; }</style></head>
+            <body><img src="${imgData}" /></body>
+          </html>
+        `);
+        iframeDoc.close();
+        setTimeout(() => {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+          document.body.removeChild(iframe);
+          setIsProcessing(false);
+        }, 500);
+      }
+    } catch (err) {
+      toast({ variant: "destructive", title: "Render Error" });
+      setIsProcessing(false);
+    }
+  };
+
   if (!isMounted) return null;
 
   return (
@@ -581,9 +624,6 @@ function SlittingHubContent() {
           <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Decision Support & Multi-Unit technical controller</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => window.print()} disabled={selectedRolls.length === 0} className="font-bold text-[10px] uppercase h-10 px-6 border-2 rounded-xl">
-            <Printer className="mr-2 h-4 w-4" /> Print Slit Sheet
-          </Button>
           <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-bold text-[10px] uppercase h-10 px-6">
             <ArrowLeft className="mr-2 h-3 w-3" /> Technical Registry
           </Button>
@@ -632,10 +672,14 @@ function SlittingHubContent() {
             <div className="flex flex-col justify-center items-center p-6 bg-slate-50 rounded-2xl border-2 border-dashed">
               {selectedPlanningJob ? (
                 <div className="text-center space-y-4 animate-in fade-in zoom-in-95 w-full max-w-sm">
-                  <div className="p-6 bg-white rounded-3xl shadow-sm border space-y-4 mb-4">
+                  <div className="p-6 bg-white rounded-3xl shadow-sm border space-y-4 mb-4 text-left">
                     <div className="space-y-1">
-                      <p className="text-[10px] font-black uppercase text-slate-400">Targeting Substrate</p>
-                      <p className="text-lg font-black text-primary">{selectedPlanningJob.values.material}</p>
+                      <p className="text-[10px] font-black uppercase text-slate-400">Targeting Job</p>
+                      <p className="text-lg font-black text-primary truncate">{selectedPlanningJob.values.name}</p>
+                    </div>
+                    <div className="space-y-1 border-t pt-2">
+                      <p className="text-[10px] font-black uppercase text-slate-400">Substrate</p>
+                      <p className="text-sm font-black">{selectedPlanningJob.values.material}</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="bg-slate-50 p-3 rounded-2xl">
@@ -868,12 +912,15 @@ function SlittingHubContent() {
                     const preference = wastagePreferences[opt.key] || 'STOCK';
                     const targetWidth = parseInt(String(selectedPlanningJob.values.paper_size || selectedPlanningJob.values.size).replace(/[^0-9]/g, '')) || 0;
                     
+                    const adjustedWidth = opt.width / opt.splits;
+                    const needsPrecisionWarning = (adjustedWidth * 10) % 5 !== 0;
+
                     const slittingText = preference === 'STOCK' 
                       ? `${targetWidth} mm x ${opt.splits}${opt.waste > 0 ? ` + ${opt.waste} mm (Stock)` : ''}`
-                      : `${(opt.width / opt.splits).toFixed(1)} mm x ${opt.splits} (Adjusted)`;
+                      : `${adjustedWidth.toFixed(1)} mm x ${opt.splits} (Adjusted)`;
 
                     return (
-                      <TableRow key={opt.key} className="h-20 hover:bg-white transition-colors border-b last:border-none">
+                      <TableRow key={opt.key} className="h-24 hover:bg-white transition-colors border-b last:border-none">
                         <TableCell className="pl-6">
                           <div className="flex flex-col gap-1">
                             <span className="text-xs font-black">{opt.width}mm x {opt.length}m</span>
@@ -885,7 +932,7 @@ function SlittingHubContent() {
                               )}>
                                 {opt.priorityLabel}
                               </Badge>
-                              <span className="text-[8px] font-bold opacity-40 uppercase tracking-tighter">{opt.company}</span>
+                              <span className="text-[8px] font-black text-primary font-mono tracking-tighter">Roll: {opt.exampleId}</span>
                             </div>
                           </div>
                         </TableCell>
@@ -896,21 +943,28 @@ function SlittingHubContent() {
                               <Button 
                                 variant={preference === 'STOCK' ? "default" : "ghost"} 
                                 size="sm" 
-                                className={cn("h-7 px-4 text-[9px] font-black uppercase rounded-lg", preference === 'STOCK' && "bg-white text-slate-900 shadow-sm hover:bg-white")}
+                                className={cn("h-7 px-4 text-[9px] font-black uppercase rounded-lg transition-all", preference === 'STOCK' && "bg-emerald-500 text-white shadow-md hover:bg-emerald-600")}
                                 onClick={() => setWastagePreferences({...wastagePreferences, [opt.key]: 'STOCK'})}
                               >STOCK</Button>
                               <Button 
                                 variant={preference === 'ADJUST' ? "default" : "ghost"} 
                                 size="sm" 
-                                className={cn("h-7 px-4 text-[9px] font-black uppercase rounded-lg", preference === 'ADJUST' && "bg-white text-slate-900 shadow-sm hover:bg-white")}
+                                className={cn("h-7 px-4 text-[9px] font-black uppercase rounded-lg transition-all", preference === 'ADJUST' && "bg-orange-500 text-white shadow-md hover:bg-orange-600")}
                                 onClick={() => setWastagePreferences({...wastagePreferences, [opt.key]: 'ADJUST'})}
                               >ADJUST</Button>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 inline-block">
-                            <p className="text-[10px] font-black text-primary uppercase tracking-tight">{slittingText}</p>
+                          <div className="flex flex-col gap-1.5">
+                            <div className="bg-primary/5 border border-primary/10 rounded-xl p-3 inline-block">
+                              <p className="text-[10px] font-black text-primary uppercase tracking-tight">{slittingText}</p>
+                            </div>
+                            {preference === 'ADJUST' && needsPrecisionWarning && (
+                              <p className="text-[8px] font-bold text-orange-600 uppercase flex items-center gap-1">
+                                <AlertTriangle className="h-2.5 w-2.5" /> Machine precision will apply
+                              </p>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -944,7 +998,6 @@ function SlittingHubContent() {
             </div>
           </div>
 
-          {/* Selection Insight Panel */}
           <div className="p-8 bg-white border-t border-slate-100 shadow-[0_-10px_20px_rgba(0,0,0,0.02)]">
             <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-8">
               <div className="flex-1 w-full space-y-4">
@@ -973,6 +1026,105 @@ function SlittingHubContent() {
         </DialogContent>
       </Dialog>
 
+      {/* --- POST-EXECUTION REPORT DIALOG --- */}
+      <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
+        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
+          <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
+            <div className="flex items-center gap-4">
+              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Slitting Traceability Report</DialogTitle>
+            </div>
+            <div className="flex gap-2">
+              <Button disabled={isProcessing} onClick={handlePrintReport} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest">
+                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                Print Traceability Sheet
+              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setIsReportModalOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
+            </div>
+          </div>
+          
+          <div className="p-10 overflow-y-auto max-h-[80vh] industrial-scroll">
+            <div id="slitting-report-a4" className="bg-white p-12 shadow-sm mx-auto w-[210mm] min-h-[297mm] text-black font-sans">
+              <div className="border-b-4 border-black pb-6 flex justify-between items-end mb-8">
+                <div className="space-y-1">
+                  <h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1>
+                  <p className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Production Log: Technical Slitting</p>
+                </div>
+                <div className="text-right space-y-1">
+                  <Badge className="bg-black text-white px-4 py-1 font-black text-lg">BATCH LOG</Badge>
+                  <p className="text-[10px] font-bold uppercase pt-2">DATE: {slittingReport?.date}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-12 mb-10">
+                <div className="space-y-4">
+                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Job Information</h3>
+                  <div className="grid grid-cols-2 gap-y-2 text-xs font-bold">
+                    <span className="opacity-50 uppercase">Job Ref:</span><span className="font-mono">{slittingReport?.job?.id || "STOCK_RUN"}</span>
+                    <span className="opacity-50 uppercase">Job Name:</span><span>{slittingReport?.job?.name || "UNASSIGNED"}</span>
+                    <span className="opacity-50 uppercase">Operator:</span><span>{slittingReport?.operator}</span>
+                  </div>
+                </div>
+                <div className="flex flex-col items-end">
+                  <div className="border-2 border-black p-1"><QRCodeSVG value={`BATCH-${Date.now()}`} size={80} /></div>
+                  <p className="text-[8px] font-black uppercase mt-1">Audit Batch ID</p>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                <div className="space-y-3">
+                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Source Material (Parent)</h3>
+                  <Table className="border-2 border-black">
+                    <TableHeader className="bg-slate-100">
+                      <TableRow className="border-b-2 border-black"><TableHead className="font-black text-black text-[10px] uppercase text-center">Roll ID</TableHead><TableHead className="font-black text-black text-[10px] uppercase text-center">Type</TableHead><TableHead className="font-black text-black text-[10px] uppercase text-center">Dimension</TableHead></TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {slittingReport?.parents.map((p: any) => (
+                        <TableRow key={p.id} className="border-b border-black last:border-none text-center">
+                          <TableCell className="font-bold font-mono">{p.rollNo}</TableCell>
+                          <TableCell className="font-bold uppercase">{p.paperType}</TableCell>
+                          <TableCell>{p.widthMm}mm x {p.lengthMeters}m</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="space-y-3">
+                  <h3 className="text-xs font-black uppercase border-b-2 border-black pb-1">Slitting Output (Child Units)</h3>
+                  <Table className="border-2 border-black">
+                    <TableHeader className="bg-slate-100">
+                      <TableRow className="border-b-2 border-black"><TableHead className="font-black text-black text-[10px] uppercase text-center">Child Roll ID</TableHead><TableHead className="font-black text-black text-[10px] uppercase text-center">Width</TableHead><TableHead className="font-black text-black text-[10px] uppercase text-center">Length</TableHead><TableHead className="font-black text-black text-[10px] uppercase text-center">Destination</TableHead></TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {slittingReport?.children.map((c: any) => (
+                        <TableRow key={c.id} className="border-b border-black last:border-none text-center">
+                          <TableCell className="font-bold font-mono">{c.rollNo}</TableCell>
+                          <TableCell>{c.widthMm} mm</TableCell>
+                          <TableCell>{c.lengthMeters} mtr</TableCell>
+                          <TableCell><Badge variant="outline" className="font-black text-[9px] uppercase">{c.jobNo ? 'JOB' : 'STOCK'}</Badge></TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+
+              <div className="mt-20 grid grid-cols-3 gap-12">
+                <div className="border-2 border-black p-4 flex flex-col justify-end h-24">
+                  <div className="border-t-2 border-black text-center pt-2"><p className="text-[9px] font-black uppercase">Operator Signature</p></div>
+                </div>
+                <div className="border-2 border-black p-4 flex flex-col justify-end h-24">
+                  <div className="border-t-2 border-black text-center pt-2"><p className="text-[9px] font-black uppercase">QC Inspector</p></div>
+                </div>
+                <div className="border-2 border-black p-4 flex flex-col justify-end h-24">
+                  <div className="border-t-2 border-black text-center pt-2"><p className="text-[9px] font-black uppercase">Store Manager</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <style jsx global>{`
         .industrial-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
         .industrial-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -980,8 +1132,8 @@ function SlittingHubContent() {
         .industrial-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         @media print {
           body * { visibility: hidden !important; }
-          #slit-sheet, #slit-sheet * { visibility: visible !important; }
-          #slit-sheet { position: absolute !important; left: 0; top: 0; width: 100%; display: block !important; }
+          #slitting-report-a4, #slitting-report-a4 * { visibility: visible !important; }
+          #slitting-report-a4 { position: absolute !important; left: 0; top: 0; width: 100%; display: block !important; }
         }
       `}</style>
     </div>
