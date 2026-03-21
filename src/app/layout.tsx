@@ -1,4 +1,3 @@
-
 import type {Metadata} from 'next';
 import { Inter } from "next/font/google";
 import './globals.css';
@@ -7,6 +6,7 @@ import { FirebaseClientProvider } from "@/firebase/client-provider";
 import { AuthInitializer } from "@/components/auth-initializer";
 import { PermissionProvider } from "@/components/auth/permission-context";
 import { AppShell } from "@/components/layout/shell";
+import { PwaInitializer } from "@/components/pwa-initializer";
 import { cn } from "@/lib/utils";
 import { Suspense } from "react";
 
@@ -47,6 +47,9 @@ export default function RootLayout({
       <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")} suppressHydrationWarning>
         <Suspense fallback={null}>
           <FirebaseClientProvider>
+            {/* PWA registration logic */}
+            <PwaInitializer />
+            
             {/* AuthInitializer handles redirection and profile provisioning */}
             <AuthInitializer />
             
