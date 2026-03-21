@@ -52,7 +52,8 @@ import {
   Search,
   RotateCcw as RotateCcwIcon,
   Activity,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FileDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -102,6 +103,7 @@ import { PaperStockFilters } from "@/components/inventory/paper-stock-filters"
 import { ColumnHeaderFilter } from "@/components/inventory/column-header-filter"
 import { useToast } from "@/hooks/use-toast"
 import { TemplateRenderer } from "@/components/printing/template-renderer"
+import * as XLSX from 'xlsx'
 
 const STATUS_OPTIONS = [
   { value: "Main", label: "Main", color: "bg-purple-600", rowBg: "bg-purple-50" },
@@ -219,20 +221,7 @@ export default function PaperStockPage() {
     purchaseRate: 0, receivedDate: "", dateOfUsed: "", jobNo: "", jobSize: "", jobName: "", lotNo: "", companyRollNo: "", remarks: ""
   })
 
-  // Template Queries
-  const labelTemplatesQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Industrial Label'));
-  }, [firestore]);
-
-  const reportTemplatesQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Report'));
-  }, [firestore]);
-
-  const { data: labelTemplates } = useCollection(labelTemplatesQuery);
-  const { data: reportTemplates } = useCollection(reportTemplatesQuery);
-
+  // Data Subscriptions
   const registryQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'paper_stock'), limit(10000));
@@ -251,6 +240,24 @@ export default function PaperStockPage() {
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
   const { data: machines } = useCollection(machinesQuery);
   const { data: users } = useCollection(usersQuery);
+
+  // Template Queries
+  const labelTemplatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Industrial Label'));
+  }, [firestore]);
+
+  const reportTemplatesQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Report'));
+  }, [firestore]);
+
+  const { data: labelTemplates } = useCollection(labelTemplatesQuery);
+  const { data: reportTemplates } = useCollection(reportTemplatesQuery);
+
+  // Suggestions for Add Roll modal
+  const uniqueCompanies = useMemo(() => Array.from(new Set(rolls?.map(r => r.paperCompany).filter(Boolean))).sort(), [rolls]);
+  const uniqueTypes = useMemo(() => Array.from(new Set(rolls?.map(r => r.paperType).filter(Boolean))).sort(), [rolls]);
 
   const parentRolls = useMemo(() => rolls?.filter(r => !r.rollNo.includes('-')) || [], [rolls]);
   
@@ -371,30 +378,6 @@ export default function PaperStockPage() {
     return summary;
   }, [filteredRows]);
 
-  const activeFiltersSummary = useMemo(() => {
-    const list: string[] = [];
-    if (filters.search) list.push(`Search: ${filters.search}`);
-    if (filters.paperCompany?.length) list.push(`Company: ${filters.paperCompany.join(', ')}`);
-    if (filters.paperType?.length) list.push(`Type: ${filters.paperType.join(', ')}`);
-    if (filters.status?.length) list.push(`Status: ${filters.status.join(', ')}`);
-    
-    Object.entries(headerFilters).forEach(([key, values]) => {
-      if (values.length > 0) {
-        const label = COLUMN_KEYS.find(c => c.id === key)?.label || key;
-        list.push(`${label}: ${values.join(', ')}`);
-      }
-    });
-
-    return list.length > 0 ? list.join(' | ') : "None";
-  }, [filters, headerFilters]);
-
-  const reportRows = useMemo(() => {
-    if (selectedIds.size > 0) {
-      return rolls?.filter(r => selectedIds.has(r.id)) || [];
-    }
-    return filteredRows;
-  }, [rolls, filteredRows, selectedIds]);
-
   const hierarchicalRows = useMemo(() => {
     if (filteredRows.length === 0) return [];
     const itemMap = new Map();
@@ -460,16 +443,41 @@ export default function PaperStockPage() {
     
     const rollId = formData.rollNo.trim().replace(/\//g, '-');
     
+    // DUPLICATE PREVENTION
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
-      setModal({ isOpen: true, type: 'ERROR', title: 'Duplicate Roll ID', description: `Roll Number "${rollId}" is already assigned.` });
+      toast({ variant: "destructive", title: "Duplicate Roll ID", description: `Roll Number "${rollId}" already exists.` });
       return;
     }
+
     setIsProcessing(true);
     const finalData = { ...formData, rollNo: rollId, sqm: calculatedSqm, updatedAt: serverTimestamp(), updatedById: user.uid };
     try {
       if (editingRoll) { await setDoc(doc(firestore, 'paper_stock', editingRoll.id), finalData, { merge: true }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Record Updated' }); }
       else { await setDoc(doc(firestore, 'paper_stock', rollId), { ...finalData, id: rollId, createdAt: serverTimestamp(), createdById: user.uid }); setIsDialogOpen(false); setModal({ isOpen: true, type: 'SUCCESS', title: 'Roll Generated' }); }
     } catch (error: any) { setModal({ isOpen: true, type: 'ERROR', title: 'Operation Failed', description: error.message }); } finally { setIsProcessing(false); }
+  };
+
+  const handleExportExcel = () => {
+    setIsProcessing(true);
+    try {
+      const dataToExport = filteredRows.map((r, i) => {
+        const row: any = { "Sl No": i + 1 };
+        COLUMN_KEYS.forEach(col => {
+          row[col.label] = r[col.id] || "-";
+        });
+        return row;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(dataToExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Paper Stock Registry");
+      XLSX.writeFile(wb, `Paper_Stock_Registry_${new Date().toISOString().split('T')[0]}.xlsx`);
+      toast({ title: "Export Successful", description: "Registry data saved to Excel." });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Export Failed", description: "Could not generate Excel file." });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleBulkDelete = () => {
@@ -506,9 +514,6 @@ export default function PaperStockPage() {
     setIsPrintOpen(true);
   };
 
-  /**
-   * HIGH-RESOLUTION TECHNICAL SNAPSHOT PRINT PIPELINE (DIRECT IFRAME)
-   */
   const handleExecutePrint = async (containerId: string, templateType: 'label' | 'report') => {
     const printContent = document.getElementById(containerId);
     if (!printContent) return;
@@ -516,9 +521,6 @@ export default function PaperStockPage() {
     const html2canvas = (await import('html2canvas')).default;
     
     setIsProcessing(true);
-    toast({ title: "Optimizing Print Stream", description: "Applying industrial resolution enhancements..." });
-
-    // Ensure all fonts are ready before technical capture
     await document.fonts.ready;
 
     const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeReportTemplate || { paperWidth: 210, paperHeight: 297 });
@@ -530,7 +532,6 @@ export default function PaperStockPage() {
 
     try {
       for (const el of elements) {
-        // High-res (4x) capture for sharp industrial output
         const canvas = await html2canvas(el as HTMLElement, {
           scale: 4, 
           useCORS: true,
@@ -543,18 +544,15 @@ export default function PaperStockPage() {
         images.push(canvas.toDataURL('image/png', 1.0));
       }
     } catch (err) {
-      toast({ variant: "destructive", title: "Render Error", description: "Technical hardware capture failed." });
+      toast({ variant: "destructive", title: "Render Error" });
       setIsProcessing(false);
       return;
     }
 
-    // Direct Print via Hidden Iframe (Clean UX)
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
+    iframe.style.right = '0'; iframe.style.bottom = '0';
+    iframe.style.width = '0'; iframe.style.height = '0';
     iframe.style.border = '0';
     document.body.appendChild(iframe);
 
@@ -612,19 +610,10 @@ export default function PaperStockPage() {
     const firstChild = rolls?.find(r => r.rollNo === manualChildRolls[0]);
     try {
       await setDoc(doc(firestore, 'jumbo_job_cards', jobId), {
-        id: jobId, 
-        job_card_no: jobId, 
-        parent_roll: manualParentRoll, 
-        parent_rolls: [manualParentRoll],
-        child_rolls: manualChildRolls, 
-        status: "PENDING",
-        createdAt: new Date().toISOString(), 
-        createdById: user.uid, 
-        type: "MANUAL", 
-        machine: manualMachine || "MANUAL", 
-        operator: manualOperator || user.displayName || user.email,
-        target_job_no: firstChild?.jobNo || "",
-        target_job_name: firstChild?.jobName || ""
+        id: jobId, job_card_no: jobId, parent_roll: manualParentRoll, parent_rolls: [manualParentRoll],
+        child_rolls: manualChildRolls, status: "PENDING", createdAt: new Date().toISOString(), createdById: user.uid, 
+        type: "MANUAL", machine: manualMachine || "MANUAL", operator: manualOperator || user.displayName || user.email,
+        target_job_no: firstChild?.jobNo || "", target_job_name: firstChild?.jobName || ""
       });
       setIsManualJobCardOpen(false);
       toast({ title: "Manual Job Card Created" });
@@ -661,27 +650,12 @@ export default function PaperStockPage() {
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
   const activeReportTemplate = reportTemplates?.find(t => t.id === selectedReportTemplateId);
 
-  const prepareRollData = (roll: any) => {
-    if (!roll) return {};
-    return {
-      ...roll,
-      roll_no: roll.rollNo || "",
-      id: roll.id || "",
-      parent_roll_no: roll.rollNo || "",
-      paper_type: roll.paperType || "",
-      width: roll.widthMm || 0,
-      length: roll.lengthMeters || 0,
-      gsm: roll.gsm || 0,
-      weight: roll.weightKg || 0,
-      company: roll.paperCompany || "",
-      date: roll.receivedDate || "",
-      company_name: roll.paperCompany || "",
-      current_date: new Date().toLocaleDateString(),
-      roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
-    };
-  };
-
-  const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
+  const prepareRollData = (roll: any) => ({
+    ...roll, roll_no: roll.rollNo || "", id: roll.id || "", parent_roll_no: roll.rollNo || "", paper_type: roll.paperType || "",
+    width: roll.widthMm || 0, length: roll.lengthMeters || 0, gsm: roll.gsm || 0, weight: roll.weightKg || 0,
+    company: roll.paperCompany || "", date: roll.receivedDate || "", company_name: roll.paperCompany || "",
+    current_date: new Date().toLocaleDateString(), roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
+  });
 
   if (!isMounted) return null;
 
@@ -695,6 +669,15 @@ export default function PaperStockPage() {
           <p className="text-sm font-normal text-muted-foreground">Master inventory of all parent and child paper rolls.</p>
         </div>
         <div className="flex items-center gap-3">
+          <Button 
+            variant="outline" 
+            onClick={handleExportExcel}
+            disabled={isProcessing}
+            className="h-10 px-6 font-black uppercase text-[10px] tracking-widest border-2 rounded-xl"
+          >
+            {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <FileDown className="h-4 w-4 mr-2 text-emerald-500" />}
+            Export To Excel
+          </Button>
           <Button 
             variant="outline" 
             onClick={handleBulkPrint} 
@@ -734,7 +717,6 @@ export default function PaperStockPage() {
         </div>
       </div>
 
-      {/* Top Summary Dashboard */}
       <div className="space-y-3 no-print">
         <div className="flex items-center justify-between px-1">
           <h3 className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-2">
@@ -754,38 +736,20 @@ export default function PaperStockPage() {
             </Badge>
           </div>
         </div>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-h-[320px] overflow-y-auto industrial-scroll p-1 pr-2">
           {metricsSummary.groups.map((g, i) => (
             <Card key={i} className="bg-white shadow-sm border-slate-200 hover:border-primary/30 transition-all group">
               <CardContent className="p-4 space-y-3">
                 <div className="flex justify-between items-start gap-2">
                   <div className="flex-1 min-w-0">
-                    <p className="text-[9px] font-black uppercase text-primary truncate tracking-tighter" title={g.company}>
-                      {g.company}
-                    </p>
-                    <h4 className="text-xs font-black uppercase truncate" title={g.paperType}>
-                      {g.paperType}
-                    </h4>
+                    <p className="text-[9px] font-black uppercase text-primary truncate tracking-tighter" title={g.company}>{g.company}</p>
+                    <h4 className="text-xs font-black uppercase truncate" title={g.paperType}>{g.paperType}</h4>
                   </div>
-                  <Badge className="bg-slate-900 text-white font-black text-[9px] h-5 rounded-md shrink-0">
-                    {g.totalRolls} ROLLS
-                  </Badge>
+                  <Badge className="bg-slate-900 text-white font-black text-[9px] h-5 rounded-md shrink-0">{g.totalRolls} ROLLS</Badge>
                 </div>
-                
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-50">
-                  <div className="space-y-0.5">
-                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Running Length</p>
-                    <p className="text-[11px] font-black tabular-nums">
-                      {Math.round(g.totalLength).toLocaleString()}<span className="text-[8px] ml-0.5 opacity-40">MTR</span>
-                    </p>
-                  </div>
-                  <div className="space-y-0.5 text-right">
-                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Surface Area</p>
-                    <p className="text-[11px] font-black text-emerald-600 tabular-nums">
-                      {Math.round(g.totalSqm).toLocaleString()}<span className="text-[8px] ml-0.5 opacity-40">SQM</span>
-                    </p>
-                  </div>
+                  <div className="space-y-0.5"><p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Running Length</p><p className="text-[11px] font-black tabular-nums">{Math.round(g.totalLength).toLocaleString()}<span className="text-[8px] ml-0.5 opacity-40">MTR</span></p></div>
+                  <div className="space-y-0.5 text-right"><p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Surface Area</p><p className="text-[11px] font-black text-emerald-600 tabular-nums">{Math.round(g.totalSqm).toLocaleString()}<span className="text-[8px] ml-0.5 opacity-40">SQM</span></p></div>
                 </div>
               </CardContent>
             </Card>
@@ -808,12 +772,15 @@ export default function PaperStockPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl"><QrCode className="h-4 w-4 mr-2" /> Live Scanner</Button>
+            {/* HIDDEN SCANNER BUTTON */}
+            <div className="hidden">
+              <Button variant="outline" size="sm" onClick={startScanner} className="h-9 px-4 bg-transparent border-primary/30 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl"><QrCode className="h-4 w-4 mr-2" /> Live Scanner</Button>
+            </div>
             <Button variant="secondary" size="sm" className="h-9 px-6 bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider rounded-xl shadow-lg border-none" onClick={() => handleOpenDialog()}><Plus className="h-4 w-4 mr-2" /> Add Roll</Button>
           </div>
         </div>
 
-        <div className="w-full h-[calc(100vh-260px)] overflow-scroll relative border-t industrial-scroll">
+        <div className="w-full h-[800px] overflow-scroll relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
@@ -894,279 +861,73 @@ export default function PaperStockPage() {
             </Select>
             <span className="text-[12px] font-semibold text-muted-foreground uppercase tracking-wider">
               Showing {filteredRows.length === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1}–{Math.min(currentPage * rowsPerPage, filteredRows.length)} of {filteredRows.length} Rolls
-              <span className="mx-2 opacity-30">|</span>
-              Page {currentPage} of {totalPages}
+              <span className="mx-2 opacity-30">|</span> Page {currentPage} of {totalPages}
             </span>
           </div>
           <div className="flex items-center gap-3"><Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1}><ChevronLeft className="h-4 w-4 mr-2" /> Prev</Button><span className="text-[12px] font-bold bg-white border-2 border-slate-200 h-9 w-12 flex items-center justify-center rounded-xl shadow-inner">{currentPage}</span><Button variant="outline" size="sm" className="h-9 px-6 text-[12px] font-semibold uppercase border-2 rounded-xl" onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage >= totalPages}>Next <ChevronRight className="h-4 w-4 ml-2" /></Button></div>
         </div>
       </Card>
 
-      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
-        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
-            <div className="flex items-center gap-4">
-              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /> Technical Audit Preview</DialogTitle>
-              <Select value={selectedReportTemplateId} onValueChange={setSelectedReportTemplateId}>
-                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
-                  <SelectValue placeholder="Select Template" />
-                </SelectTrigger>
-                <SelectContent className="z-[110]">
-                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
-                  {reportTemplates?.map(t => (
-                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Stream"}
-            </Button>
-          </div>
-          <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
-            <div id="report-container">
-              {selectedReportTemplateId === 'default' ? (
-                <div className="w-full label-print-item">
-                  <div className="border-b-4 border-black pb-6 flex justify-between items-end">
-                    <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Industrial Technical Registry Report</p></div>
-                    <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
-                  </div>
-                  <Table className="mt-10 border-2 border-black">
-                    <TableHeader className="bg-slate-100">
-                      <TableRow className="border-b-2 border-black h-10">
-                        {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                          <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black px-2">
-                            {col.label}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {reportRows.map((r) => (
-                        <TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8">
-                          {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                            <TableCell key={col.id} className={cn("border-r border-black/10 text-[9px] px-2 text-center", col.id === 'rollNo' && "font-bold text-[10px]")}>
-                              {r[col.id] || '-'}
-                            </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center">
-                  <TemplateRenderer 
-                    template={activeReportTemplate} 
-                    data={{
-                      ROLLS: reportRows,
-                      date: new Date().toLocaleDateString()
-                    }} 
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}>
-        <DialogContent className="sm:max-w-[1000px] p-0 overflow-hidden bg-slate-50 border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-6 flex justify-between items-center no-print">
-            <div className="flex items-center gap-4">
-              <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
-              <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
-                <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
-                  <SelectValue placeholder="Select Template" />
-                </SelectTrigger>
-                <SelectContent className="z-[110]">
-                  <SelectItem value="default" className="text-xs font-bold uppercase">Default System Template</SelectItem>
-                  {labelTemplates?.map(t => (
-                    <SelectItem key={t.id} value={t.id} className="text-xs font-bold uppercase">{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button disabled={isProcessing} className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-              {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Execute Print Stream"}
-            </Button>
-          </div>
-          <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
-            <div id="label-batch" className="space-y-10">
-              {printingRolls.map((roll) => (
-                <div key={roll.id} className="flex flex-col items-center">
-                  {selectedLabelTemplateId === 'default' ? (
-                    <div className="bg-white p-8 border-4 border-black relative overflow-hidden label-print-item" style={{ width: '150mm', height: '100mm', fontFamily: 'monospace', color: 'black' }}>
-                      <div className="border-b-4 border-black pb-4 flex justify-between items-center">
-                        <span className="text-3xl font-black tracking-tighter">SHREE LABEL</span>
-                        <span className="text-xl font-bold">REEL ID</span>
-                      </div>
-                      <div className="mt-6 flex justify-between gap-6">
-                        <div className="flex-1 space-y-4">
-                          <div><p className="text-[10px] font-black opacity-50 uppercase">Serial Number</p><p className="text-6xl font-black tracking-tighter leading-none">{roll.rollNo}</p></div>
-                          <div><p className="text-[10px] font-black opacity-50 uppercase">Paper Item</p><p className="text-2xl font-bold truncate">{roll.paperType || "SUBSTRATE"}</p></div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="border-2 border-black p-1"><QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${roll.id}` : roll.id} size={120} /></div>
-                          <p className="text-[8px] font-black uppercase">Scan for Full Specs</p>
-                        </div>
-                      </div>
-                      <div className="mt-8 grid grid-cols-2 gap-8 border-t-4 border-black pt-6">
-                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">W:</span><span className="text-xl font-black">{roll.widthMm} MM</span></div>
-                        <div className="flex justify-between border-b-2 border-black pb-1"><span className="text-lg font-bold">L:</span><span className="text-xl font-black">{roll.lengthMeters} MTR</span></div>
-                      </div>
-                      <div className="mt-auto absolute bottom-6 left-8 right-8 flex justify-between text-[12px] font-black uppercase opacity-60">
-                        <span>Status: {roll.status}</span>
-                        <span>System ID: {roll.id}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <TemplateRenderer 
-                      template={activeLabelTemplate} 
-                      data={prepareRollData(roll)} 
-                    />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
-        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-8 shrink-0">
-            <div className="flex justify-between items-start mb-6">
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <DialogTitle className="text-xs font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
-                    <Package className="h-4 w-4" /> Technical Profile
-                  </DialogTitle>
-                  <p className="text-3xl font-bold tracking-tight">Roll ID: {viewingRoll?.rollNo}</p>
-                </div>
-                <div 
-                  className="bg-white p-2.5 rounded-2xl inline-block shadow-2xl border-4 border-slate-800 cursor-pointer hover:opacity-80 transition-opacity"
-                  onClick={() => {
-                    const url = siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.id}` : (viewingRoll?.id || "");
-                    if (isValidURL(url)) window.open(url, "_blank");
-                  }}
-                  title="Click to open profile link"
-                >
-                  <QRCodeSVG value={siteOrigin ? `${siteOrigin}/roll/${viewingRoll?.id}` : (viewingRoll?.id || "")} size={120} />
-                </div>
-              </div>
-              <Badge className={cn("px-4 py-1.5 rounded-full font-semibold text-[10px] uppercase shadow-lg", STATUS_OPTIONS.find(o => o.value === viewingRoll?.status)?.color || "bg-slate-500")}>
-                {viewingRoll?.status}
-              </Badge>
-            </div>
-          </div>
-          <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 bg-slate-50 industrial-scroll overflow-y-auto flex-1 text-left">
-            <div className="space-y-6 text-left"><h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2"><Info className="h-3 w-3 text-primary" /> Basic Details</h4><ProfileField icon={Hash} label="Roll No" value={viewingRoll?.rollNo} highlight /><ProfileField icon={Building2} label="Paper Company" value={viewingRoll?.paperCompany} /><ProfileField icon={FileText} label="Paper Type" value={viewingRoll?.paperType} /><ProfileField icon={Layers} label="Company Roll No" value={viewingRoll?.companyRollNo} /></div>
-            <div className="space-y-6 text-left"><h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2"><Maximize2 className="h-3 w-3 text-primary" /> Size Details</h4><ProfileField icon={Ruler} label="Width (MM)" value={viewingRoll?.widthMm} /><ProfileField icon={ArrowRightLeft} label="Length (MTR)" value={viewingRoll?.lengthMeters} /><ProfileField icon={Layers} label="SQM" value={viewingRoll?.sqm} highlight /><ProfileField icon={Weight} label="GSM" value={viewingRoll?.gsm} /><ProfileField icon={Scale} label="Weight (KG)" value={viewingRoll?.weightKg} /></div>
-            <div className="space-y-6 text-left"><h4 className="text-sm font-semibold text-slate-700 border-b pb-2 flex items-center gap-2"><CircleDollarSign className="h-3 w-3 text-primary" /> Info & Jobs</h4><ProfileField icon={CircleDollarSign} label="Purchase Rate" value={`₹${viewingRoll?.purchaseRate || 0}`} /><ProfileField icon={Calendar} label="Received Date" value={viewingRoll?.receivedDate} /><ProfileField icon={CalendarDays} label="Job No" value={viewingRoll?.jobNo} highlight /><ProfileField icon={History} label="Lot No" value={viewingRoll?.lotNo} /><ProfileField icon={MessageSquare} label="Remarks" value={viewingRoll?.remarks} /></div>
-          </div>
-          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3 shrink-0">
-            <Button variant="outline" className="flex-1 h-12 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsViewOpen(false)}>Close</Button>
-            <Button className="flex-1 h-12 rounded-xl bg-slate-800 hover:bg-slate-900 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setPrintingRolls([viewingRoll]); setIsPrintOpen(true); }}><Printer className="h-4 w-4 mr-2" /> Print Label</Button>
-            <Button className="flex-1 h-12 rounded-xl bg-primary hover:bg-primary/90 font-semibold uppercase text-[10px] tracking-wider" onClick={() => { setEditingRoll(viewingRoll); setFormData({...viewingRoll}); setIsViewOpen(false); setIsDialogOpen(true); }}><Pencil className="h-4 w-4 mr-2" /> Edit Roll</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl [&>button]:text-white">
+        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl border-none shadow-3xl">
           <form onSubmit={handleSave} className="flex flex-col h-full overflow-hidden">
             <div className="bg-slate-900 text-white p-6 shrink-0">
               <DialogTitle className="text-xl font-semibold uppercase tracking-wider flex items-center gap-3">
                 {editingRoll ? <Pencil className="h-5 w-5 text-primary" /> : <Plus className="h-5 w-5 text-primary" />}
                 {editingRoll ? 'EDIT TECHNICAL MASTER RECORD' : 'Add New Master Roll Entry'}
               </DialogTitle>
-              <DialogDescription className="text-slate-400 font-medium uppercase text-[10px] mt-1 tracking-wider">
-                Enterprise Technical Inventory Registry System
-              </DialogDescription>
+              <DialogDescription className="text-slate-400 font-medium uppercase text-[10px] mt-1 tracking-wider">Enterprise Technical Inventory Registry System</DialogDescription>
             </div>
             <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 flex-1 overflow-y-auto bg-slate-50 industrial-scroll text-left">
-              <div className="space-y-4"><h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} /></div><div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label><Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger><SelectContent className="z-[100] border-none shadow-2xl rounded-xl">{STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}<SelectSeparator /><SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem></SelectContent></Select>{isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}</div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Company</Label><Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Type</Label><Input list="types-list" value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Company Roll No</Label><Input list="mfr-rolls-list" value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Lot / Batch No</Label><Input list="lots-list" value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div>
-              <div className="space-y-4"><h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Technical Specs</h4><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Calculated SQM (system)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-semibold text-primary">{calculatedSqm}</div></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">GSM</Label><Input list="gsms-list" type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Purchase Rate</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div>
-              <div className="space-y-4"><h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Workflow & History</h4><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div><div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" /></div></div>
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} /></div>
+                <div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label><Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger><SelectContent className="z-[100]">{STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}<SelectSeparator /><SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem></SelectContent></Select>{isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}</div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Company</Label>
+                  <Input list="companies-list" value={formData.paperCompany} onChange={e => setFormData({...formData, paperCompany: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" />
+                  <datalist id="companies-list">{uniqueCompanies.map(c => <option key={c} value={c} />)}</datalist>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Paper Type</Label>
+                  <Input list="types-list" value={formData.paperType} onChange={e => setFormData({...formData, paperType: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" />
+                  <datalist id="types-list">{uniqueTypes.map(t => <option key={t} value={t} />)}</datalist>
+                </div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Company Roll No</Label><Input value={formData.companyRollNo} onChange={e => setFormData({...formData, companyRollNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Lot / Batch No</Label><Input value={formData.lotNo} onChange={e => setFormData({...formData, lotNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div>
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Technical Specs</h4>
+                <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Width (MM)</Label><Input type="number" value={formData.widthMm} onChange={e => setFormData({...formData, widthMm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Length (MTR)</Label><Input type="number" value={formData.lengthMeters} onChange={e => setFormData({...formData, lengthMeters: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Calculated SQM (system)</Label><div className="h-11 rounded-xl border-2 border-dashed bg-slate-100 flex items-center px-4 font-semibold text-primary">{calculatedSqm}</div></div>
+                <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">GSM</Label><Input type="number" value={formData.gsm} onChange={e => setFormData({...formData, gsm: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Weight (KG)</Label><Input type="number" value={formData.weightKg} onChange={e => setFormData({...formData, weightKg: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Purchase Rate</Label><Input type="number" value={formData.purchaseRate} onChange={e => setFormData({...formData, purchaseRate: Number(e.target.value)})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
+              </div>
+              <div className="space-y-4">
+                <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Workflow & History</h4>
+                <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Received Date</Label><Input type="date" value={formData.receivedDate} onChange={e => setFormData({...formData, receivedDate: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Date Used</Label><Input type="date" value={formData.dateOfUsed} onChange={e => setFormData({...formData, dateOfUsed: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job ID / Order Ref</Label><Input value={formData.jobNo} onChange={e => setFormData({...formData, jobNo: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-semibold" /></div>
+                <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Name</Label><Input value={formData.jobName} onChange={e => setFormData({...formData, jobName: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div><div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Job Size</Label><Input value={formData.jobSize} onChange={e => setFormData({...formData, jobSize: e.target.value})} className="h-11 rounded-xl border-2 bg-white font-medium" /></div></div>
+                <div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Technical Remarks</Label><Textarea value={formData.remarks} onChange={e => setFormData({...formData, remarks: e.target.value})} className="rounded-xl border-2 bg-white font-medium min-h-[80px]" /></div>
+              </div>
             </div>
             <DialogFooter className="p-6 bg-white border-t shrink-0">
               <Button type="button" variant="outline" className="h-12 px-8 rounded-xl font-semibold uppercase text-[10px] tracking-wider border-2" onClick={() => setIsDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider shadow-xl">
-                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-                {editingRoll ? 'Update Master Record' : 'Initialize Roll Record'}
-              </Button>
+              <Button type="submit" disabled={isProcessing} className="h-12 px-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold uppercase text-[10px] tracking-wider shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}{editingRoll ? 'Update Master Record' : 'Initialize Roll Record'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
-        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden rounded-3xl border-none shadow-3xl">
-          <div className="bg-slate-900 text-white p-6"><DialogTitle className="text-xl font-black uppercase tracking-tight flex items-center gap-3"><IdCard className="h-5 w-5 text-primary" /> Create Manual Job Card</DialogTitle><DialogDescription className="text-slate-400 font-bold uppercase text-[9px] tracking-widest mt-1">Select a parent roll and multiple child units to initialize a job card.</DialogDescription></div>
-          <div className="p-8 space-y-6 bg-slate-50">
-            <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase opacity-50">Select Parent Roll</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <Input placeholder="Search Parent Roll..." className="pl-9 h-11 rounded-xl border-2 bg-white font-bold mb-2" value={parentSearch} onChange={(e) => setParentSearch(e.target.value)} />
-              </div>
-              <Select value={manualParentRoll} onValueChange={(val) => { setManualParentRoll(val); const children = rolls?.filter(r => r.rollNo.startsWith(val + '-') && r.rollNo !== val).map(r => r.rollNo) || []; setManualChildRolls(children); }}>
-                <SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Choose Parent..." /></SelectTrigger>
-                <SelectContent className="z-[100]">{searchedParentRolls.map(r => (<SelectItem key={r.id} value={r.rollNo} className="font-bold">{r.rollNo} - {r.paperType}</SelectItem>))}</SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Select Machine</Label><Select value={manualMachine} onValueChange={setManualMachine}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Select Machine" /></SelectTrigger><SelectContent className="z-[100]">{machines?.map(m => (<SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>))}</SelectContent></Select></div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase opacity-50">Select Operator</Label><Select value={manualOperator} onValueChange={setManualOperator}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-bold"><SelectValue placeholder="Select Operator" /></SelectTrigger><SelectContent className="z-[100]">{operators.map(o => (<SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>))}</SelectContent></Select></div>
-            </div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center"><Label className="text-[10px] font-black uppercase opacity-50">Available Child Rolls</Label><Badge className="bg-primary text-white text-[9px] h-5">{manualChildRolls.length} SELECTED</Badge></div>
-              <div className="bg-white border-2 rounded-2xl p-4 h-[250px] overflow-y-auto industrial-scroll space-y-2">{filteredChildRollsManual.length === 0 ? (<div className="h-full flex flex-col items-center justify-center text-center opacity-30 gap-3"><Package className="h-8 w-8" /><p className="text-[10px] font-bold uppercase">No child units found</p></div>) : filteredChildRollsManual.map(r => (<div key={r.id} className={cn("p-3 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between", manualChildRolls.includes(r.rollNo) ? "border-primary bg-primary/5" : "border-slate-100 hover:border-primary/20")} onClick={() => { const next = manualChildRolls.includes(r.rollNo) ? manualChildRolls.filter(id => id !== r.rollNo) : [...manualChildRolls, r.rollNo]; setManualChildRolls(next); }}><div className="flex flex-col"><span className="text-xs font-black text-primary">{r.rollNo}</span><span className="text-[9px] font-bold text-slate-400 uppercase">{r.widthMm}mm x {r.lengthMeters}m</span></div>{manualChildRolls.includes(r.rollNo) && <CheckCircle2 className="h-4 w-4 text-primary" />}</div>))}</div>
-            </div>
-          </div>
-          <DialogFooter className="p-6 bg-white border-t flex flex-row gap-3"><Button type="button" variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px] tracking-widest border-2" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button><Button onClick={handleCreateManualJobCard} disabled={!manualParentRoll || manualChildRolls.length === 0 || isProcessing} className="flex-[2] h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-black uppercase text-[10px] tracking-widest shadow-xl">{isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}Confirm & Create Job Card</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Dialog open={isScannerOpen} onOpenChange={setIsScannerOpen}><DialogContent className="sm:max-w-[500px]"><DialogHeader><DialogTitle>Scan Paper Roll QR</DialogTitle></DialogHeader><div id="reader" className="w-full"></div></DialogContent></Dialog>
 
-      <style jsx global>{`
-        @media print {
-          body * { visibility: hidden !important; }
-          #print-area-rendered, #print-area-rendered *, #print-area, #print-area *, #label-batch, #label-batch * { visibility: visible !important; }
-          #print-area, #label-batch {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            background: white !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            display: block !important;
-          }
-          .label-print-item {
-            page-break-after: always;
-            margin: 0 !important;
-            box-shadow: none !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-          }
-          .no-print { display: none !important; }
-        }
-      `}</style>
-    </div>
-  );
-}
+      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}><DialogContent className="sm:max-w-[800px]"><DialogHeader><DialogTitle>Roll Profile: {viewingRoll?.rollNo}</DialogTitle></DialogHeader><div className="grid grid-cols-2 gap-6 p-4"><div><Label className="text-[10px] uppercase font-bold text-slate-400">Roll Details</Label><div className="space-y-2 mt-2"><p className="text-sm"><strong>Company:</strong> {viewingRoll?.paperCompany}</p><p className="text-sm"><strong>Type:</strong> {viewingRoll?.paperType}</p><p className="text-sm"><strong>Status:</strong> {viewingRoll?.status}</p></div></div><div><Label className="text-[10px] uppercase font-bold text-slate-400">Dimensions</Label><div className="space-y-2 mt-2"><p className="text-sm"><strong>Width:</strong> {viewingRoll?.widthMm} MM</p><p className="text-sm"><strong>Length:</strong> {viewingRoll?.lengthMeters} MTR</p><p className="text-sm"><strong>SQM:</strong> {viewingRoll?.sqm}</p></div></div></div></DialogContent></Dialog>
 
-function ProfileField({ icon: Icon, label, value, highlight = false }: { icon: any, label: string, value: any, highlight?: boolean }) {
-  return (
-    <div className="space-y-1.5 transition-all group text-left">
-      <Label className="text-[10px] uppercase font-semibold text-slate-400 flex items-center gap-1.5 transition-colors group-hover:text-primary block text-left">
-        <Icon className="h-3 w-3" /> {label}
-      </Label>
-      <div className={cn("text-sm font-semibold tracking-tight rounded-xl p-3 bg-white border border-slate-200 shadow-sm text-left", highlight ? "text-primary text-base border-primary/20 bg-primary/5" : "text-slate-800")}>
-        {value || "—"}
-      </div>
+      <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}><DialogContent className="sm:max-w-[1000px]"><DialogHeader><DialogTitle>Technical Audit Preview</DialogTitle></DialogHeader><div className="p-4"><Button onClick={() => handleExecutePrint('report-container', 'report')}>Execute Print Stream</Button><div id="report-container" className="mt-4 p-4 border bg-white text-black"><h1 className="text-2xl font-bold">Paper Stock Audit</h1><Table className="mt-4"><TableHeader><TableRow>{COLUMN_KEYS.map(col => <TableHead key={col.id}>{col.label}</TableHead>)}</TableRow></TableHeader><TableBody>{reportRows.map((r, i) => (<TableRow key={i}>{COLUMN_KEYS.map(col => <TableCell key={col.id}>{r[col.id] || '-'}</TableCell>)}</TableRow>))}</TableBody></Table></div></div></DialogContent></Dialog>
+
+      <Dialog open={isPrintOpen} onOpenChange={setIsPrintOpen}><DialogContent className="sm:max-w-[800px]"><DialogHeader><DialogTitle>Thermal Label Queue</DialogTitle></DialogHeader><div className="p-4"><Button onClick={() => handleExecutePrint('label-batch', 'label')}>Execute Print Stream</Button><div id="label-batch" className="mt-4 space-y-4">{printingRolls.map((roll, i) => (<div key={i} className="label-print-item p-4 border bg-white text-black"><div className="flex justify-between"><div><h2 className="text-xl font-bold">SHREE LABEL</h2><p className="text-4xl font-black">{roll.rollNo}</p></div><QRCodeSVG value={roll.rollNo} size={100} /></div><div className="grid grid-cols-2 mt-4"><p>W: {roll.widthMm} MM</p><p>L: {roll.lengthMeters} MTR</p></div></div>))}</div></div></DialogContent></Dialog>
+
+      <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}><DialogContent className="sm:max-w-[600px]"><DialogHeader><DialogTitle>Create Manual Job Card</DialogTitle></DialogHeader><div className="space-y-4"><div className="space-y-2"><Label>Parent Roll</Label><p className="font-bold">{manualParentRoll}</p></div><div className="space-y-2"><Label>Child Units</Label><div className="max-h-[200px] overflow-auto p-2 border rounded">{manualChildRolls.map(c => (<div key={c} className="text-xs py-1 border-b">{c}</div>))}</div></div><Button className="w-full" onClick={handleCreateManualJobCard}>Confirm Job Card</Button></div></DialogContent></Dialog>
     </div>
   );
 }
