@@ -255,7 +255,6 @@ export default function PaperStockPage() {
   const { data: labelTemplates } = useCollection(labelTemplatesQuery);
   const { data: reportTemplates } = useCollection(reportTemplatesQuery);
 
-  // Suggestions for Add Roll modal (PAPER STOCK PAGE SPECIFIC)
   const uniqueCompanies = useMemo(() => Array.from(new Set(rolls?.map(r => r.paperCompany).filter(Boolean))).sort(), [rolls]);
   const uniqueTypes = useMemo(() => Array.from(new Set(rolls?.map(r => r.paperType).filter(Boolean))).sort(), [rolls]);
 
@@ -443,7 +442,6 @@ export default function PaperStockPage() {
     
     const rollId = formData.rollNo.trim().replace(/\//g, '-');
     
-    // DUPLICATE PREVENTION (PAPER STOCK PAGE SPECIFIC)
     if (!editingRoll && rolls?.some(r => r.rollNo === rollId)) {
       toast({ variant: "destructive", title: "Duplicate Roll ID", description: `Roll Number "${rollId}" already exists.` });
       return;
@@ -1027,7 +1025,7 @@ export default function PaperStockPage() {
             </div>
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
                 Execute Spooler
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
@@ -1060,6 +1058,56 @@ export default function PaperStockPage() {
               </div>
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isManualJobCardOpen} onOpenChange={setIsManualJobCardOpen}>
+        <DialogContent className="sm:max-w-[500px] rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 uppercase font-black">
+              <IdCard className="h-5 w-5 text-primary" /> Manual Job Card
+            </DialogTitle>
+            <DialogDescription className="font-bold uppercase text-[10px]">Technical override for slitting lineage</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6 py-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] uppercase font-black opacity-50">Parent Source ID</Label>
+              <Input value={manualParentRoll} disabled className="h-11 rounded-xl bg-slate-50 font-bold border-none" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] uppercase font-black opacity-50">Units Assigned ({manualChildRolls.length})</Label>
+              <div className="p-4 bg-slate-50 rounded-2xl text-[10px] font-black uppercase max-h-[120px] overflow-y-auto industrial-scroll border-2 border-dashed">
+                {manualChildRolls.join(', ') || "No slitted children found."}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-black opacity-50">Slitting Machine</Label>
+                <Select value={manualMachine} onValueChange={setManualMachine}>
+                  <SelectTrigger className="h-11 rounded-xl border-2"><SelectValue placeholder="Machine" /></SelectTrigger>
+                  <SelectContent className="z-[110]">
+                    {machines?.map(m => <SelectItem key={m.id} value={m.machine_name}>{m.machine_name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase font-black opacity-50">Technician</Label>
+                <Select value={manualOperator} onValueChange={setManualOperator}>
+                  <SelectTrigger className="h-11 rounded-xl border-2"><SelectValue placeholder="Operator" /></SelectTrigger>
+                  <SelectContent className="z-[110]">
+                    {operators.map(o => <SelectItem key={o.id} value={`${o.firstName} ${o.lastName}`}>{o.firstName} {o.lastName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="h-12 px-6 rounded-xl font-black uppercase text-[10px]" onClick={() => setIsManualJobCardOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateManualJobCard} disabled={isProcessing} className="h-12 px-10 rounded-xl bg-primary font-black uppercase text-[10px] tracking-widest shadow-xl">
+              {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Commit Job Card
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
