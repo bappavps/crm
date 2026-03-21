@@ -85,6 +85,7 @@ const masterGroup = {
     { name: 'Print Studio', icon: Printer, href: '/admin/print-studio', permission: 'printStudio' as PermissionKey },
     { name: 'Job Approvals', icon: ShieldAlert, href: '/admin/approval', permission: 'admin' as PermissionKey },
     { name: 'Pricing Logic', icon: Calculator, href: '/master-data/pricing-settings', permission: 'admin' as PermissionKey },
+    { name: 'Settings', icon: Settings, href: '/admin/settings', permission: 'admin' as PermissionKey },
   ]
 }
 

@@ -14,7 +14,7 @@ export type PermissionKey =
   | 'jobCards' | 'bom' | 'workOrders' | 'liveFloor'
   | 'qualityControl' | 'dispatch' | 'billing' | 'reports' | 'admin'
   | 'client_add' | 'client_edit' | 'client_delete' | 'client_credit_edit'
-  | 'rawMaterials' | 'bomMaster' | 'quotationTemplates' | 'printStudio';
+  | 'rawMaterials' | 'bomMaster' | 'quotationTemplates' | 'printStudio' | 'settings';
 
 export interface PermissionsMap {
   [key: string]: boolean;

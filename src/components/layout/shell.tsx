@@ -59,6 +59,7 @@ const routePermissionMap: Record<string, PermissionKey> = {
   "/master-data/pricing-settings": "admin",
   "/master-data/roll-settings": "admin",
   "/admin/print-studio": "printStudio",
+  "/admin/settings": "admin",
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
