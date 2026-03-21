@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect } from "react"
@@ -19,6 +20,12 @@ export default function LoginPage() {
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [isGuestLoading, setIsGuestLoading] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration mismatch by waiting for mount
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Fetch dynamic branding for the login page
   const companyDocRef = useMemoFirebase(() => {
@@ -27,8 +34,9 @@ export default function LoginPage() {
   }, [firestore]);
   const { data: companySettings } = useDoc(companyDocRef);
   
-  const companyName = companySettings?.name || "SHREE LABEL CREATION";
-  const companyLogo = companySettings?.logo;
+  // Use server-safe defaults for the first render to match the server output
+  const companyName = (mounted && companySettings?.name) ? companySettings.name : "SHREE LABEL CREATION";
+  const companyLogo = mounted ? companySettings?.logo : undefined;
 
   // Listen for login errors
   useEffect(() => {
@@ -47,10 +55,10 @@ export default function LoginPage() {
 
   // Redirect if already logged in
   useEffect(() => {
-    if (!isUserLoading && user) {
+    if (mounted && !isUserLoading && user) {
       router.push("/")
     }
-  }, [user, isUserLoading, router])
+  }, [user, isUserLoading, router, mounted])
 
   const handleLogin = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -61,7 +69,6 @@ export default function LoginPage() {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
 
-    // initiateEmailSignIn is non-blocking. Error handled via listener above.
     initiateEmailSignIn(auth, email, password)
   }
 
@@ -71,7 +78,8 @@ export default function LoginPage() {
     initiateAnonymousSignIn(auth)
   }
 
-  if (isUserLoading) {
+  // Defer showing the UI until mounted or while auth is loading to prevent hydration mismatch
+  if (!mounted || isUserLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -81,7 +89,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
-      {/* NEW PROFESSIONAL BRANDING HEADER */}
       <div className="mb-10 flex flex-col items-center gap-6 animate-in fade-in slide-in-from-top-4 duration-1000">
         <div className="w-20 h-20 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl overflow-hidden border-2 border-slate-100 p-3">
           {companyLogo ? (
