@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect } from "react"
@@ -90,7 +89,7 @@ export default function LoginPage() {
 
   return (
     <div 
-      className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden"
+      className="min-h-screen flex flex-col relative overflow-y-auto"
       style={{
         backgroundImage: `url(${loginBg || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=80&w=1920'})`,
         backgroundSize: 'cover',
@@ -99,9 +98,9 @@ export default function LoginPage() {
       }}
     >
       {/* Background Overlay for readability */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-0" />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-0 fixed" />
 
-      <div className="relative z-10 w-full flex flex-col items-center justify-center py-10">
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 py-12">
         <div className="mb-10 flex flex-col items-center gap-6 animate-in fade-in slide-in-from-top-4 duration-1000">
           <div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl overflow-hidden border-2 border-slate-100 p-3">
             {companyLogo ? (
@@ -176,10 +175,13 @@ export default function LoginPage() {
             </p>
           </CardFooter>
         </Card>
-        
-        <div className="mt-8 text-center">
-          <p className="text-[10px] font-bold text-white uppercase tracking-[0.2em] opacity-80 drop-shadow-md">&copy; 2026 {companyName} • Master System v3.5</p>
-        </div>
+      </div>
+
+      {/* Global Footer Inclusion for Login Page */}
+      <div className="relative z-10 w-full py-6 px-6 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-auto text-center">
+        <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-[0.2em] opacity-60">
+          © Developed by Mriganka Bhusan Debnath | 2026
+        </p>
       </div>
     </div>
   )
