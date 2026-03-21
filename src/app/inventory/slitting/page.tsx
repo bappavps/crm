@@ -114,7 +114,10 @@ function SlittingHubContent() {
   const [isMounted, setIsMounted] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [searchQuery, setSearchQuery] = useState(initialRollNo || "")
-  const [selectedParent, setSelectedParent] = useState<any>(null)
+  
+  // SUPPORT MULTI-ROLL SELECTION
+  const [selectedRolls, setSelectedRolls] = useState<any[]>([])
+  
   const [slitRuns, setSlitRuns] = useState<SlitRun[]>([
     { id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, lengthMeters: 0, parts: 1 }
   ])
@@ -157,7 +160,7 @@ function SlittingHubContent() {
 
   useEffect(() => {
     if (initialRollData && initialRollData.length > 0) {
-      setSelectedParent(initialRollData[0]);
+      setSelectedRolls([initialRollData[0]]);
       setSlitRuns(prev => prev.map(r => ({ 
         ...r, 
         lengthMeters: initialRollData[0].lengthMeters, 
@@ -177,13 +180,11 @@ function SlittingHubContent() {
 
     if (targetWidth <= 0) return [];
 
-    // Filter by material (normalized comparison)
     const matchingStock = stockData.filter(roll => 
       normalizeMaterial(roll.paperType) === jobMaterial &&
       (Number(roll.widthMm) || 0) >= targetWidth
     );
 
-    // Group rolls by dimensions and company
     const groups: Record<string, any> = {};
     matchingStock.forEach(roll => {
       const key = `${roll.widthMm}-${roll.lengthMeters}-${roll.paperCompany}`;
@@ -216,18 +217,12 @@ function SlittingHubContent() {
     });
 
     return Object.values(groups).sort((a: any, b: any) => {
-      // Priority Logic:
-      // 1. Exact width rolls first
       if (a.width === targetWidth && b.width !== targetWidth) return -1;
       if (b.width === targetWidth && a.width !== targetWidth) return 1;
-      
-      // 2. Child rolls (< 1000) over Jumbos (>= 1000)
       const isAChild = a.width < 1000;
       const isBChild = b.width < 1000;
       if (isAChild && !isBChild) return -1;
       if (!isAChild && isBChild) return 1;
-
-      // 3. Within tiers, prioritize higher efficiency
       return b.efficiency - a.efficiency;
     });
   }, [selectedPlanningJob, stockData]);
@@ -280,7 +275,6 @@ function SlittingHubContent() {
   const handleConfirmSelection = () => {
     const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
     if (selectedEntries.length === 0) return;
-
     setIsOptionsModalOpen(false);
     setIsSummaryModalOpen(true);
   };
@@ -289,13 +283,14 @@ function SlittingHubContent() {
     const selectedEntries = Object.entries(selectionMap).filter(([_, qty]) => qty > 0);
     if (selectedEntries.length === 0) return;
 
-    const firstOptKey = selectedEntries[0][0];
-    const firstOpt = availableOptions.find((o: any) => o.key === firstOptKey) as any;
-    const parentRoll = firstOpt.rolls[0];
+    const allSelected: any[] = [];
+    selectedEntries.forEach(([key, qty]) => {
+      const opt = availableOptions.find((o: any) => o.key === key) as any;
+      allSelected.push(...opt.rolls.slice(0, qty));
+    });
 
-    setSelectedParent(parentRoll);
+    setSelectedRolls(allSelected);
     
-    // Auto-fill runs into manual grid
     const runs: SlitRun[] = selectedEntries.map(([key, qty]) => {
       const opt = availableOptions.find((o: any) => o.key === key) as any;
       return {
@@ -311,13 +306,9 @@ function SlittingHubContent() {
 
     setSlitRuns(runs);
     setIsSummaryModalOpen(false);
-    toast({ title: "Terminal Initialized", description: `Pre-filled workspace with ${stats?.totalRolls} source rolls.` });
+    toast({ title: "Terminal Initialized", description: `Pre-filled workspace with ${allSelected.length} source rolls.` });
   };
 
-  /**
-   * AUTO EXECUTION ENGINE (M9)
-   * Executes slitting for all selected rolls without opening terminal.
-   */
   const handleAutoExecute = async () => {
     if (!firestore || !user || !selectedPlanningJob || !stats) return;
     setIsProcessing(true);
@@ -351,7 +342,6 @@ function SlittingHubContent() {
 
             for (let i = 0; i < splits; i++) {
               const suffix = getChildSuffix(roll.rollNo, childIdx);
-              // SANITIZE ID: Replace slashes with hyphens
               const childId = sanitizeDocId(`${roll.rollNo}-${suffix}`);
               const childRef = doc(firestore, 'paper_stock', childId);
               
@@ -379,7 +369,6 @@ function SlittingHubContent() {
 
             if (opt.waste > 0) {
               const suffix = getChildSuffix(roll.rollNo, childIdx);
-              // SANITIZE ID: Replace slashes with hyphens
               const remainderId = sanitizeDocId(`${roll.rollNo}-${suffix}`);
               const remainderRef = doc(firestore, 'paper_stock', remainderId);
               
@@ -404,7 +393,6 @@ function SlittingHubContent() {
           }
         }
 
-        // Generate Job Card Automatically
         const jobId = `JJC-AUTO-${Date.now().toString().slice(-6)}`;
         const jobCardRef = doc(firestore, 'jumbo_job_cards', jobId);
         
@@ -412,7 +400,7 @@ function SlittingHubContent() {
           id: jobId,
           job_card_no: jobId,
           parent_roll: reportSourceRolls[0]?.rollNo || "MULTI",
-          parent_rolls: reportSourceRolls.map(r => r.rollNo), // Store full list
+          parent_rolls: reportSourceRolls.map(r => r.rollNo),
           child_rolls: reportChildRolls.map(r => r.rollNo),
           status: "PENDING",
           createdAt: new Date().toISOString(),
@@ -422,7 +410,7 @@ function SlittingHubContent() {
           machine: "AUTO",
           operator: user.displayName || user.email,
           target_job_no: String(selectedPlanningJob.values.sn || selectedPlanningJob.id),
-          target_job_name: selectedPlanningJob.values.name || "" // Store job name for card
+          target_job_name: selectedPlanningJob.values.name || ""
         });
       });
 
@@ -457,23 +445,25 @@ function SlittingHubContent() {
       const snap = await getDocs(q);
       if (snap.empty) {
         toast({ variant: "destructive", title: "Roll Not Found", description: `ID ${searchQuery} does not exist.` });
-        setSelectedParent(null);
       } else {
         const data = { ...snap.docs[0].data(), id: snap.docs[0].id };
         if (!["Main", "Stock", "Slitting", "Available"].includes(data.status)) {
           toast({ variant: "destructive", title: "Invalid Status", description: `Roll status is ${data.status}.` });
-          setSelectedParent(null);
         } else {
-          setSelectedParent(data);
-          setSlitRuns([{ 
-            id: crypto.randomUUID(), 
-            jobNo: "", 
-            jobName: "", 
-            jobSize: "", 
-            widthMm: data.widthMm, 
-            lengthMeters: data.lengthMeters, 
-            parts: 1 
-          }]);
+          // APPEND TO LIST
+          setSelectedRolls(prev => [...prev, data]);
+          setSearchQuery(""); // Clear for next input
+          if (slitRuns[0].widthMm === 0) {
+            setSlitRuns([{ 
+              id: crypto.randomUUID(), 
+              jobNo: "", 
+              jobName: "", 
+              jobSize: "", 
+              widthMm: data.widthMm, 
+              lengthMeters: data.lengthMeters, 
+              parts: 1 
+            }]);
+          }
         }
       }
     } catch (e) {
@@ -484,13 +474,14 @@ function SlittingHubContent() {
   }
 
   const addRun = () => {
+    const baseline = selectedRolls[0];
     setSlitRuns([...slitRuns, { 
       id: crypto.randomUUID(), 
       jobNo: "", 
       jobName: "", 
       jobSize: "", 
-      widthMm: selectedParent?.widthMm || 0, 
-      lengthMeters: selectedParent?.lengthMeters || 0, 
+      widthMm: baseline?.widthMm || 0, 
+      lengthMeters: baseline?.lengthMeters || 0, 
       parts: 1 
     }]);
   }
@@ -504,37 +495,43 @@ function SlittingHubContent() {
   }
 
   const calculation = useMemo(() => {
-    if (!selectedParent) return { usedWidth: 0, remainder: 0, isValid: true, mode: 'WIDTH' };
+    if (selectedRolls.length === 0) return { usedWidth: 0, remainder: 0, isValid: true, mode: 'WIDTH' };
     
-    const hasLengthSplit = slitRuns.some(r => Number(r.lengthMeters) > 0 && Number(r.lengthMeters) < Number(selectedParent.lengthMeters));
+    // Check against the first roll as baseline for sizing
+    const baseline = selectedRolls[0];
+    const hasLengthSplit = slitRuns.some(r => Number(r.lengthMeters) > 0 && Number(r.lengthMeters) < Number(baseline.lengthMeters));
     const mode = hasLengthSplit ? 'LENGTH' : 'WIDTH';
 
     if (mode === 'WIDTH') {
       const usedWidth = slitRuns.reduce((acc, r) => acc + (Number(r.widthMm) * Number(r.parts)), 0);
-      const remainder = Number(selectedParent.widthMm) - usedWidth;
-      return { usedWidth, remainder, isValid: remainder >= 0, mode: 'WIDTH' };
+      const remainder = Number(baseline.widthMm) - usedWidth;
+      // Also validate that this pattern fits ALL selected rolls
+      const allValid = selectedRolls.every(r => (Number(r.widthMm) - usedWidth) >= 0);
+      return { usedWidth, remainder, isValid: allValid, mode: 'WIDTH' };
     } else {
       const usedLength = slitRuns.reduce((acc, r) => acc + (Number(r.lengthMeters) * Number(r.parts)), 0);
-      const remainder = Number(selectedParent.lengthMeters) - usedLength;
-      return { usedLength, remainder, isValid: remainder >= 0, mode: 'LENGTH' };
+      const remainder = Number(baseline.lengthMeters) - usedLength;
+      const allValid = selectedRolls.every(r => (Number(r.lengthMeters) - usedLength) >= 0);
+      return { usedLength, remainder, isValid: allValid, mode: 'LENGTH' };
     }
-  }, [selectedParent, slitRuns]);
+  }, [selectedRolls, slitRuns]);
 
   const previewParts = useMemo(() => {
-    if (!selectedParent) return [];
+    if (selectedRolls.length === 0) return [];
+    const baseline = selectedRolls[0];
     const parts: any[] = [];
     let childIdx = 0;
 
     slitRuns.forEach((run) => {
       const pCount = Number(run.parts) || 0;
       for (let i = 0; i < pCount; i++) {
-        const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
+        const suffix = getChildSuffix(baseline.rollNo, childIdx);
         
         parts.push({
           label: suffix,
-          rollId: `${selectedParent.rollNo}-${suffix}`,
-          width: calculation.mode === 'WIDTH' ? (Number(run.widthMm) || selectedParent.widthMm) : selectedParent.widthMm,
-          length: calculation.mode === 'LENGTH' ? (Number(run.lengthMeters) || selectedParent.lengthMeters) : selectedParent.lengthMeters,
+          rollId: `${baseline.rollNo}-${suffix}`,
+          width: calculation.mode === 'WIDTH' ? (Number(run.widthMm) || baseline.widthMm) : baseline.widthMm,
+          length: calculation.mode === 'LENGTH' ? (Number(run.lengthMeters) || baseline.lengthMeters) : baseline.lengthMeters,
           isJob: !!run.jobNo,
           jobNo: run.jobNo
         });
@@ -543,104 +540,106 @@ function SlittingHubContent() {
     });
 
     if (calculation.remainder > 0) {
-      const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
+      const suffix = getChildSuffix(baseline.rollNo, childIdx);
       parts.push({
         label: suffix,
-        rollId: `${selectedParent.rollNo}-${suffix}`,
-        width: calculation.mode === 'WIDTH' ? calculation.remainder : selectedParent.widthMm,
-        length: calculation.mode === 'LENGTH' ? calculation.remainder : selectedParent.lengthMeters,
+        rollId: `${baseline.rollNo}-${suffix}`,
+        width: calculation.mode === 'WIDTH' ? calculation.remainder : baseline.widthMm,
+        length: calculation.mode === 'LENGTH' ? calculation.remainder : baseline.lengthMeters,
         isRemainder: true
       });
     }
 
     return parts;
-  }, [selectedParent, slitRuns, calculation]);
+  }, [selectedRolls, slitRuns, calculation]);
 
   const handleExecuteSlitting = async () => {
-    if (!firestore || !user || !selectedParent || !calculation.isValid) return;
+    if (!firestore || !user || selectedRolls.length === 0 || !calculation.isValid) return;
     setIsProcessing(true);
 
     try {
       const reportChildRolls: any[] = [];
+      const reportParentRollNos: string[] = [];
+
       await runTransaction(firestore, async (transaction) => {
-        const parentRef = doc(firestore, 'paper_stock', selectedParent.id);
-        transaction.update(parentRef, { 
-          status: "Consumed", 
-          dateOfUsed: new Date().toISOString().split('T')[0],
-          updatedAt: serverTimestamp() 
-        });
+        for (const parent of selectedRolls) {
+          const parentRef = doc(firestore, 'paper_stock', parent.id);
+          transaction.update(parentRef, { 
+            status: "Consumed", 
+            dateOfUsed: new Date().toISOString().split('T')[0],
+            updatedAt: serverTimestamp() 
+          });
+          reportParentRollNos.push(parent.rollNo);
 
-        let childIdx = 0;
-        for (const run of slitRuns) {
-          for (let i = 0; i < run.parts; i++) {
-            const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
-            // SANITIZE ID: Replace slashes with hyphens
-            const childId = sanitizeDocId(`${selectedParent.rollNo}-${suffix}`);
-            const childRef = doc(firestore, 'paper_stock', childId);
+          let childIdx = 0;
+          for (const run of slitRuns) {
+            for (let i = 0; i < run.parts; i++) {
+              const suffix = getChildSuffix(parent.rollNo, childIdx);
+              const childId = sanitizeDocId(`${parent.rollNo}-${suffix}`);
+              const childRef = doc(firestore, 'paper_stock', childId);
+              
+              const childStatus = run.jobNo ? "Job Assign" : "Slitting";
+              const finalWidth = calculation.mode === 'WIDTH' ? Number(run.widthMm) : Number(parent.widthMm);
+              const finalLength = calculation.mode === 'LENGTH' ? Number(run.lengthMeters) : Number(parent.lengthMeters);
+
+              const childData = {
+                ...parent,
+                id: childId,
+                rollNo: childId,
+                widthMm: finalWidth,
+                lengthMeters: finalLength,
+                status: childStatus,
+                jobNo: run.jobNo || "",
+                jobName: run.jobName || "",
+                jobSize: run.jobSize || "",
+                parentRollNo: parent.rollNo,
+                sqm: Number(((finalWidth / 1000) * finalLength).toFixed(2)),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdById: user.uid
+              };
+
+              transaction.set(childRef, childData);
+              reportChildRolls.push(childData);
+              childIdx++;
+            }
+          }
+
+          if (calculation.remainder > 0) {
+            const suffix = getChildSuffix(parent.rollNo, childIdx);
+            const remainderId = sanitizeDocId(`${parent.rollNo}-${suffix}`);
+            const remainderRef = doc(firestore, 'paper_stock', remainderId);
             
-            const childStatus = run.jobNo ? "Job Assign" : "Slitting";
-            const finalWidth = calculation.mode === 'WIDTH' ? Number(run.widthMm) : Number(selectedParent.widthMm);
-            const finalLength = calculation.mode === 'LENGTH' ? Number(run.lengthMeters) : Number(selectedParent.lengthMeters);
+            const remWidth = calculation.mode === 'WIDTH' ? calculation.remainder : Number(parent.widthMm);
+            const remLength = calculation.mode === 'LENGTH' ? calculation.remainder : Number(parent.lengthMeters);
 
-            const childData = {
-              ...selectedParent,
-              id: childId,
-              rollNo: childId,
-              widthMm: finalWidth,
-              lengthMeters: finalLength,
-              status: childStatus,
-              jobNo: run.jobNo || "",
-              jobName: run.jobName || "",
-              jobSize: run.jobSize || "",
-              parentRollNo: selectedParent.rollNo,
-              sqm: Number(((finalWidth / 1000) * finalLength).toFixed(2)),
+            transaction.set(remainderRef, {
+              ...parent,
+              id: remainderId,
+              rollNo: remainderId,
+              widthMm: remWidth,
+              lengthMeters: remLength,
+              status: "Stock", 
+              jobNo: "",
+              jobName: "",
+              jobSize: "",
+              parentRollNo: parent.rollNo,
+              sqm: Number(((remWidth / 1000) * remLength).toFixed(2)),
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-              createdById: user.uid
-            };
-
-            transaction.set(childRef, childData);
-            reportChildRolls.push(childData);
-            childIdx++;
+              createdById: user.uid,
+              remarks: `Remainder from slitting ${parent.rollNo}`
+            });
           }
         }
 
-        if (calculation.remainder > 0) {
-          const suffix = getChildSuffix(selectedParent.rollNo, childIdx);
-          // SANITIZE ID: Replace slashes with hyphens
-          const remainderId = sanitizeDocId(`${selectedParent.rollNo}-${suffix}`);
-          const remainderRef = doc(firestore, 'paper_stock', remainderId);
-          
-          const remWidth = calculation.mode === 'WIDTH' ? calculation.remainder : Number(selectedParent.widthMm);
-          const remLength = calculation.mode === 'LENGTH' ? calculation.remainder : Number(selectedParent.lengthMeters);
-
-          transaction.set(remainderRef, {
-            ...selectedParent,
-            id: remainderId,
-            rollNo: remainderId,
-            widthMm: remWidth,
-            lengthMeters: remLength,
-            status: "Stock", 
-            jobNo: "",
-            jobName: "",
-            jobSize: "",
-            parentRollNo: selectedParent.rollNo,
-            sqm: Number(((remWidth / 1000) * remLength).toFixed(2)),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            createdById: user.uid,
-            remarks: `Remainder from slitting ${selectedParent.rollNo}`
-          });
-        }
-
-        // Generate Job Card for manual run too
         const jobId = `JJC-MANUAL-${Date.now().toString().slice(-6)}`;
         const jobCardRef = doc(firestore, 'jumbo_job_cards', jobId);
         transaction.set(jobCardRef, {
           id: jobId,
           job_card_no: jobId,
-          parent_roll: selectedParent.rollNo,
-          parent_rolls: [selectedParent.rollNo],
+          parent_roll: reportParentRollNos[0],
+          parent_rolls: reportParentRollNos,
           child_rolls: reportChildRolls.map(r => r.rollNo),
           status: "PENDING",
           createdAt: new Date().toISOString(),
@@ -657,10 +656,10 @@ function SlittingHubContent() {
       setModal({ 
         isOpen: true, 
         type: 'SUCCESS', 
-        title: 'Transaction Complete', 
-        description: `Successfully converted ${selectedParent.rollNo} into technical child units.` 
+        title: 'Batch Complete', 
+        description: `Successfully converted ${selectedRolls.length} rolls into technical child units.` 
       });
-      setSelectedParent(null);
+      setSelectedRolls([]);
       setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: 0, lengthMeters: 0, parts: 1 }]);
       setSearchQuery("");
     } catch (e: any) {
@@ -691,7 +690,7 @@ function SlittingHubContent() {
           <p className="text-sm font-normal text-muted-foreground">Precision conversion engine matching production planning with live substrate inventory.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => window.print()} disabled={!selectedParent} className="font-bold text-[10px] uppercase h-10 px-6 border-2 rounded-xl">
+          <Button variant="outline" onClick={() => window.print()} disabled={selectedRolls.length === 0} className="font-bold text-[10px] uppercase h-10 px-6 border-2 rounded-xl">
             <Printer className="mr-2 h-4 w-4" /> Print Slit Sheet
           </Button>
           <Button variant="ghost" onClick={() => router.push('/paper-stock')} className="font-bold text-[10px] uppercase h-10 px-6">
@@ -996,7 +995,6 @@ function SlittingHubContent() {
 
           <div className="flex-1 overflow-auto industrial-scroll p-8">
             <div className="space-y-10">
-              {/* SECTION 1: Job Information */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3 border-b pb-2">
                   <Briefcase className="h-4 w-4 text-primary" />
@@ -1011,7 +1009,6 @@ function SlittingHubContent() {
                 </div>
               </div>
 
-              {/* SECTION 2: Source Rolls Used */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3 border-b pb-2">
                   <Package className="h-4 w-4 text-primary" />
@@ -1047,7 +1044,6 @@ function SlittingHubContent() {
                 </div>
               </div>
 
-              {/* SECTION 3 & 4: Plan & Waste Analysis */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <div className="flex items-center gap-3 border-b pb-2">
@@ -1073,7 +1069,6 @@ function SlittingHubContent() {
                 </div>
               </div>
 
-              {/* SECTION 5: Stock Movement */}
               <div className="space-y-4">
                 <div className="flex items-center gap-3 border-b pb-2">
                   <Layers className="h-4 w-4 text-primary" />
@@ -1120,7 +1115,7 @@ function SlittingHubContent() {
         </DialogContent>
       </Dialog>
 
-      {/* --- M9: SLITTING TRANSACTION REPORT MODAL --- */}
+      {/* --- SLITTING TRANSACTION REPORT MODAL --- */}
       <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
         <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden rounded-[2.5rem] border-none shadow-3xl bg-white flex flex-col max-h-[90vh]">
           <div className="bg-emerald-600 text-white p-8 shrink-0">
@@ -1180,12 +1175,12 @@ function SlittingHubContent() {
       </Dialog>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 print:hidden">
-        {/* EXISTING Source Roll Selection */}
+        {/* Source Roll Selection (MULTI SUPPORT) */}
         <div className="lg:col-span-1 space-y-6">
           <Card className="shadow-xl border-none rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-900 text-white p-6">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Search className="h-4 w-4 text-primary" /> Source Roll Selection
+                <Search className="h-4 w-4 text-primary" /> Source Roll Batch
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6 space-y-6">
@@ -1202,45 +1197,41 @@ function SlittingHubContent() {
                 </Button>
               </div>
 
-              {selectedParent ? (
-                <div className="space-y-4 animate-in slide-in-from-top-2">
-                  <div className="p-4 bg-primary/5 rounded-2xl border-2 border-primary/20 space-y-3">
-                    <div className="flex justify-between items-center">
-                      <Badge className="bg-purple-600 font-semibold">{selectedParent.rollNo}</Badge>
-                      <Badge variant="outline" className="font-semibold uppercase">{selectedParent.status}</Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-[10px] font-semibold uppercase opacity-50">Substrate</Label>
-                        <p className="text-sm font-bold truncate">{selectedParent.paperType}</p>
+              {selectedRolls.length > 0 ? (
+                <div className="space-y-3 max-h-[400px] overflow-y-auto industrial-scroll pr-2">
+                  {selectedRolls.map((roll, idx) => (
+                    <div key={roll.id} className="p-4 bg-primary/5 rounded-2xl border-2 border-primary/20 space-y-3 relative group/roll animate-in slide-in-from-top-2">
+                      <button 
+                        onClick={() => setSelectedRolls(selectedRolls.filter(r => r.id !== roll.id))}
+                        className="absolute top-2 right-2 h-6 w-6 rounded-full bg-white border shadow-sm flex items-center justify-center text-slate-400 hover:text-rose-500 opacity-0 group-hover/roll:opacity-100 transition-opacity"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                      <div className="flex justify-between items-center">
+                        <Badge className="bg-purple-600 font-semibold">{roll.rollNo}</Badge>
+                        <Badge variant="outline" className="font-semibold uppercase text-[9px]">{roll.status}</Badge>
                       </div>
-                      <div>
-                        <Label className="text-[10px] font-semibold uppercase opacity-50">Mfr</Label>
-                        <p className="text-sm font-bold truncate">{selectedParent.paperCompany}</p>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-primary/10">
-                      <div className="flex items-center gap-2">
-                        <Ruler className="h-4 w-4 text-primary" />
-                        <span className="text-lg font-bold">{selectedParent.widthMm}<small className="text-[10px] ml-1">MM</small></span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <ArrowRightLeft className="h-4 w-4 text-primary" />
-                        <span className="text-lg font-bold">{selectedParent.lengthMeters}<small className="text-[10px] ml-1">MTR</small></span>
+                      <div className="grid grid-cols-2 gap-2 text-[10px] font-bold uppercase opacity-60">
+                        <span>{roll.paperType}</span>
+                        <span className="text-right">{roll.widthMm}mm x {roll.lengthMeters}m</span>
                       </div>
                     </div>
+                  ))}
+                  <div className="pt-2">
+                    <Button variant="ghost" className="w-full border-2 border-dashed border-slate-200 h-12 rounded-xl font-bold uppercase text-[10px] text-slate-400 hover:text-primary hover:border-primary/40" onClick={() => { setSearchQuery(""); document.querySelector('input')?.focus(); }}>
+                      <Plus className="h-4 w-4 mr-2" /> Add Another Roll
+                    </Button>
                   </div>
                 </div>
               ) : (
                 <div className="py-12 text-center space-y-4 border-4 border-dashed rounded-3xl opacity-30">
                   <Package className="h-12 w-12 mx-auto" />
-                  <p className="text-[10px] font-semibold uppercase tracking-widest">No Roll Loaded</p>
+                  <p className="text-[10px] font-semibold uppercase tracking-widest">No Rolls Loaded</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* EXISTING Summary */}
           <Card className={cn("shadow-2xl border-none rounded-3xl overflow-hidden transition-all duration-500", calculation.isValid ? "bg-slate-900 text-white" : "bg-rose-600 text-white")}>
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold opacity-90">
@@ -1250,14 +1241,14 @@ function SlittingHubContent() {
             <CardContent className="space-y-6 py-4">
               <div className="flex justify-between items-end">
                 <div className="space-y-1">
-                  <p className="text-[10px] font-semibold uppercase opacity-60">Total Conversion</p>
+                  <p className="text-[10px] font-semibold uppercase opacity-60">Batch Output Potential</p>
                   <p className="text-4xl font-bold tracking-tight">
                     {calculation.mode === 'WIDTH' ? calculation.usedWidth : (calculation as any).usedLength} 
                     <small className="text-xs ml-1 font-normal">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
                   </p>
                 </div>
                 <div className="text-right space-y-1">
-                  <p className="text-[10px] font-semibold uppercase opacity-60">Stock Remainder</p>
+                  <p className="text-[10px] font-semibold uppercase opacity-60">Remainder / Roll</p>
                   <p className={cn("text-2xl font-bold tracking-tight", calculation.remainder < 0 ? "text-rose-200" : "text-emerald-400")}>
                     {calculation.remainder} <small className="text-xs font-normal">{calculation.mode === 'WIDTH' ? 'MM' : 'MTR'}</small>
                   </p>
@@ -1268,7 +1259,7 @@ function SlittingHubContent() {
                 <div className="bg-white/10 p-3 rounded-xl flex items-center gap-3 animate-pulse">
                   <AlertTriangle className="h-5 w-5 text-rose-200" />
                   <p className="text-[10px] font-semibold uppercase leading-tight">
-                    Dimension exceeds parent limits. Reduce qty or dimension.
+                    Dimension exceeds limits for one or more rolls in batch.
                   </p>
                 </div>
               )}
@@ -1276,28 +1267,27 @@ function SlittingHubContent() {
             <CardFooter className="p-0 border-t border-white/10">
               <Button 
                 onClick={handleExecuteSlitting} 
-                disabled={!selectedParent || !calculation.isValid || isProcessing || (calculation.remainder === selectedParent?.widthMm && calculation.mode === 'WIDTH') || (calculation.remainder === selectedParent?.lengthMeters && calculation.mode === 'LENGTH')} 
+                disabled={selectedRolls.length === 0 || !calculation.isValid || isProcessing} 
                 className={cn("w-full h-16 rounded-none font-semibold uppercase tracking-widest transition-all", calculation.isValid ? "bg-primary hover:bg-primary/90" : "bg-rose-700")}
               >
                 {isProcessing ? <Loader2 className="animate-spin h-6 w-6" /> : <Scissors className="mr-3 h-5 w-5" />}
-                Execute Run
+                Execute Batch ({selectedRolls.length})
               </Button>
             </CardFooter>
           </Card>
         </div>
 
         <div className="lg:col-span-3 space-y-6">
-          {/* EXISTING Slitting Run Specification */}
           <Card className="shadow-xl border-none rounded-3xl overflow-hidden flex flex-col bg-white">
             <CardHeader className="bg-slate-50 border-b flex flex-row items-center justify-between p-6">
               <div className="space-y-1">
                 <CardTitle className="text-base font-semibold flex items-center gap-2">
                   <Briefcase className="h-4 w-4 text-primary" /> Slitting Run Specification
                 </CardTitle>
-                <p className="text-[10px] font-medium text-slate-400 uppercase">Define target widths, lengths, and job assignments for conversion.</p>
+                <p className="text-[10px] font-medium text-slate-400 uppercase">Pattern applies to all rolls in the batch.</p>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: selectedParent?.widthMm || 0, lengthMeters: selectedParent?.lengthMeters || 0, parts: 1 }])} className="h-9 px-4 font-black uppercase text-[10px] text-rose-500">
+                <Button size="sm" variant="ghost" onClick={() => setSlitRuns([{ id: crypto.randomUUID(), jobNo: "", jobName: "", jobSize: "", widthMm: selectedRolls[0]?.widthMm || 0, lengthMeters: selectedRolls[0]?.lengthMeters || 0, parts: 1 }])} className="h-9 px-4 font-black uppercase text-[10px] text-rose-500">
                   Clear Table
                 </Button>
                 <Button size="sm" variant="outline" onClick={addRun} className="h-9 px-4 font-semibold uppercase text-[10px] rounded-xl border-2">
@@ -1313,7 +1303,7 @@ function SlittingHubContent() {
                     <TableHead className="font-semibold text-[10px] uppercase text-center w-[120px]">Width (MM)</TableHead>
                     <TableHead className="font-semibold text-[10px] uppercase text-center w-[120px]">Length (MTR)</TableHead>
                     <TableHead className="font-semibold text-[10px] uppercase text-center w-[100px]">Qty</TableHead>
-                    <TableHead className="font-semibold text-[10px] uppercase text-right w-[150px]">Total Conversion</TableHead>
+                    <TableHead className="font-semibold text-[10px] uppercase text-right w-[150px]">Conversion/Roll</TableHead>
                     <TableHead className="w-20 pr-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1359,7 +1349,7 @@ function SlittingHubContent() {
                             type="number" 
                             className="h-10 w-24 text-center font-bold border-2 border-slate-200 rounded-xl" 
                             value={run.widthMm || ""} 
-                            placeholder={selectedParent?.widthMm}
+                            placeholder={String(selectedRolls[0]?.widthMm || 0)}
                             onChange={e => updateRun(run.id, 'widthMm', Number(e.target.value))}
                           />
                         </div>
@@ -1370,7 +1360,7 @@ function SlittingHubContent() {
                             type="number" 
                             className="h-10 w-24 text-center font-bold border-2 border-slate-200 rounded-xl" 
                             value={run.lengthMeters || ""} 
-                            placeholder={selectedParent?.lengthMeters}
+                            placeholder={String(selectedRolls[0]?.lengthMeters || 0)}
                             onChange={e => updateRun(run.id, 'lengthMeters', Number(e.target.value))}
                           />
                         </div>
@@ -1388,8 +1378,8 @@ function SlittingHubContent() {
                       <TableCell className="text-right">
                         <span className="text-sm font-semibold text-slate-400 group-hover:text-primary transition-colors">
                           {calculation.mode === 'WIDTH' 
-                            ? `${Number(run.widthMm || selectedParent?.widthMm) * Number(run.parts)} MM` 
-                            : `${Number(run.lengthMeters || selectedParent?.lengthMeters) * Number(run.parts)} MTR`
+                            ? `${Number(run.widthMm || selectedRolls[0]?.widthMm) * Number(run.parts)} MM` 
+                            : `${Number(run.lengthMeters || selectedRolls[0]?.lengthMeters) * Number(run.parts)} MTR`
                           }
                         </span>
                       </TableCell>
@@ -1413,19 +1403,18 @@ function SlittingHubContent() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <CheckCircle2 className={cn("h-5 w-5 transition-colors", calculation.isValid && selectedParent ? "text-emerald-500" : "text-slate-200")} />
-                <span className="text-[10px] font-semibold uppercase text-slate-400">Integrity Verified</span>
+                <CheckCircle2 className={cn("h-5 w-5 transition-colors", calculation.isValid && selectedRolls.length > 0 ? "text-emerald-500" : "text-slate-200")} />
+                <span className="text-[10px] font-semibold uppercase text-slate-400">Batch Integrity Verified</span>
               </div>
             </CardFooter>
           </Card>
 
-          {/* EXISTING Slitting Layout Preview */}
           <Card className="shadow-xl border-none rounded-3xl overflow-hidden bg-white">
             <CardHeader className="bg-slate-50 border-b py-6 px-8">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <LayoutGrid className="h-4 w-4 text-primary" /> Slitting Layout Preview
+                <LayoutGrid className="h-4 w-4 text-primary" /> Slitting Layout Preview (Per Roll)
               </CardTitle>
-              <p className="text-[10px] font-medium text-slate-400 uppercase">Live layout visualization of output rolls and stock remainders.</p>
+              <p className="text-[10px] font-medium text-slate-400 uppercase">Visualizing pattern for roll batch.</p>
             </CardHeader>
             <CardContent className="p-8">
               <div className="flex flex-wrap gap-6 justify-start">
