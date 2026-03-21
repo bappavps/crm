@@ -55,8 +55,8 @@ import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V1.6)
- * Manual Submit Flow: Scan → Input Fill → User Submit → Process
+ * PHYSICAL PAPER STOCK CHECK (V1.7)
+ * Normalization: URL → Roll ID Display
  */
 
 interface ScannedRoll {
@@ -298,8 +298,12 @@ export default function PhysicalStockAuditPage() {
     setTimeout(() => {
       const scanner = new Html5QrcodeScanner("camera-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
       scanner.render((decodedText) => {
-        // Camera only populates input field
-        setScanInput(decodedText);
+        // Camera only populates input field with normalized value
+        let normalized = decodedText;
+        if (normalized.includes('/')) {
+          normalized = normalized.split('/').pop() || normalized;
+        }
+        setScanInput(normalized);
         toast({ title: "Roll ID Scanned", description: "Click Submit to process." });
       }, () => {});
       scannerInstance.current = scanner;
