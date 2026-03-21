@@ -23,7 +23,8 @@ import {
   Mail, 
   Phone, 
   MapPin, 
-  FileText 
+  FileText,
+  Shield 
 } from "lucide-react"
 import { useFirestore, useUser, useDoc, useMemoFirebase, useCollection } from "@/firebase"
 import { doc, setDoc, serverTimestamp, collection, deleteDoc } from "firebase/firestore"
@@ -196,7 +197,7 @@ export default function SettingsPage() {
                         <span className="text-[10px] font-black uppercase text-slate-400">Upload High-Res PNG</span>
                       </Label>
                     )}
-                    <Input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                    <input id="logo-upload" type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
                   </div>
                   <p className="text-[9px] text-muted-foreground text-center font-medium italic">Recommended: 512x512 Transparent PNG</p>
                 </div>
@@ -264,7 +265,7 @@ export default function SettingsPage() {
               <Label htmlFor="library-upload" className="cursor-pointer h-12 px-8 rounded-xl bg-slate-900 hover:bg-black text-white font-black uppercase text-[10px] tracking-widest flex items-center justify-center shadow-xl transition-all active:scale-95">
                 {isUploading ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2 text-primary" />}
                 Add New Asset
-                <Input id="library-upload" type="file" accept="image/*" className="hidden" onChange={handleLibraryUpload} />
+                <input id="library-upload" type="file" accept="image/*" className="hidden" onChange={handleLibraryUpload} />
               </Label>
             </div>
 
