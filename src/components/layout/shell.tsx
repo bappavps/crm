@@ -9,6 +9,8 @@ import { NotificationBell } from "@/components/notifications/notification-bell"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { PermissionKey } from "@/components/auth/permission-context"
 import { Separator } from "@/components/ui/separator"
+import { useFirestore, useDoc, useMemoFirebase } from "@/firebase"
+import { doc } from "firebase/firestore"
 
 // Map of routes to permission keys
 const routePermissionMap: Record<string, PermissionKey> = {
@@ -65,6 +67,16 @@ const routePermissionMap: Record<string, PermissionKey> = {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const firestore = useFirestore()
+
+  // Fetch company name from settings
+  const companyDocRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'company_settings', 'global');
+  }, [firestore]);
+  const { data: companySettings } = useDoc(companyDocRef);
+  const companyName = companySettings?.name || "Shree Label";
+
   const isLoginPage = pathname === "/login"
   const isUnauthorizedPage = pathname === "/unauthorized"
 
@@ -86,7 +98,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SidebarTrigger className="-ml-1" />
             <Separator orientation="vertical" className="mr-2 h-4 hidden md:block" />
             <div className="flex-1 truncate">
-              <h1 className="text-xs md:text-xl font-black text-primary truncate uppercase tracking-tighter">Shree Label Creation CRM</h1>
+              <h1 className="text-xs md:text-xl font-semibold text-primary truncate uppercase tracking-tight">
+                {companyName} ERP
+              </h1>
             </div>
             <div className="flex items-center gap-1 md:gap-4">
               <NotificationBell />
