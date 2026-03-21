@@ -9,6 +9,9 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'recharts', 'date-fns', 'xlsx'],
+  },
   images: {
     remotePatterns: [
       {
@@ -34,10 +37,10 @@ const nextConfig: NextConfig = {
   // Increase chunk load timeout for stable loading in cloud environments
   webpack: (config, { isServer }) => {
     if (!isServer) {
-      config.output = {
-        ...config.output,
-        chunkLoadTimeout: 600000, // Increased to 600 seconds for maximum stability in cloud environments
-      };
+      // Directly set the timeout on the existing output object to avoid shallow copy side effects
+      if (config.output) {
+        config.output.chunkLoadTimeout = 600000; // 600 seconds
+      }
     }
     return config;
   },

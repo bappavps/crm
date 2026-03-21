@@ -8,6 +8,7 @@ import { AuthInitializer } from "@/components/auth-initializer";
 import { PermissionProvider } from "@/components/auth/permission-context";
 import { AppShell } from "@/components/layout/shell";
 import { cn } from "@/lib/utils";
+import { Suspense } from "react";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -32,19 +33,21 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={cn(inter.variable, inter.className, "font-sans antialiased bg-background")}>
-        <FirebaseClientProvider>
-          {/* AuthInitializer handles redirection and profile provisioning */}
-          <AuthInitializer />
-          
-          <PermissionProvider>
-            {/* AppShell provides the sidebar, header, and main container */}
-            <AppShell>
-              {children}
-            </AppShell>
-          </PermissionProvider>
-          
-          <Toaster />
-        </FirebaseClientProvider>
+        <Suspense fallback={null}>
+          <FirebaseClientProvider>
+            {/* AuthInitializer handles redirection and profile provisioning */}
+            <AuthInitializer />
+            
+            <PermissionProvider>
+              {/* AppShell provides the sidebar, header, and main container */}
+              <AppShell>
+                {children}
+              </AppShell>
+            </PermissionProvider>
+            
+            <Toaster />
+          </FirebaseClientProvider>
+        </Suspense>
       </body>
     </html>
   );
