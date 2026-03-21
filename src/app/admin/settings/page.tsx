@@ -90,6 +90,9 @@ export default function SettingsPage() {
     logo: "",
     pwaIcon192: "",
     pwaIcon512: "",
+    favicon16: "",
+    favicon32: "",
+    appleTouchIcon: "",
     company_id: "default_company"
   })
 
@@ -106,6 +109,9 @@ export default function SettingsPage() {
         logo: companySettings.logo || "",
         pwaIcon192: companySettings.pwaIcon192 || "",
         pwaIcon512: companySettings.pwaIcon512 || "",
+        favicon16: companySettings.favicon16 || "",
+        favicon32: companySettings.favicon32 || "",
+        appleTouchIcon: companySettings.appleTouchIcon || "",
         company_id: companySettings.company_id || "default_company"
       });
     }
@@ -151,7 +157,7 @@ export default function SettingsPage() {
         updatedAt: serverTimestamp(),
         updatedBy: user.uid
       }, { merge: true });
-      toast({ title: "Company Details Saved", description: "Global branding and PWA icons have been updated." });
+      toast({ title: "Company Details Saved", description: "Global branding, PWA icons, and favicons have been updated." });
     } catch (e) {
       toast({ variant: "destructive", title: "Save Failed" });
     } finally {
@@ -169,21 +175,27 @@ export default function SettingsPage() {
     }
 
     setIsUploading(true);
-    toast({ title: "Optimizing Branding...", description: "Converting to PNG and generating PWA icon set." });
+    toast({ title: "Optimizing Branding...", description: "Generating full set of PWA icons and favicons." });
 
     try {
       const mainLogo = await processImage(file, 512); 
       const icon192 = await processImage(file, 192);
       const icon512 = await processImage(file, 512);
+      const fav16 = await processImage(file, 16);
+      const fav32 = await processImage(file, 32);
+      const appleIcon = await processImage(file, 180);
 
       setCompanyForm(prev => ({ 
         ...prev, 
         logo: mainLogo,
         pwaIcon192: icon192,
-        pwaIcon512: icon512
+        pwaIcon512: icon512,
+        favicon16: fav16,
+        favicon32: fav32,
+        appleTouchIcon: appleIcon
       }));
       
-      toast({ title: "Branding Ready", description: "Logo optimized for app installation successfully." });
+      toast({ title: "Branding Ready", description: "Logo optimized for web and app installation successfully." });
     } catch (err) {
       toast({ variant: "destructive", title: "Processing Error", description: "Could not generate technical icon set." });
     } finally {
@@ -312,34 +324,42 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  {/* PWA Icon Previews */}
-                  <div className="space-y-4 pt-4 border-t">
+                  {/* Icon & Favicon Previews */}
+                  <div className="space-y-6 pt-4 border-t">
                     <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                      <Smartphone className="h-3 w-3" /> PWA Optimized Iconset
+                      <Smartphone className="h-3 w-3" /> Technical Iconset
                     </Label>
-                    <div className="flex items-end gap-6">
+                    <div className="grid grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <div className="w-16 h-16 bg-slate-50 border rounded-xl overflow-hidden shadow-inner">
+                        <div className="w-full aspect-square bg-slate-50 border rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
                           {companyForm.pwaIcon192 ? (
                             <img src={companyForm.pwaIcon192} className="w-full h-full object-cover" alt="192" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center opacity-20"><ImageIcon className="h-4 w-4" /></div>
+                            <div className="opacity-20"><ImageIcon className="h-4 w-4" /></div>
                           )}
                         </div>
-                        <p className="text-[8px] font-black text-center text-slate-400 uppercase">192px</p>
+                        <p className="text-[8px] font-black text-center text-slate-400 uppercase">App Icon (192px)</p>
                       </div>
                       <div className="space-y-2">
-                        <div className="w-24 h-24 bg-slate-50 border rounded-2xl overflow-hidden shadow-md">
-                          {companyForm.pwaIcon512 ? (
-                            <img src={companyForm.pwaIcon512} className="w-full h-full object-cover" alt="512" />
+                        <div className="w-full aspect-square bg-slate-50 border rounded-xl overflow-hidden shadow-inner flex items-center justify-center">
+                          {companyForm.appleTouchIcon ? (
+                            <img src={companyForm.appleTouchIcon} className="w-full h-full object-cover" alt="Apple" />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center opacity-20"><ImageIcon className="h-6 w-6" /></div>
+                            <div className="opacity-20"><ImageIcon className="h-4 w-4" /></div>
                           )}
                         </div>
-                        <p className="text-[8px] font-black text-center text-slate-400 uppercase">512px (HQ)</p>
+                        <p className="text-[8px] font-black text-center text-slate-400 uppercase">Apple Touch</p>
                       </div>
                     </div>
-                    <p className="text-[9px] text-muted-foreground font-medium italic">Automatically generated from your logo upload.</p>
+                    <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-dashed">
+                      <div className="w-8 h-8 bg-white border rounded shadow-sm flex items-center justify-center overflow-hidden">
+                        {companyForm.favicon32 && <img src={companyForm.favicon32} className="w-full h-full" alt="Fav32" />}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[9px] font-black uppercase text-slate-600">Browser Tab Favicon</p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase">Automatic 16px/32px generation</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 

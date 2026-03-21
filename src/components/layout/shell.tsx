@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useEffect } from "react"
@@ -70,7 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const firestore = useFirestore()
 
-  // Fetch company name from settings
+  // Fetch company name and logos from settings
   const companyDocRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'company_settings', 'global');
@@ -79,12 +80,38 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   
   const companyName = companySettings?.name || "Shree Label";
 
-  // Dynamic Browser Tab Title Update
+  // Dynamic Browser Tab Branding (Title & Favicons)
   useEffect(() => {
+    if (!isMounted) return;
+
+    // 1. Update Tab Title
     if (companyName) {
       document.title = `${companyName} ERP`;
     }
-  }, [companyName]);
+
+    // 2. Update Favicons dynamically
+    const updateIcon = (selector: string, href: string) => {
+      if (!href) return;
+      let link: HTMLLinkElement | null = document.querySelector(selector);
+      if (!link) {
+        link = document.createElement('link');
+        const relMatch = selector.match(/rel=["'](.+?)["']/);
+        const sizesMatch = selector.match(/sizes=["'](.+?)["']/);
+        if (relMatch) link.rel = relMatch[1];
+        if (sizesMatch) link.sizes = sizesMatch[1];
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      link.href = href;
+    };
+
+    if (companySettings) {
+      if (companySettings.favicon32) updateIcon('link[rel="icon"][sizes="32x32"]', companySettings.favicon32);
+      if (companySettings.favicon16) updateIcon('link[rel="icon"][sizes="16x16"]', companySettings.favicon16);
+      if (companySettings.appleTouchIcon) updateIcon('link[rel="apple-touch-icon"]', companySettings.appleTouchIcon);
+      // Main favicon.ico fallback
+      if (companySettings.favicon32) updateIcon('link[rel="icon"]:not([sizes])', companySettings.favicon32);
+    }
+  }, [companyName, companySettings]);
 
   const isLoginPage = pathname === "/login"
   const isUnauthorizedPage = pathname === "/unauthorized"
