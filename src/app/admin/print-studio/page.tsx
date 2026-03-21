@@ -67,7 +67,11 @@ import {
   LayoutTemplate,
   RotateCcw,
   Magnet,
-  Maximize
+  Maximize,
+  ArrowUp,
+  ArrowDown,
+  MoveUp,
+  MoveDown
 } from "lucide-react"
 import { 
   Dialog, 
@@ -88,8 +92,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V13.1)
- * Fixed z-index conflict and tab state stickiness for reliable asset management.
+ * PRINT TEMPLATE STUDIO (V14.0)
+ * Restored FULL element property controls and arrangement layers.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -600,7 +604,6 @@ export default function PrintTemplateStudio() {
             </div>
             
             <div className="flex items-center gap-2">
-              {/* RESTORED EDITOR CONTROLS */}
               <div className="flex items-center bg-slate-100 p-1 rounded-xl mr-4 gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setZoom(Math.max(0.2, zoom - 0.1))}><ChevronDown className="h-4 w-4" /></Button>
                 <Button variant="ghost" className="h-8 px-2 text-[10px] font-black" onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</Button>
@@ -662,7 +665,7 @@ export default function PrintTemplateStudio() {
               </div>
             </div>
 
-            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative studio-viewport print:p-0 print:bg-white print:overflow-visible">
+            <div className="flex-1 bg-slate-200 overflow-auto flex items-start justify-center p-20 relative studio-viewport print:p-0 print:bg-white print:overflow-visible" onClick={() => setSelectedElementId(null)}>
               <div id="studio-canvas-print" className="bg-white shadow-2xl relative overflow-hidden transition-all duration-200" 
                 style={{ width: `${(currentTemplate?.paperWidth || 100) * MM_TO_PX}px`, height: `${(currentTemplate?.paperHeight || 100) * MM_TO_PX}px`, transform: `scale(${zoom})`, transformOrigin: 'top center', outline: '2px solid #fbbf24' }}>
                 {currentTemplate?.background?.image && <div className="absolute inset-0 pointer-events-none z-0" style={{ opacity: currentTemplate.background.opacity }}><img src={currentTemplate.background.image} className="w-full h-full object-contain" alt="Background" /></div>}
@@ -677,7 +680,7 @@ export default function PrintTemplateStudio() {
 
             <div className="w-80 border-l flex flex-col bg-white overflow-y-auto shrink-0 industrial-scroll print:hidden">
               {selectedElement ? (
-                <div key={`props-${selectedElement.id}`} className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-300">
+                <div className="p-6 space-y-8 animate-in slide-in-from-right-4 duration-300">
                   <div className="flex justify-between items-center bg-slate-50 -m-6 p-6 mb-4 border-b">
                     <h4 className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2"><Settings2 className="h-4 w-4" /> Properties</h4>
                     <div className="flex gap-1">
@@ -686,21 +689,47 @@ export default function PrintTemplateStudio() {
                       {!currentTemplate?.isSystemTemplate && <Button variant="ghost" size="icon" className="text-destructive h-8 w-8 hover:bg-destructive/10" disabled={selectedElement.isLocked} onClick={() => deleteElement(selectedElement.id)}><Trash2 className="h-4 w-4" /></Button>}
                     </div>
                   </div>
-                  
+
+                  {/* POSITIONING PANEL */}
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Layout & Position</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <Label className="text-[9px] uppercase font-bold">X (px)</Label>
+                        <Input type="number" value={Math.round(selectedElement.x)} onChange={(e) => updateElement(selectedElement.id, { x: Number(e.target.value) })} className="h-8 text-xs font-mono" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] uppercase font-bold">Y (px)</Label>
+                        <Input type="number" value={Math.round(selectedElement.y)} onChange={(e) => updateElement(selectedElement.id, { y: Number(e.target.value) })} className="h-8 text-xs font-mono" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] uppercase font-bold">Width</Label>
+                        <Input type="number" value={Math.round(selectedElement.width)} onChange={(e) => updateElement(selectedElement.id, { width: Number(e.target.value) })} className="h-8 text-xs font-mono" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[9px] uppercase font-bold">Height</Label>
+                        <Input type="number" value={Math.round(selectedElement.height)} onChange={(e) => updateElement(selectedElement.id, { height: Number(e.target.value) })} className="h-8 text-xs font-mono" />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-[9px] uppercase font-bold">Rotation: {selectedElement.rotate}°</Label>
+                      <Slider value={[selectedElement.rotate || 0]} onValueChange={([v]) => updateElement(selectedElement.id, { rotate: v })} min={0} max={360} step={1} />
+                    </div>
+                  </div>
+
+                  {/* ELEMENT SPECIFIC PANELS */}
                   {selectedElement.type === 'image' && (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Image Source</Label>
-                      
-                      <Tabs key={`tabs-${selectedElement.id}`} defaultValue="library" className="w-full">
-                        <TabsList className="grid w-full grid-cols-2 h-9 bg-slate-100 rounded-lg">
-                          <TabsTrigger value="upload" className="text-[9px] font-black uppercase">Direct Upload</TabsTrigger>
-                          <TabsTrigger value="library" className="text-[9px] font-black uppercase">Global Library</TabsTrigger>
+                      <Tabs defaultValue="library" className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 h-8 bg-slate-100 rounded-lg p-1">
+                          <TabsTrigger value="upload" className="text-[8px] font-black uppercase">Upload</TabsTrigger>
+                          <TabsTrigger value="library" className="text-[8px] font-black uppercase">Library</TabsTrigger>
                         </TabsList>
-                        
-                        <TabsContent value="upload" className="pt-4">
+                        <TabsContent value="upload" className="pt-3">
                           <div className="relative">
-                            <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase h-14 border-2 border-dashed border-slate-200">
-                              <Upload className="h-4 w-4 mr-2 text-primary" /> Click to Upload
+                            <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase h-10 border-2 border-dashed">
+                              <Upload className="h-3 w-3 mr-2" /> Upload
                             </Button>
                             <Input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
                               const file = e.target.files?.[0]; if (!file) return;
@@ -709,62 +738,116 @@ export default function PrintTemplateStudio() {
                             }} />
                           </div>
                         </TabsContent>
-                        
-                        <TabsContent value="library" className="pt-4 space-y-4">
-                          <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto industrial-scroll p-1">
-                            {libraryImages?.filter(img => img.tag !== 'background').map(asset => (
-                              <button 
-                                key={asset.id} 
-                                onClick={() => updateElement(selectedElement.id, { content: asset.url })}
-                                className={cn(
-                                  "aspect-square rounded-lg border-2 overflow-hidden transition-all bg-slate-50",
-                                  selectedElement.content === asset.url ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-slate-300"
-                                )}
-                              >
-                                <img src={asset.url} className="w-full h-full object-contain" alt="Asset" />
-                              </button>
-                            ))}
-                          </div>
+                        <TabsContent value="library" className="pt-3">
                           <Button variant="outline" size="sm" className="w-full text-[9px] font-black uppercase" onClick={() => { setLibraryContext('image'); setIsLibraryOpen(true); }}>
-                            Full Library Browser
+                            Browse Library
                           </Button>
                         </TabsContent>
                       </Tabs>
                     </div>
                   )}
 
-                  {/* RESTORED STYLE CONTROLS */}
-                  <div className="space-y-6">
-                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Appearance</Label>
-                    
-                    {['text', 'title', 'field'].includes(selectedElement.type) && (
+                  {['text', 'title', 'field'].includes(selectedElement.type) && (
+                    <div className="space-y-4">
+                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Typography</Label>
                       <div className="grid gap-4">
-                        <div className="space-y-2">
+                        <div className="space-y-1">
                           <Label className="text-[9px] uppercase font-bold">Font Family</Label>
                           <Select value={selectedElement.style.fontFamily} onValueChange={(val) => updateElementStyle(selectedElement.id, { fontFamily: val })}>
-                            <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent className="z-[150]">{FONT_FAMILIES.map(f => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}</SelectContent>
                           </Select>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
+                          <div className="space-y-1">
                             <Label className="text-[9px] uppercase font-bold">Size (px)</Label>
-                            <Input type="number" value={selectedElement.style.fontSize} onChange={(e) => updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-9" />
+                            <Input type="number" value={selectedElement.style.fontSize} onChange={(e) => updateElementStyle(selectedElement.id, { fontSize: Number(e.target.value) })} className="h-8 text-xs" />
                           </div>
-                          <div className="space-y-2">
-                            <Label className="text-[9px] uppercase font-bold">Color</Label>
-                            <div className="flex gap-2">
-                              <Input type="color" value={selectedElement.style.color} onChange={(e) => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 w-12 p-1" />
-                              <Input value={selectedElement.style.color} onChange={(e) => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-9 font-mono text-[10px]" />
-                            </div>
+                          <div className="space-y-1">
+                            <Label className="text-[9px] uppercase font-bold">Weight</Label>
+                            <Select value={selectedElement.style.fontWeight} onValueChange={(val) => updateElementStyle(selectedElement.id, { fontWeight: val })}>
+                              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                              <SelectContent className="z-[150]">
+                                <SelectItem value="normal">Normal</SelectItem>
+                                <SelectItem value="bold">Bold</SelectItem>
+                                <SelectItem value="black">Black</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label className="text-[9px] uppercase font-bold">Color</Label>
+                          <div className="flex gap-2">
+                            <Input type="color" value={selectedElement.style.color} onChange={(e) => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-8 w-10 p-1" />
+                            <Input value={selectedElement.style.color} onChange={(e) => updateElementStyle(selectedElement.id, { color: e.target.value })} className="h-8 flex-1 font-mono text-[10px]" />
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Label className="text-[9px] uppercase font-bold">Alignment</Label>
+                          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                            <Button variant={selectedElement.style.textAlign === 'left' ? "secondary" : "ghost"} size="icon" className="h-7 w-7" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'left' })}><AlignLeft className="h-3 w-3" /></Button>
+                            <Button variant={selectedElement.style.textAlign === 'center' ? "secondary" : "ghost"} size="icon" className="h-7 w-7" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'center' })}><AlignCenter className="h-3 w-3" /></Button>
+                            <Button variant={selectedElement.style.textAlign === 'right' ? "secondary" : "ghost"} size="icon" className="h-7 w-7" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'right' })}><AlignRight className="h-3 w-3" /></Button>
+                            <Button variant={selectedElement.style.textAlign === 'justify' ? "secondary" : "ghost"} size="icon" className="h-7 w-7" onClick={() => updateElementStyle(selectedElement.id, { textAlign: 'justify' })}><AlignJustify className="h-3 w-3" /></Button>
                           </div>
                         </div>
                       </div>
-                    )}
+                    </div>
+                  )}
 
+                  {['rectangle', 'circle', 'line'].includes(selectedElement.type) && (
+                    <div className="space-y-4">
+                      <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Appearance</Label>
+                      <div className="grid gap-4">
+                        {selectedElement.type !== 'line' && (
+                          <div className="space-y-1">
+                            <Label className="text-[9px] uppercase font-bold">Fill Color</Label>
+                            <div className="flex gap-2">
+                              <Input type="color" value={selectedElement.style.backgroundColor} onChange={(e) => updateElementStyle(selectedElement.id, { backgroundColor: e.target.value })} className="h-8 w-10 p-1" />
+                              <Input value={selectedElement.style.backgroundColor} onChange={(e) => updateElementStyle(selectedElement.id, { backgroundColor: e.target.value })} className="h-8 flex-1 font-mono text-[10px]" />
+                            </div>
+                          </div>
+                        )}
+                        <div className="space-y-1">
+                          <Label className="text-[9px] uppercase font-bold">Stroke Color</Label>
+                          <div className="flex gap-2">
+                            <Input type="color" value={selectedElement.style.borderColor} onChange={(e) => updateElementStyle(selectedElement.id, { borderColor: e.target.value })} className="h-8 w-10 p-1" />
+                            <Input value={selectedElement.style.borderColor} onChange={(e) => updateElementStyle(selectedElement.id, { borderColor: e.target.value })} className="h-8 flex-1 font-mono text-[10px]" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <Label className="text-[9px] uppercase font-bold">Stroke (px)</Label>
+                            <Input type="number" value={selectedElement.style.borderWidth} onChange={(e) => updateElementStyle(selectedElement.id, { borderWidth: Number(e.target.value) })} className="h-8 text-xs" />
+                          </div>
+                          {selectedElement.type === 'rectangle' && (
+                            <div className="space-y-1">
+                              <Label className="text-[9px] uppercase font-bold">Radius</Label>
+                              <Input type="number" value={selectedElement.style.borderRadius} onChange={(e) => updateElementStyle(selectedElement.id, { borderRadius: Number(e.target.value) })} className="h-8 text-xs" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* EFFECTS PANEL */}
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Effects</Label>
                     <div className="space-y-2">
                       <Label className="text-[9px] uppercase font-bold">Opacity: {Math.round((selectedElement.style.opacity || 1) * 100)}%</Label>
                       <Slider value={[(selectedElement.style.opacity || 1) * 100]} onValueChange={([v]) => updateElementStyle(selectedElement.id, { opacity: v / 100 })} max={100} step={1} />
+                    </div>
+                  </div>
+
+                  {/* LAYERING PANEL */}
+                  <div className="space-y-4">
+                    <Label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block border-b pb-2">Arrangement</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="outline" size="sm" className="text-[9px] font-bold uppercase h-8" onClick={() => moveElement('front')}><MoveUp className="h-3 w-3 mr-1.5" /> To Front</Button>
+                      <Button variant="outline" size="sm" className="text-[9px] font-bold uppercase h-8" onClick={() => moveElement('back')}><MoveDown className="h-3 w-3 mr-1.5" /> To Back</Button>
+                      <Button variant="outline" size="sm" className="text-[9px] font-bold uppercase h-8" onClick={() => moveElement('forward')}><ChevronUp className="h-3 w-3 mr-1.5" /> Forward</Button>
+                      <Button variant="outline" size="sm" className="text-[9px] font-bold uppercase h-8" onClick={() => moveElement('backward')}><ChevronDown className="h-3 w-3 mr-1.5" /> Backward</Button>
                     </div>
                   </div>
                 </div>
@@ -776,7 +859,7 @@ export default function PrintTemplateStudio() {
                     <div className="space-y-6">
                       <Label className="text-[10px] font-black uppercase opacity-50">Background Layer</Label>
                       
-                      <Tabs key="bg-tabs" defaultValue="library" className="w-full">
+                      <Tabs defaultValue="library" className="w-full">
                         <TabsList className="grid w-full grid-cols-2 h-9 bg-slate-100 rounded-lg">
                           <TabsTrigger value="upload" className="text-[9px] font-black uppercase">Direct Upload</TabsTrigger>
                           <TabsTrigger value="library" className="text-[9px] font-black uppercase">Global Library</TabsTrigger>
