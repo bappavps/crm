@@ -29,6 +29,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    match /company_settings/{id} {
+      // Allow public "get" for branding (Login page, tab title, shell)
+      allow get: if true;
+      // Writing still requires administrative access
+      allow write: if isAdmin();
+    }
+
     match /paper_stock/{id} {
       // Allow public "get" for QR code scanning on specific rolls
       allow get: if true;
