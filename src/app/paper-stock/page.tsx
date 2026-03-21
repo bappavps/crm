@@ -52,7 +52,8 @@ import {
   IdCard,
   Search,
   RotateCcw as RotateCcwIcon,
-  Activity
+  Activity,
+  FileSpreadsheet
 } from "lucide-react"
 import { 
   Dialog, 
@@ -506,6 +507,104 @@ export default function PaperStockPage() {
     setIsPrintOpen(true);
   };
 
+  /**
+   * ISOLATED PRINT HANDLER (M10)
+   * Opens a popup window, injects HTML from the specified container,
+   * and applies the required centering and sizing CSS.
+   */
+  const handleExecutePrint = (containerId: string, templateType: 'label' | 'report') => {
+    const printContent = document.getElementById(containerId);
+    if (!printContent) return;
+
+    const template = templateType === 'label' ? activeLabelTemplate : activeReportTemplate;
+    const paperW = template?.paperWidth || (templateType === 'label' ? 150 : 210);
+    const paperH = template?.paperHeight || (templateType === 'label' ? 100 : 297);
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({ variant: "destructive", title: "Popup Blocked", description: "Please allow popups to print." });
+      return;
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Shree Label Print Queue</title>
+          <style>
+            @media print {
+              @page {
+                size: auto;
+                margin: 0;
+              }
+
+              body {
+                margin: 0;
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-start;
+                align-items: center;
+              }
+
+              #print-root {
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                width: 100%;
+              }
+
+              .label-wrapper {
+                position: relative;
+                page-break-after: always;
+                break-inside: avoid;
+                width: ${paperW}mm;
+                height: ${paperH}mm;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                overflow: hidden;
+              }
+            }
+            
+            /* Screen Preview Fix */
+            body { margin: 0; background: #f0f0f0; }
+            #print-root { display: flex; flex-direction: column; align-items: center; padding: 20px; }
+            .label-wrapper { 
+              background: white; 
+              margin-bottom: 20px; 
+              box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+              width: ${paperW}mm;
+              height: ${paperH}mm;
+              position: relative;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              overflow: hidden;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="print-root">
+            ${Array.from(printContent.children).map(child => `
+              <div class="label-wrapper">
+                ${child.innerHTML}
+              </div>
+            `).join('')}
+          </div>
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+                window.onafterprint = () => window.close();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const startScanner = () => {
     setIsScannerOpen(true);
     setTimeout(() => {
@@ -574,22 +673,25 @@ export default function PaperStockPage() {
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
   const activeReportTemplate = reportTemplates?.find(t => t.id === selectedReportTemplateId);
 
-  const prepareRollData = (roll: any) => ({
-    ...roll,
-    roll_no: roll.rollNo || "",
-    id: roll.id || "",
-    parent_roll_no: roll.rollNo || "",
-    paper_type: roll.paperType || "",
-    width: roll.widthMm || 0,
-    length: roll.lengthMeters || 0,
-    gsm: roll.gsm || 0,
-    weight: roll.weightKg || 0,
-    company: roll.paperCompany || "",
-    date: roll.receivedDate || "",
-    company_name: roll.paperCompany || "",
-    current_date: new Date().toLocaleDateString(),
-    roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
-  });
+  const prepareRollData = (roll: any) => {
+    if (!roll) return {};
+    return {
+      ...roll,
+      roll_no: roll.rollNo || "",
+      id: roll.id || "",
+      parent_roll_no: roll.rollNo || "",
+      paper_type: roll.paperType || "",
+      width: roll.widthMm || 0,
+      length: roll.lengthMeters || 0,
+      gsm: roll.gsm || 0,
+      weight: roll.weightKg || 0,
+      company: roll.paperCompany || "",
+      date: roll.receivedDate || "",
+      company_name: roll.paperCompany || "",
+      current_date: new Date().toLocaleDateString(),
+      roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
+    };
+  };
 
   const isValidURL = (str: string) => str.startsWith("http://") || str.startsWith("https://");
 
@@ -731,10 +833,10 @@ export default function PaperStockPage() {
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
               <TableRow className="h-12">
-                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
+                <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5_rgba(0,0,0,0.1)]">
                   <div className="flex items-center justify-center h-full"><Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} /></div>
                 </TableHead>
-                <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">Sl No</TableHead>
+                <TableHead className="w-[60px] text-center font-semibold text-[11px] uppercase border-r border-b sticky top-0 left-[40px] bg-slate-100 z-[40] p-0 shadow-[2px_0_5_rgba(0,0,0,0.1)]">Sl No</TableHead>
                 {renderSortableHeader("Roll No", "rollNo", "w-[200px]", "100px")}
                 {renderSortableHeader("Status", "status", "w-[120px]")}
                 {renderSortableHeader("Paper Company", "paperCompany")}
@@ -753,7 +855,7 @@ export default function PaperStockPage() {
                 {renderSortableHeader("Lot / Batch No", "lotNo")}
                 {renderSortableHeader("Company Roll No", "companyRollNo")}
                 {renderSortableHeader("Remarks", "remarks")}
-                <TableHead className="text-center font-semibold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5px_rgba(0,0,0,0.1)] w-[240px] p-0">Action</TableHead>
+                <TableHead className="text-center font-semibold text-[11px] uppercase sticky top-0 right-0 bg-slate-100 z-[40] border-l border-b shadow-[-2px_0_5_rgba(0,0,0,0.1)] w-[240px] p-0">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -765,9 +867,9 @@ export default function PaperStockPage() {
                 const isParent = !j.rollNo.includes('-');
                 return (
                   <TableRow key={j.id} className={cn("h-12 group transition-all text-center cursor-pointer select-none", statusInfo.rowBg, isHighlighted && "bg-yellow-200 animate-pulse ring-2 ring-yellow-400 z-20")} onDoubleClick={() => handleOpenDialog(j)}>
-                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} /></TableCell>
-                    <TableCell className={cn("text-center font-bold text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
-                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5px_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>{j.level > 0 && <span className="text-slate-400 font-mono font-bold mr-1">{j.isLast ? '└' : '├'}</span>}{j.rollNo}</div></TableCell>
+                    <TableCell className={cn("text-center border-r border-b sticky left-0 z-10 p-0 shadow-[2px_0_5_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><Checkbox checked={selectedIds.has(j.id)} onCheckedChange={(val) => { const next = new Set(selectedIds); val ? next.add(j.id) : next.delete(j.id); setSelectedIds(next); }} /></TableCell>
+                    <TableCell className={cn("text-center font-bold text-[12px] text-slate-400 border-r border-b sticky left-[40px] z-10 p-0 shadow-[2px_0_5_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}>{(currentPage - 1) * rowsPerPage + i + 1}</TableCell>
+                    <TableCell className={cn("font-bold text-[15px] text-primary border-r border-b text-left font-mono sticky left-[100px] z-10 p-0 shadow-[2px_0_5_rgba(0,0,0,0.05)]", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center gap-1 h-full px-4" style={{ paddingLeft: `${(j.level || 0) * 24 + 16}px` }}>{j.level > 0 && <span className="text-slate-400 font-mono font-bold mr-1">{j.isLast ? '└' : '├'}</span>}{j.rollNo}</div></TableCell>
                     <TableCell className="border-r border-b text-center"><Badge className={cn("text-[10px] font-semibold text-white px-2", statusInfo.color)}>{j.status}</Badge></TableCell>
                     {visibleColumns['paperCompany'] && <TableCell className="text-[13px] font-medium border-r border-b px-3 text-center">{j.paperCompany}</TableCell>}
                     {visibleColumns['paperType'] && <TableCell className="text-[13px] font-medium border-r border-b px-3 text-center">{j.paperType}</TableCell>}
@@ -785,7 +887,7 @@ export default function PaperStockPage() {
                     {visibleColumns['lotNo'] && <TableCell className="text-[13px] border-r border-b font-mono font-medium text-center">{j.lotNo || '-'}</TableCell>}
                     {visibleColumns['companyRollNo'] && <TableCell className="text-[13px] border-r border-b text-center font-medium">{j.companyRollNo || '-'}</TableCell>}
                     {visibleColumns['remarks'] && <TableCell className="text-[13px] border-r border-b px-2 italic truncate max-w-[150px] text-center">{j.remarks || '-'}</TableCell>}
-                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5px_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
+                    <TableCell className={cn("text-center border-b sticky right-0 z-10 border-l shadow-[-2px_0_5_rgba(0,0,0,0.05)] w-[240px] p-0", statusInfo.rowBg, isHighlighted && "bg-yellow-200")}><div className="flex items-center justify-center gap-1.5 px-2">
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white shadow-sm" onClick={() => { setViewingRoll(j); setIsViewOpen(true); }}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white shadow-sm" onClick={() => handleOpenDialog(j)}><Pencil className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-600 hover:text-white shadow-sm" onClick={() => router.push(`/inventory/slitting?rollNo=${j.rollNo}`)}><Scissors className="h-4 w-4" /></Button>
@@ -833,63 +935,65 @@ export default function PaperStockPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
+            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>Execute Print Batch</Button>
           </div>
           <div className="p-10 bg-white text-black font-sans max-h-[70vh] overflow-y-auto industrial-scroll">
-            {selectedReportTemplateId === 'default' ? (
-              <>
-                <div className="border-b-4 border-black pb-6 flex justify-between items-end">
-                  <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Industrial Technical Registry Report</p></div>
-                  <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
-                </div>
-                <div className="mt-8 grid grid-cols-3 gap-4 no-print">
-                  <div className="p-4 bg-slate-100 rounded-lg border">
-                    <p className="text-[9px] font-black uppercase opacity-50 mb-1">Active Filter Scope</p>
-                    <p className="text-xs font-bold truncate">{activeFiltersSummary}</p>
+            <div id="report-container">
+              {selectedReportTemplateId === 'default' ? (
+                <div className="w-full">
+                  <div className="border-b-4 border-black pb-6 flex justify-between items-end">
+                    <div><h1 className="text-4xl font-black tracking-tighter">SHREE LABEL CREATION</h1><p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Industrial Technical Registry Report</p></div>
+                    <div className="text-right space-y-1"><h2 className="text-xl font-black uppercase">Paper Stock Audit</h2><p className="text-[10px] font-bold">REPORT DATE: {new Date().toLocaleDateString()}</p></div>
                   </div>
-                  <div className="p-4 bg-slate-100 rounded-lg border text-center">
-                    <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
-                    <p className="text-xl font-black text-primary">{reportRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
+                  <div className="mt-8 grid grid-cols-3 gap-4 no-print">
+                    <div className="p-4 bg-slate-100 rounded-lg border">
+                      <p className="text-[9px] font-black uppercase opacity-50 mb-1">Active Filter Scope</p>
+                      <p className="text-xs font-bold truncate">{activeFiltersSummary}</p>
+                    </div>
+                    <div className="p-4 bg-slate-100 rounded-lg border text-center">
+                      <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Net SQM</p>
+                      <p className="text-xl font-black text-primary">{reportRows.reduce((acc, r) => acc + (Number(r.sqm) || 0), 0).toLocaleString()}</p>
+                    </div>
+                    <div className="p-4 bg-slate-100 rounded-lg border text-center">
+                      <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
+                      <p className="text-xl font-black">{reportRows.length}</p>
+                    </div>
                   </div>
-                  <div className="p-4 bg-slate-100 rounded-lg border text-center">
-                    <p className="text-[9px] font-black uppercase opacity-50 mb-1">Total Roll Count</p>
-                    <p className="text-xl font-black">{reportRows.length}</p>
-                  </div>
-                </div>
-                <Table className="mt-10 border-2 border-black">
-                  <TableHeader className="bg-slate-100">
-                    <TableRow className="border-b-2 border-black h-10">
-                      {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                        <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black px-2">
-                          {col.label}
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {reportRows.map((r) => (
-                      <TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8">
+                  <Table className="mt-10 border-2 border-black">
+                    <TableHeader className="bg-slate-100">
+                      <TableRow className="border-b-2 border-black h-10">
                         {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
-                          <TableCell key={col.id} className={cn("border-r border-black/10 text-[9px] px-2 text-center", col.id === 'rollNo' && "font-bold text-[10px]")}>
-                            {r[col.id] || '-'}
-                          </TableCell>
+                          <TableHead key={col.id} className="font-black text-black text-[9px] uppercase border-r-2 border-black px-2">
+                            {col.label}
+                          </TableHead>
                         ))}
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </>
-            ) : (
-              <div className="flex flex-col items-center">
-                <TemplateRenderer 
-                  template={activeReportTemplate} 
-                  data={{
-                    ROLLS: reportRows,
-                    date: new Date().toLocaleDateString()
-                  }} 
-                />
-              </div>
-            )}
+                    </TableHeader>
+                    <TableBody>
+                      {reportRows.map((r) => (
+                        <TableRow key={r.id} className="border-b border-black/10 last:border-b-0 h-8">
+                          {COLUMN_KEYS.map(col => visibleColumns[col.id] && (
+                            <TableCell key={col.id} className={cn("border-r border-black/10 text-[9px] px-2 text-center", col.id === 'rollNo' && "font-bold text-[10px]")}>
+                              {r[col.id] || '-'}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center">
+                  <TemplateRenderer 
+                    template={activeReportTemplate} 
+                    data={{
+                      ROLLS: reportRows,
+                      date: new Date().toLocaleDateString()
+                    }} 
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -911,7 +1015,7 @@ export default function PaperStockPage() {
                 </SelectContent>
               </Select>
             </div>
-            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => window.print()}>Execute Print Batch</Button>
+            <Button className="h-9 px-6 bg-primary font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>Execute Print Batch</Button>
           </div>
           <div className="p-10 flex flex-col items-center gap-8 max-h-[70vh] overflow-y-auto industrial-scroll">
             <div id="label-batch" className="space-y-10">
