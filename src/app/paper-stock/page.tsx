@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -582,10 +581,12 @@ export default function PaperStockPage() {
       iframeDoc.close();
 
       setTimeout(() => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
+        if (iframe.contentWindow) {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        }
         setTimeout(() => {
-          document.body.removeChild(iframe);
+          iframe.remove();
           setIsProcessing(false);
         }, 1000);
       }, 500);
@@ -783,7 +784,7 @@ export default function PaperStockPage() {
         <div className="w-full h-[800px] overflow-scroll relative border-t industrial-scroll">
           <Table className="border-separate border-spacing-0 min-w-[3000px]">
             <TableHeader className="sticky top-0 z-[30] bg-white">
-              <TableRow className="h-12">
+              <TableRow className="h-12 bg-white">
                 <TableHead className="w-[40px] text-center border-r border-b sticky top-0 left-0 bg-slate-100 z-[40] p-0 shadow-[2px_0_5px_rgba(0,0,0,0.1)]">
                   <div className="flex items-center justify-center h-full"><Checkbox checked={paginatedRows.length > 0 && paginatedRows.every(r => selectedIds.has(r.id))} onCheckedChange={(val) => { const next = new Set(selectedIds); paginatedRows.forEach(r => val ? next.add(r.id) : next.delete(r.id)); setSelectedIds(next); }} /></div>
                 </TableHead>

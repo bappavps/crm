@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -493,9 +492,11 @@ export default function PrintTemplateStudio() {
         `);
         iframeDoc.close();
         setTimeout(() => {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-          document.body.removeChild(iframe);
+          if (iframe.contentWindow) {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+          }
+          iframe.remove();
           setIsPrinting(false);
         }, 500);
       }

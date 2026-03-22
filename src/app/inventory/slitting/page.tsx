@@ -627,9 +627,11 @@ function SlittingHubContent() {
         `);
         iframeDoc.close();
         setTimeout(() => {
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-          document.body.removeChild(iframe);
+          if (iframe.contentWindow) {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+          }
+          iframe.remove();
           setIsProcessing(false);
         }, 500);
       }
@@ -1169,7 +1171,7 @@ function SlittingHubContent() {
         @media print {
           body * { visibility: hidden !important; }
           #slitting-report-a4, #slitting-report-a4 * { visibility: visible !important; }
-          #slitting-report-a4 { position: absolute !important; left: 0; top: 0; width: 100%; display: block !important; }
+          #slitting-report-a4 { position: absolute !important; left: 0 !important; top: 0 !important; width: 100%; display: block !important; }
         }
       `}</style>
     </div>

@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -288,10 +287,12 @@ function JumboJobCardContent() {
       iframeDoc.close();
 
       setTimeout(() => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
+        if (iframe.contentWindow) {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        }
         setTimeout(() => {
-          document.body.removeChild(iframe);
+          iframe.remove();
           setIsProcessing(false);
         }, 1000);
       }, 500);
@@ -665,7 +666,7 @@ function JumboJobCardContent() {
             </div>
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('print-area', 'report')}>
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
                 Execute Print Stream
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsViewOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>

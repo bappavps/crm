@@ -94,32 +94,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
 
     /**
-     * Forcefully updates the browser's favicon links by removing existing ones
-     * and injecting the base64 versions from Firestore.
+     * Managed Favicon injection.
+     * Uses unique IDs to avoid conflicting with React's node management.
      */
     const updateIcon = (rel: string, sizes: string | null, href: string) => {
       if (!href) return;
       
-      // Remove all existing links matching this relationship to clear framework defaults
-      const existing = document.querySelectorAll(`link[rel*="${rel}"]`);
-      existing.forEach(el => {
-        if (!sizes || (el as HTMLLinkElement).sizes.value === sizes) {
-          el.remove();
-        }
-      });
-
-      const link = document.createElement('link');
-      link.rel = rel;
-      if (sizes) link.sizes = sizes;
+      const iconId = `dynamic-icon-${rel}-${sizes || 'default'}`;
+      let link = document.getElementById(iconId) as HTMLLinkElement;
+      
+      if (!link) {
+        link = document.createElement('link');
+        link.id = iconId;
+        link.rel = rel;
+        if (sizes) link.sizes = sizes;
+        document.head.appendChild(link);
+      }
+      
       link.href = href;
-      document.getElementsByTagName('head')[0].appendChild(link);
     };
 
     if (companySettings) {
-      // Main favicon (used for browser tab)
       if (companySettings.favicon32) {
         updateIcon('icon', '32x32', companySettings.favicon32);
-        // Fallback for browsers that don't look at sizes
         updateIcon('icon', null, companySettings.favicon32);
       }
       if (companySettings.favicon16) updateIcon('icon', '16x16', companySettings.favicon16);
