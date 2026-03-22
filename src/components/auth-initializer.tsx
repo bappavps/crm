@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect } from 'react';
@@ -8,8 +7,8 @@ import { setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/no
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 /**
- * Handles authentication state changes, role initialization, and sample data seeding.
- * Includes logic for migrating pre-provisioned email-keyed profiles to UID-keyed profiles.
+ * Handles authentication state changes, role initialization, and redirection.
+ * Ensures unauthenticated users are forced to the login page.
  */
 export function AuthInitializer() {
   const auth = useAuth();
@@ -19,11 +18,12 @@ export function AuthInitializer() {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Allow public access to login and QR code roll pages
+    // Define paths that do not require authentication
     const isPublicPath = pathname === '/login' || pathname.startsWith('/roll/');
     
+    // If auth state is resolved and no user is present on a protected path, redirect to login
     if (!isUserLoading && !user && !isPublicPath) {
-      router.push('/login');
+      router.replace('/login');
     }
   }, [user, isUserLoading, pathname, router]);
 

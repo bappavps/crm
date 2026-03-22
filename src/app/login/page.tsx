@@ -56,7 +56,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (mounted && !isUserLoading && user) {
-      router.push("/")
+      router.replace("/")
     }
   }, [user, isUserLoading, router, mounted])
 
