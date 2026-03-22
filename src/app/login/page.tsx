@@ -178,9 +178,12 @@ export default function LoginPage() {
       </div>
 
       {/* Global Footer Inclusion for Login Page */}
-      <div className="relative z-10 w-full py-6 px-6 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-auto text-center">
-        <p className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-[0.2em] opacity-60">
+      <div className="relative z-10 w-full py-6 px-6 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-auto text-center space-y-1">
+        <p className="text-[10px] md:text-xs font-medium text-slate-300 uppercase tracking-[0.2em] opacity-80">
           © {mounted ? new Date().getFullYear() : '2026'} {companyName} • ERP Master System v3.0
+        </p>
+        <p className="text-[9px] md:text-[10px] font-normal text-slate-400 uppercase tracking-[0.1em] opacity-50">
+          @ Developed by Mriganka Bhusan Debnath
         </p>
       </div>
     </div>

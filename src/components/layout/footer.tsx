@@ -6,7 +6,7 @@ import { doc } from "firebase/firestore"
 
 /**
  * Global application footer.
- * Provides dynamic branding, current year, and versioning info.
+ * Provides dynamic branding, current year, versioning info, and developer credit.
  */
 export function Footer() {
   const [mounted, setMounted] = useState(false);
@@ -28,9 +28,12 @@ export function Footer() {
 
   return (
     <footer className="w-full py-6 px-6 border-t bg-card/30 backdrop-blur-sm mt-auto shrink-0">
-      <div className="max-w-7xl mx-auto text-center">
-        <p className="text-[10px] md:text-xs font-bold text-muted-foreground uppercase tracking-[0.2em] opacity-60">
+      <div className="max-w-7xl mx-auto text-center space-y-1.5">
+        <p className="text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-[0.2em] opacity-80">
           © {currentYear} {companyName} • ERP Master System v3.0
+        </p>
+        <p className="text-[9px] md:text-[10px] font-normal text-muted-foreground/40 uppercase tracking-[0.1em]">
+          @ Developed by Mriganka Bhusan Debnath
         </p>
       </div>
     </footer>
