@@ -32,7 +32,7 @@ export function Footer() {
         <p className="text-[10px] md:text-xs font-medium text-muted-foreground uppercase tracking-[0.2em] opacity-80">
           © {currentYear} {companyName} • ERP Master System v3.0
         </p>
-        <p className="text-[9px] md:text-[10px] font-normal text-muted-foreground/40 uppercase tracking-[0.1em]">
+        <p className="text-[10px] md:text-xs font-medium text-muted-foreground/70 uppercase tracking-[0.1em]">
           @ Developed by Mriganka Bhusan Debnath
         </p>
       </div>
