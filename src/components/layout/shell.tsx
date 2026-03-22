@@ -27,6 +27,7 @@ const routePermissionMap: Record<string, PermissionKey> = {
   "/purchase": "purchaseOrders",
   "/paper-stock": "stockRegistry",
   "/inventory/physical-check": "stockAudit",
+  "/scan-terminal": "stockAudit",
   "/stock-import": "stockRegistry",
   "/inventory/dashboard": "stockDashboard",
   "/inventory/slitting": "slitting",
@@ -126,9 +127,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isLoginPage = pathname === "/login"
   const isUnauthorizedPage = pathname === "/unauthorized"
+  const isScanTerminalPage = pathname === "/scan-terminal"
 
   if (isLoginPage) {
     return <>{children}</>
+  }
+
+  // Standalone Layout for Scan Terminal (Hides Shell UI)
+  if (isScanTerminalPage) {
+    return (
+      <ProtectedRoute permission="stockAudit">
+        <div className="min-h-screen bg-slate-900 overflow-hidden">
+          {children}
+        </div>
+      </ProtectedRoute>
+    );
   }
 
   const matchedRoute = Object.keys(routePermissionMap).find(route => 

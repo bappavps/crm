@@ -150,7 +150,16 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Inventory Hub",
     items: [
       { name: 'Paper Stock', icon: Boxes, href: '/paper-stock', permission: 'stockRegistry' },
-      { name: 'Physical Stock Check', icon: ScanLine, href: '/inventory/physical-check', permission: 'stockAudit' },
+      { 
+        name: 'Physical Stock Check', 
+        icon: ScanLine, 
+        href: '/inventory/physical-check', 
+        permission: 'stockAudit',
+        subItems: [
+          { name: 'Audit Hub', href: '/inventory/physical-check' },
+          { name: 'Scan Terminal', href: '/scan-terminal' },
+        ]
+      },
       { name: 'Slitting', icon: Scissors, href: '/inventory/slitting', permission: 'slitting' },
       { name: 'Finished Goods', icon: Box, href: '/inventory/finished-goods', permission: 'finishedGoods' },
       { name: 'Die Tooling', icon: Wrench, href: '/die', permission: 'dieManagement' },
