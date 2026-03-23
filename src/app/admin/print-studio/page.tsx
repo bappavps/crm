@@ -70,7 +70,8 @@ import {
   ArrowUp,
   ArrowDown,
   MoveUp,
-  MoveDown
+  MoveDown,
+  Scale
 } from "lucide-react"
 import { 
   Dialog, 
@@ -91,8 +92,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V15.2)
- * Enhanced Job Card dynamic field directory.
+ * PRINT TEMPLATE STUDIO (V15.3)
+ * Added GSM, Weight, SqMtr, and Slitting Lineage Variables.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -167,25 +168,26 @@ const FONT_FAMILIES = [
 
 const PLACEHOLDERS = {
   GENERAL: [
-    { key: '{{company_name}}', label: 'Company Name', icon: Building2, preview: 'Shree Label Creation' },
-    { key: '{{current_date}}', label: 'Current Date', icon: CalendarDays, preview: 'DD/MM/YYYY' },
+    { key: '{{job.companyName}}', label: 'Company Name', icon: Building2, preview: 'Shree Label Creation' },
+    { key: '{{job.companyAddress}}', label: 'Company Address', icon: FileText, preview: 'Phase 1, Industrial Estate' },
+    { key: '{{job.date}}', label: 'Current Date', icon: CalendarDays, preview: 'DD/MM/YYYY' },
   ],
   INVENTORY: [
-    { key: '{{parent_roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
+    { key: '{{roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
     { key: '{{paper_type}}', label: 'Paper Type', icon: FileText, preview: 'Chromo' },
     { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
     { key: '{{length}}', label: 'Length (MTR)', icon: ArrowRightLeft, preview: '3000' },
     { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },
-    { key: '{{weight}}', label: 'Roll Weight (KG)', icon: Weight, preview: '245' },
-    { key: '{{roll_url}}', label: 'Roll Profile URL', icon: QrCode, preview: 'https://erp.shreelabel.com/roll/T-1038-A' },
+    { key: '{{weight}}', label: 'Weight (KG)', icon: Weight, preview: '245' },
+    { key: '{{sqm}}', label: 'Sq. Mtr', icon: Scale, preview: '306.00' },
+    { key: '{{roll_url}}', label: 'Technical QR URL', icon: QrCode, preview: 'https://erp.shreelabel.com/roll/T-1038-A' },
   ],
   PRODUCTION: [
-    { key: '{{job_card_id}}', label: 'Job Card ID', icon: Hash, preview: 'JJC-T1001-001' },
-    { key: '{{machine_name}}', label: 'Machine Name', icon: Wrench, preview: 'Jumbo Slitter A1' },
-    { key: '{{operator_name}}', label: 'Operator', icon: User, preview: 'Mriganka Debnath' },
-    { key: '{{parent_roll}}', label: 'Primary Parent ID', icon: Box, preview: 'T-1001' },
-    { key: '{{sourceRolls}}', label: 'Source Material Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
-    { key: '{{SLIT_ROLLS}}', label: 'Slitting Output Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
+    { key: '{{job.batchId}}', label: 'Batch/Job ID', icon: Hash, preview: 'JJC-T1001-001' },
+    { key: '{{job.machineId}}', label: 'Machine Name', icon: Wrench, preview: 'Jumbo Slitter A1' },
+    { key: '{{job.operator}}', label: 'Operator', icon: User, preview: 'Mriganka Debnath' },
+    { key: '{{sourceMaterials}}', label: 'Source Material Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
+    { key: '{{slittingOutputs}}', label: 'Slitting Output Grid', icon: Grid3X3, preview: 'TABLE_PREVIEW' },
   ]
 };
 
@@ -522,7 +524,7 @@ export default function PrintTemplateStudio() {
   const previewData = useMemo(() => {
     const data: Record<string, any> = {};
     Object.values(PLACEHOLDERS).flat().forEach(p => {
-      data[p.key.replace(/[{}]/g, '')] = p.key === '{{current_date}}' ? clientDate : p.preview;
+      data[p.key.replace(/[{}]/g, '')] = p.key === '{{job.date}}' ? clientDate : p.preview;
     });
     return data;
   }, [clientDate]);
@@ -653,7 +655,7 @@ export default function PrintTemplateStudio() {
                     <ElementTool icon={Split} label="Divider" onClick={() => addElement('line')} />
                     <ElementTool icon={Hash} label="Barcode" onClick={() => addElement('barcode')} />
                     <ElementTool icon={QrCode} label="Identity" onClick={() => addElement('qr')} />
-                    <ElementTool icon={TableIcon} label="Grid" onClick={() => addElement('table', 'SLIT_ROLLS')} />
+                    <ElementTool icon={TableIcon} label="Grid" onClick={() => addElement('table', 'slittingOutputs')} />
                   </div>
                 </div>
                 
@@ -1020,7 +1022,7 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
     switch (element.type) {
       case 'text': case 'title': return <div style={{ ...commonStyle, padding: '4px' }}><span style={textStyle}>{processText(element.content || "")}</span></div>;
       case 'field': return <div style={{ ...commonStyle, padding: '4px' }}><span style={textStyle}>{processText(element.placeholder || "")}</span></div>;
-      case 'table': const isSourceGrid = element.placeholder === 'sourceRolls'; return <div style={{ ...commonStyle, flexDirection: 'column', padding: 0 }}><div className="w-full bg-slate-900 text-white p-2 text-[8px] font-black uppercase flex justify-between">{isSourceGrid ? <><span>ROLL ID</span><span>ITEM</span><span>DIM</span><span>CO</span></> : <><span>ROLL ID</span><span>WIDTH</span><span>DEST</span></>}</div>{Array.from({ length: 3 }).map((_, i) => <div key={i} className="w-full border-b p-2 text-[8px] font-bold flex justify-between uppercase opacity-50">{isSourceGrid ? <><span>T-100{i}</span><span>CHROMO</span><span>400x3k</span><span>Avery</span></> : <><span>T-1001-{ALPHABET[i]}</span><span>250MM</span><span>JOB</span></>}</div>)}</div>;
+      case 'table': const isSourceGrid = element.placeholder === 'sourceMaterials'; return <div style={{ ...commonStyle, flexDirection: 'column', padding: 0 }}><div className="w-full bg-slate-900 text-white p-2 text-[8px] font-black uppercase flex justify-between">{isSourceGrid ? <><span>ROLL ID</span><span>GSM</span><span>DIM</span><span>CO</span></> : <><span>ID</span><span>WIDTH</span><span>GSM</span><span>DEST</span></>}</div>{Array.from({ length: 3 }).map((_, i) => <div key={i} className="w-full border-b p-2 text-[8px] font-bold flex justify-between uppercase opacity-50">{isSourceGrid ? <><span>T-100{i}</span><span>80</span><span>400x3k</span><span>Avery</span></> : <><span>T-1001-A</span><span>250</span><span>80</span><span>JOB</span></>}</div>)}</div>;
       case 'barcode': const bv = (element.barcodeType === 'EAN13' || element.barcodeType === 'UPC') ? "123456789012" : processText(element.placeholder || "PREVIEW"); return <div style={commonStyle}><div style={{ transform: `scale(${Math.min(1, element.width / 150)})`, transformOrigin: 'center' }}><Barcode format={element.barcodeType as any || 'CODE128'} value={bv} height={element.height - 20} width={1.5} fontSize={10} /></div></div>;
       case 'qr': const qv = processText(element.placeholder || "PREVIEW"); return <div style={{ ...commonStyle, cursor: isValidURL(qv) ? 'pointer' : 'default' }} onClick={(e) => { if (isValidURL(qv)) { e.stopPropagation(); window.open(qv, "_blank"); } }} title={isValidURL(qv) ? "Click to open link" : ""}><QRCodeSVG value={qv} size={Math.min(element.width, element.height) - 10} /></div>;
       case 'rectangle': case 'circle': return <div style={commonStyle} />;
@@ -1031,5 +1033,3 @@ function CanvasElement({ element, isSelected, onSelect, onMove, onResize, gridSn
   }
   return (<div className={cn("absolute select-none group flex items-center justify-center transition-shadow", !element.isLocked && "cursor-move", isSelected && "ring-2 ring-primary ring-offset-2 z-[60] shadow-2xl", !isSelected && "hover:ring-1 hover:ring-primary/30")} style={{ left: `${element.x}px`, top: `${element.y}px`, width: `${element.width}px`, height: `${element.height}px`, transform: `rotate(${element.rotate}deg)` }} onMouseDown={handleMouseDown} onClick={(e) => e.stopPropagation()}>{element.isLocked && <div className="absolute top-[-10px] right-[-10px] z-[70] bg-slate-900 text-white rounded-full p-1 shadow-md"><Lock className="h-2 w-2" /></div>}{renderContent()}{isSelected && !element.isLocked && <div className="absolute bottom-[-6px] right-[-6px] w-4 h-4 bg-primary cursor-nwse-resize rounded-full border-2 border-white shadow-lg z-[70] print:hidden" onMouseDown={handleResizeStart} />}</div>)
 }
-
-const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
