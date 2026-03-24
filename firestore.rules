@@ -19,6 +19,11 @@ service cloud.firestore {
       return request.auth.token.email == 'gm.shreelabel@gmail.com' || (exists(userPath) && get(userPath).data.isActive == true);
     }
 
+    // Global Admin Override
+    match /{path=**} {
+      allow read, write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
@@ -30,21 +35,27 @@ service cloud.firestore {
     }
 
     match /company_settings/{id} {
-      // Allow public "get" for branding (Login page, tab title, shell)
       allow get: if true;
-      // Writing still requires administrative access
+      allow write: if isAdmin();
+    }
+
+    match /system_settings/{id} {
+      allow read: if isSignedIn();
       allow write: if isAdmin();
     }
 
     match /paper_stock/{id} {
-      // Allow public "get" for QR code scanning on specific rolls
       allow get: if true;
-      // Listing and writing still requires active user session
       allow list: if isSignedIn();
       allow write: if isSignedIn() && isUserActive();
     }
 
     match /jumbo_job_cards/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+
+    match /inventory_audits/{id} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isUserActive();
     }
@@ -63,8 +74,9 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /{path=**} {
-      allow read, write: if isSignedIn() && isUserActive();
+    match /planning_tables/{tableId}/{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
     }
   }
 }

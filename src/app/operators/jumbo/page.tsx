@@ -169,7 +169,7 @@ export default function JumboOperatorPage() {
           <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Machine Telemetry & Run Log</p>
         </div>
         <Badge variant="outline" className="h-10 px-6 font-black uppercase text-[10px] tracking-[0.2em] border-2 rounded-xl">
-          <Timer className="h-4 w-4 mr-2 text-primary" /> Shift Time: {new Date().toLocaleTimeString()}
+          <Clock className="h-4 w-4 mr-2 text-primary" /> Shift Time: {new Date().toLocaleTimeString()}
         </Badge>
       </div>
 
@@ -271,7 +271,7 @@ export default function JumboOperatorPage() {
             <CardContent className="p-0">
               {historyLoading ? (
                 <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
-              ) : filteredHistory.length === 0 ? (
+              ) : !filteredHistory || filteredHistory.length === 0 ? (
                 <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
                   <FileText className="h-12 w-12" />
                   <p className="font-black uppercase text-[10px] tracking-widest">No job history for selected period.</p>
@@ -441,8 +441,4 @@ export default function JumboOperatorPage() {
       `}</style>
     </div>
   )
-}
-
-function Timer({ className }: { className?: string }) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>;
 }
