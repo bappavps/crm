@@ -2,7 +2,7 @@
 'use client';
 
 import React, { createContext, useContext, ReactNode, useMemo } from 'react';
-import { useUser, useFirestore, useMemoFirebase } from '@/firebase/provider';
+import { useUser, useFirestore, useMemoFirebase, DEV_MODE } from '@/firebase/provider';
 import { useCollection } from '@/firebase/firestore/use-collection';
 import { useDoc } from '@/firebase/firestore/use-doc';
 import { collection, doc } from 'firebase/firestore';
@@ -34,18 +34,23 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const firestore = useFirestore();
 
   const userRef = useMemoFirebase(() => {
-    if (!firestore || !user || isAuthLoading) return null;
+    if (!firestore || !user || isAuthLoading || DEV_MODE) return null;
     return doc(firestore, 'users', user.uid);
   }, [firestore, user, isAuthLoading]);
   const { data: profile, isLoading: isProfileLoading } = useDoc(userRef);
 
   const rolesQuery = useMemoFirebase(() => {
-    if (!firestore || !user || isAuthLoading) return null;
+    if (!firestore || !user || isAuthLoading || DEV_MODE) return null;
     return collection(firestore, 'roles');
   }, [firestore, user, isAuthLoading]);
   const { data: allRoles, isLoading: isRolesLoading } = useCollection(rolesQuery);
 
   const permissions = useMemo(() => {
+    // If in Dev Mode, we grant every permission immediately
+    if (DEV_MODE) {
+      return {}; // Combined with hasPermission logic
+    }
+
     if (!profile) return {};
     
     const userRoleIds = profile.roles || (profile.roleId ? [profile.roleId] : []);
@@ -71,6 +76,7 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   }, [allRoles, profile]);
 
   const hasPermission = (key: PermissionKey): boolean => {
+    if (DEV_MODE) return true; // Bypass for development
     if (user?.email === 'gm.shreelabel@gmail.com') return true;
     if (permissions['admin'] === true) return true;
     return !!permissions[key];
@@ -79,8 +85,8 @@ export function PermissionProvider({ children }: { children: ReactNode }) {
   const value = {
     permissions,
     hasPermission,
-    isLoading: isAuthLoading || isProfileLoading || isRolesLoading,
-    roles: profile?.roles || (profile?.roleId ? [profile.roleId] : [])
+    isLoading: DEV_MODE ? false : (isAuthLoading || isProfileLoading || isRolesLoading),
+    roles: DEV_MODE ? ['Admin'] : (profile?.roles || (profile?.roleId ? [profile.roleId] : []))
   };
 
   return (

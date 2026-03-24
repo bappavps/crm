@@ -1,14 +1,15 @@
+
 'use client';
 
 import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useAuth, useUser, useFirestore } from '@/firebase/provider';
+import { useAuth, useUser, useFirestore, DEV_MODE, getDevUser } from '@/firebase/provider';
 import { setDocumentNonBlocking, deleteDocumentNonBlocking } from '@/firebase/non-blocking-updates';
 import { doc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 /**
  * Handles authentication state changes, role initialization, and redirection.
- * Ensures unauthenticated users are forced to the login page.
+ * Bypass active in DEV_MODE.
  */
 export function AuthInitializer() {
   const auth = useAuth();
@@ -18,16 +19,19 @@ export function AuthInitializer() {
   const pathname = usePathname();
 
   useEffect(() => {
-    // Define paths that do not require authentication
+    // If in Development Mode, we skip the login redirection logic entirely.
+    if (DEV_MODE) return;
+
     const isPublicPath = pathname === '/login' || pathname.startsWith('/roll/');
-    
-    // If auth state is resolved and no user is present on a protected path, redirect to login
     if (!isUserLoading && !user && !isPublicPath) {
       router.replace('/login');
     }
   }, [user, isUserLoading, pathname, router]);
 
   useEffect(() => {
+    // Skip profile synchronization if in Dev Mode to avoid mock user document creation
+    if (DEV_MODE) return;
+
     if (user && firestore) {
       const isTargetAdmin = user.email === 'gm.shreelabel@gmail.com';
       const userRef = doc(firestore, 'users', user.uid);
