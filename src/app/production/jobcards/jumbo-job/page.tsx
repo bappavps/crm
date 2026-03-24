@@ -219,7 +219,6 @@ function JumboJobCardContent() {
     const paperW = template.paperWidth;
     const paperH = template.paperHeight;
 
-    // Use absolute dimensions for capture to prevent clipping
     const captureWidth = paperW * 3.78;
     const captureHeight = printContent.scrollHeight;
 
@@ -300,7 +299,24 @@ function JumboJobCardContent() {
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
 
   const prepareJobData = (job: any) => {
-    if (!job) return {};
+    const defaultData = {
+      job: {
+        batchId: "",
+        date: "",
+        paperType: "SUBSTRATE",
+        machineId: "MANUAL",
+        operator: "UNASSIGNED",
+        companyName: companySettings?.name || "Shree Label Creation",
+        companyAddress: companySettings?.address || "",
+        companyLogo: companySettings?.logo || "",
+        remarks: ""
+      },
+      sourceMaterials: [],
+      slittingOutputs: []
+    };
+
+    if (!job) return defaultData;
+
     const parentRollsList = (job.parent_rolls || [job.parent_roll]).filter(Boolean);
     const rawSourceRolls = allRolls?.filter(r => parentRollsList.includes(r.rollNo)) || [];
     const children = allRolls?.filter(r => job.child_rolls?.includes(r.rollNo)) || [];
@@ -550,15 +566,15 @@ function JumboJobCardContent() {
                   {/* HEADER */}
                   <div className="flex justify-between items-end border-b-4 border-slate-900 pb-6 mb-6">
                     <div className="flex gap-6 items-center">
-                      {jobData.job.companyLogo && <img src={jobData.job.companyLogo} className="h-16 w-auto object-contain" alt="Logo" />}
+                      {jobData?.job?.companyLogo && <img src={jobData.job.companyLogo} className="h-16 w-auto object-contain" alt="Logo" />}
                       <div className="space-y-1">
-                        <h1 className="text-3xl font-black tracking-tighter text-slate-900 uppercase">{jobData.job.companyName}</h1>
-                        <p className="text-[9px] font-bold text-slate-500 uppercase max-w-sm leading-tight">{jobData.job.companyAddress}</p>
+                        <h1 className="text-3xl font-black tracking-tighter text-slate-900 uppercase">{jobData?.job?.companyName}</h1>
+                        <p className="text-[9px] font-bold text-slate-500 uppercase max-w-sm leading-tight">{jobData?.job?.companyAddress}</p>
                       </div>
                     </div>
                     <div className="text-right space-y-1">
-                      <Badge className="bg-slate-900 text-white px-4 py-1 rounded-md font-black text-lg tracking-tight border-none shadow-md">{jobData.job.batchId}</Badge>
-                      <p className="text-[9px] font-black uppercase text-slate-400">GEN DATE: {jobData.job.date}</p>
+                      <Badge className="bg-slate-900 text-white px-4 py-1 rounded-md font-black text-lg tracking-tight border-none shadow-md">{jobData?.job?.batchId}</Badge>
+                      <p className="text-[9px] font-black uppercase text-slate-400">GEN DATE: {jobData?.job?.date}</p>
                     </div>
                   </div>
 
@@ -567,9 +583,9 @@ function JumboJobCardContent() {
                     <div className="space-y-4">
                       <h3 className="text-[10px] font-black uppercase text-slate-900 flex items-center gap-2 border-b-2 pb-1"><div className="w-1 h-3 bg-primary rounded-full" /> Execution Identity</h3>
                       <div className="grid grid-cols-2 gap-y-3 text-[11px] font-bold">
-                        <span className="opacity-40 uppercase">Substrate:</span><span>{jobData.job.paperType}</span>
-                        <span className="opacity-40 uppercase">Machine ID:</span><span>{jobData.job.machineId}</span>
-                        <span className="opacity-40 uppercase">Operator:</span><span>{jobData.job.operator}</span>
+                        <span className="opacity-40 uppercase">Substrate:</span><span>{jobData?.job?.paperType}</span>
+                        <span className="opacity-40 uppercase">Machine ID:</span><span>{jobData?.job?.machineId}</span>
+                        <span className="opacity-40 uppercase">Operator:</span><span>{jobData?.job?.operator}</span>
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-2">
@@ -591,7 +607,7 @@ function JumboJobCardContent() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {jobData.sourceMaterials.map((r: any, idx: number) => (
+                          {jobData?.sourceMaterials?.map((r: any, idx: number) => (
                             <TableRow key={idx} className="h-8 border-b border-slate-200 last:border-0 even:bg-slate-50">
                               <TableCell className="font-black text-[11px] border-r border-slate-200">{r.rollId}</TableCell>
                               <TableCell className="text-[10px] border-r border-slate-200 truncate max-w-[80px]">{r.company}</TableCell>
@@ -621,7 +637,7 @@ function JumboJobCardContent() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {jobData.slittingOutputs.map((r: any, idx: number) => (
+                          {jobData?.slittingOutputs?.map((r: any, idx: number) => (
                             <TableRow key={idx} className="h-8 border-b border-slate-200 last:border-0 even:bg-slate-50">
                               <TableCell className="font-black text-[11px] border-r border-slate-200 text-slate-900">{r.childRollId}</TableCell>
                               <TableCell className="text-[10px] border-r border-slate-200 font-mono">{r.parentRef}</TableCell>
@@ -655,7 +671,7 @@ function JumboJobCardContent() {
                     </div>
                     <div className="border-2 border-slate-300 rounded-xl p-4 bg-slate-50 flex flex-col">
                       <p className="text-[9px] font-black uppercase text-slate-400 border-b pb-1 mb-2">Technical Remarks</p>
-                      <p className="text-[10px] font-medium text-slate-700 italic flex-1">{jobData.job.remarks || "No specific floor deviations noted."}</p>
+                      <p className="text-[10px] font-medium text-slate-700 italic flex-1">{jobData?.job?.remarks || "No specific floor deviations noted."}</p>
                     </div>
                     <div className="border-2 border-slate-300 rounded-xl p-4 bg-slate-50 flex flex-col justify-end">
                       <div className="text-center pt-2 border-t-2 border-slate-300 border-dashed">
@@ -718,7 +734,7 @@ function JumboJobCardContent() {
                       </div>
                     </div>
                   ) : (
-                    <TemplateRenderer template={activeLabelTemplate} data={prepareRollData(roll || { rollNo: code })} />
+                    <TemplateRenderer template={activeLabelTemplate} data={{...roll, roll_no: roll?.rollNo, id: roll?.id, current_date: new Date().toLocaleDateString(), roll_url: siteOrigin ? `${siteOrigin}/roll/${roll?.id}` : (roll?.id || "")}} />
                   )}
                 </div>
               );
