@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,12 +49,30 @@ export default function JumboOperatorPage() {
   const [activeJob, setActiveJob] = useState<any>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [historyPeriod, setHistoryPeriod] = useState("current")
+  const [isMounted, setIsMounted] = useState(false)
+  const [currentTime, setCurrentTime] = useState<string | null>(null)
   
   const [formData, setFormData] = useState({
-    startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    startTime: "",
     endTime: "",
     notes: ""
   })
+
+  useEffect(() => {
+    setIsMounted(true)
+    const updateTime = () => {
+      setCurrentTime(new Date().toLocaleTimeString())
+    }
+    updateTime()
+    const timer = setInterval(updateTime, 1000)
+    
+    setFormData(prev => ({
+      ...prev,
+      startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }))
+
+    return () => clearInterval(timer)
+  }, [])
 
   // Data Subscriptions
   const jobsQuery = useMemoFirebase(() => {
@@ -161,6 +179,8 @@ export default function JumboOperatorPage() {
     }
   };
 
+  if (!isMounted) return null;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20 max-w-full mx-auto">
       <div className="flex items-center justify-between px-4">
@@ -169,7 +189,7 @@ export default function JumboOperatorPage() {
           <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Machine Telemetry & Run Log</p>
         </div>
         <Badge variant="outline" className="h-10 px-6 font-black uppercase text-[10px] tracking-[0.2em] border-2 rounded-xl">
-          <Clock className="h-4 w-4 mr-2 text-primary" /> Shift Time: {new Date().toLocaleTimeString()}
+          <Clock className="h-4 w-4 mr-2 text-primary" /> Shift Time: {currentTime || '--:--:--'}
         </Badge>
       </div>
 

@@ -89,6 +89,7 @@ export default function AdvancedReportsPage() {
   const firestore = useFirestore()
   const [isMounted, setIsMounted] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [reportDate, setReportDate] = useState<string | null>(null)
   
   // Filtering States
   const [headerFilters, setHeaderFilters] = useState<Record<string, string[]>>({})
@@ -98,7 +99,10 @@ export default function AdvancedReportsPage() {
   const [analysisType, setAnalysisType] = useState("Status Distribution")
   const [graphField, setGraphField] = useState("paperType")
 
-  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { 
+    setIsMounted(true)
+    setReportDate(format(new Date(), 'dd MMM yyyy'))
+  }, [])
 
   // 1. Data Fetching
   const registryQuery = useMemoFirebase(() => {
@@ -398,7 +402,7 @@ export default function AdvancedReportsPage() {
           </div>
           <div className="text-right space-y-1">
             <h2 className="text-xl font-black uppercase">Paper Stock Audit</h2>
-            <p className="text-sm font-bold">REPORT DATE: {format(new Date(), 'dd MMM yyyy')}</p>
+            <p className="text-sm font-bold">REPORT DATE: {reportDate || '...'}</p>
           </div>
         </div>
 
