@@ -43,7 +43,7 @@ import Link from "next/link"
 
 export default function JumboOperatorPage() {
   const { toast } = useToast()
-  const { user } = useUser()
+  const { user, isUserLoading } = useUser()
   const firestore = useFirestore()
   
   const [activeJob, setActiveJob] = useState<any>(null)
@@ -74,26 +74,26 @@ export default function JumboOperatorPage() {
     return () => clearInterval(timer)
   }, [])
 
-  // Data Subscriptions
+  // Data Subscriptions - Guarded by user auth state
   const jobsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
-  }, [firestore]);
+  }, [firestore, user]);
 
   const historyQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return query(
       collection(firestore, 'jumbo_job_cards'), 
       where('status', '==', 'COMPLETED'),
       orderBy('createdAt', 'desc'),
       limit(100)
     );
-  }, [firestore]);
+  }, [firestore, user]);
 
   const rollsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'paper_stock');
-  }, [firestore]);
+  }, [firestore, user]);
 
   const { data: jobs, isLoading } = useCollection(jobsQuery);
   const { data: historyJobs, isLoading: historyLoading } = useCollection(historyQuery);
@@ -179,7 +179,22 @@ export default function JumboOperatorPage() {
     }
   };
 
-  if (!isMounted) return null;
+  if (!isMounted || isUserLoading) {
+    return (
+      <div className="flex h-[70vh] flex-col items-center justify-center gap-4">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Synchronizing Operator Terminal...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="p-20 text-center text-muted-foreground">
+        Authentication Required. Please log in to access the operator terminal.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20 max-w-full mx-auto">
