@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
 import { 
   ScanLine, 
   ChevronLeft, 
@@ -181,7 +182,7 @@ export default function ScanTerminalPage() {
           <h1 className="text-lg font-black uppercase tracking-widest flex items-center gap-2">
             <ScanLine className="h-5 w-5 text-primary" /> Scan Terminal
           </h1>
-          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.3em]">Production Floor Mode</p>
+          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-[0.2em]">Production Floor Mode</p>
         </div>
         <div className="w-20" />
       </div>
