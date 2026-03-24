@@ -239,9 +239,15 @@ export default function PaperStockPage() {
     return collection(firestore, 'users');
   }, [firestore]);
 
+  const companySettingsRef = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return doc(firestore, 'company_settings', 'global');
+  }, [firestore]);
+
   const { data: rolls, isLoading: itemsLoading } = useCollection(registryQuery);
   const { data: machines } = useCollection(machinesQuery);
   const { data: users } = useCollection(usersQuery);
+  const { data: companySettings } = useDoc(companySettingsRef);
 
   // Template Queries
   const labelTemplatesQuery = useMemoFirebase(() => {
@@ -652,12 +658,45 @@ export default function PaperStockPage() {
   const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
   const activeReportTemplate = reportTemplates?.find(t => t.id === selectedReportTemplateId);
 
-  const prepareRollData = (roll: any) => ({
-    ...roll, roll_no: roll.rollNo || "", id: roll.id || "", parent_roll_no: roll.rollNo || "", paper_type: roll.paperType || "",
-    width: roll.widthMm || 0, length: roll.lengthMeters || 0, gsm: roll.gsm || 0, weight: roll.weightKg || 0,
-    company: roll.paperCompany || "", date: roll.receivedDate || "", company_name: roll.paperCompany || "",
-    current_date: clientNow, roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || "")
-  });
+  /**
+   * Technical data mapping for Print Studio custom templates.
+   * Mirrors the comprehensive aliases used in Jumbo Job Card module.
+   */
+  const prepareRollData = (roll: any) => {
+    if (!roll) return {};
+    const cDate = clientNow;
+    
+    return {
+      ...roll,
+      roll_no: roll.rollNo || "",
+      id: roll.id || "",
+      parent_roll_no: roll.rollNo || "",
+      paper_type: roll.paperType || "",
+      paper_company: roll.paperCompany || "",
+      paperCompany: roll.paperCompany || "",
+      width: roll.widthMm || 0,
+      length: roll.lengthMeters || 0,
+      gsm: roll.gsm || 0,
+      weight: roll.weightKg || 0,
+      sqm: roll.sqm || 0,
+      sqMtr: roll.sqm || 0,
+      roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll.id || ""),
+      current_date: cDate,
+      date: cDate,
+      company_name: roll.paperCompany || "",
+      // Injected nested job object for corporate branding compatibility
+      job: {
+        companyName: companySettings?.name || "Shree Label Creation",
+        companyAddress: companySettings?.address || "",
+        companyLogo: companySettings?.logo || "",
+        date: cDate,
+        currentDate: cDate,
+        current_date: cDate,
+        paper_company: roll.paperCompany || "",
+        paperCompany: roll.paperCompany || ""
+      }
+    };
+  };
 
   if (!isMounted) return null;
 
@@ -1019,7 +1058,7 @@ export default function PaperStockPage() {
               <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Queue</DialogTitle>
               <Select value={selectedLabelTemplateId} onValueChange={setSelectedLabelTemplateId}>
                 <SelectTrigger className="h-8 w-[250px] bg-white/10 border-white/20 text-white text-[10px] font-bold uppercase rounded-lg">
-                  <SelectValue placeholder="Select Template" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="z-[110]">
                   <SelectItem value="default" className="text-xs font-bold uppercase">Default Thermal (150x100)</SelectItem>
