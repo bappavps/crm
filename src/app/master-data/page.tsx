@@ -2,18 +2,18 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Plus, Trash2, Pencil, Loader2, Info, Factory, Wrench, Users, ShoppingBag, Layers, Box } from "lucide-react"
+import { Plus, Trash2, Pencil, Loader2, Info, Factory, Wrench, Users, ShoppingBag, Layers, Box, Settings2, Hash, Save } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useCollection, useFirestore, useUser, useMemoFirebase } from "@/firebase"
-import { collection, doc, serverTimestamp, deleteDoc } from "firebase/firestore"
+import { useCollection, useFirestore, useUser, useMemoFirebase, useDoc } from "@/firebase"
+import { collection, doc, serverTimestamp, deleteDoc, setDoc } from "firebase/firestore"
 import { updateDocumentNonBlocking, addDocumentNonBlocking } from "@/firebase/non-blocking-updates"
 import { ActionModal, ModalType } from "@/components/action-modal"
 import { usePermissions } from "@/components/auth/permission-context"
@@ -28,6 +28,33 @@ export default function MasterDataPage() {
   const [dialogType, setDialogType] = useState<string>("raw_materials")
   const [editingItem, setEditingItem] = useState<any>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+
+  // Prefix State
+  const prefixConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'system_settings', 'prefix_config') : null, [firestore]);
+  const { data: prefixConfig } = useDoc(prefixConfigRef);
+  const [localPrefixes, setLocalPrefixes] = useState({
+    quotationPrefix: "QT",
+    estimatePrefix: "EST",
+    rollPrefix: "SLC",
+    invoicePrefix: "INV",
+    jobPrefix: "JOB",
+    batchPrefix: "JBC",
+    format: "PREFIX-YYYY-###"
+  })
+
+  useEffect(() => {
+    if (prefixConfig) {
+      setLocalPrefixes({
+        quotationPrefix: prefixConfig.quotationPrefix || "QT",
+        estimatePrefix: prefixConfig.estimatePrefix || "EST",
+        rollPrefix: prefixConfig.rollPrefix || "SLC",
+        invoicePrefix: prefixConfig.invoicePrefix || "INV",
+        jobPrefix: prefixConfig.jobPrefix || "JOB",
+        batchPrefix: prefixConfig.batchPrefix || "JBC",
+        format: prefixConfig.format || "PREFIX-YYYY-###"
+      });
+    }
+  }, [prefixConfig]);
 
   // Machine specific form state
   const [machineData, setMachineData] = useState({
@@ -135,6 +162,23 @@ export default function MasterDataPage() {
     }
   };
 
+  const handleSavePrefixes = async () => {
+    if (!firestore) return;
+    setIsProcessing(true);
+    try {
+      await setDoc(doc(firestore, 'system_settings', 'prefix_config'), {
+        ...localPrefixes,
+        updatedAt: serverTimestamp(),
+        updatedBy: user?.uid
+      });
+      toast({ title: "Prefix Settings Saved" });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Save Failed" });
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   const renderDialogFields = () => {
     if (dialogType === 'machines') {
       return (
@@ -227,8 +271,88 @@ export default function MasterDataPage() {
           <TabsTrigger value="machines" className="gap-2 font-bold px-6 h-10"><Wrench className="h-4 w-4" /> Machines</TabsTrigger>
           <TabsTrigger value="cylinders" className="gap-2 font-bold px-6 h-10"><Factory className="h-4 w-4" /> Cylinders</TabsTrigger>
           <TabsTrigger value="customers" className="gap-2 font-bold px-6 h-10"><Users className="h-4 w-4" /> Clients</TabsTrigger>
+          <TabsTrigger value="prefix_settings" className="gap-2 font-bold px-6 h-10"><Hash className="h-4 w-4" /> Number Prefix Settings</TabsTrigger>
         </TabsList>
         
+        {/* CATEGORY: PREFIX SETTINGS */}
+        <TabsContent value="prefix_settings">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <Card className="border-none shadow-xl rounded-2xl overflow-hidden">
+              <CardHeader className="bg-slate-900 text-white p-6">
+                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
+                  <Settings2 className="h-5 w-5 text-primary" /> Global Document Prefixes
+                </CardTitle>
+                <CardDescription className="text-slate-400 font-bold uppercase text-[10px]">Configure central document numbering logic</CardDescription>
+              </CardHeader>
+              <CardContent className="p-8 space-y-6 bg-slate-50">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-400">Quotation Prefix</Label>
+                    <Input value={localPrefixes.quotationPrefix} onChange={e => setLocalPrefixes({...localPrefixes, quotationPrefix: e.target.value.toUpperCase()})} className="h-11 rounded-xl border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-400">Estimate Prefix</Label>
+                    <Input value={localPrefixes.estimatePrefix} onChange={e => setLocalPrefixes({...localPrefixes, estimatePrefix: e.target.value.toUpperCase()})} className="h-11 rounded-xl border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-400">Roll Prefix</Label>
+                    <Input value={localPrefixes.rollPrefix} onChange={e => setLocalPrefixes({...localPrefixes, rollPrefix: e.target.value.toUpperCase()})} className="h-11 rounded-xl border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-400">Invoice Prefix</Label>
+                    <Input value={localPrefixes.invoicePrefix} onChange={e => setLocalPrefixes({...localPrefixes, invoicePrefix: e.target.value.toUpperCase()})} className="h-11 rounded-xl border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-400">Job Prefix</Label>
+                    <Input value={localPrefixes.jobPrefix} onChange={e => setLocalPrefixes({...localPrefixes, jobPrefix: e.target.value.toUpperCase()})} className="h-11 rounded-xl border-2 font-bold" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase text-slate-400">Batch Prefix (Jumbo)</Label>
+                    <Input value={localPrefixes.batchPrefix} onChange={e => setLocalPrefixes({...localPrefixes, batchPrefix: e.target.value.toUpperCase()})} className="h-11 rounded-xl border-2 font-bold" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase text-slate-400">Year Format</Label>
+                  <Select value={localPrefixes.format} onValueChange={v => setLocalPrefixes({...localPrefixes, format: v})}>
+                    <SelectTrigger className="h-11 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent className="z-[110]">
+                      <SelectItem value="PREFIX-YYYY-###">PREFIX-YYYY-### (e.g. SLC-2026-001)</SelectItem>
+                      <SelectItem value="PREFIX/YY/###">PREFIX/YY/### (e.g. SLC/26/001)</SelectItem>
+                      <SelectItem value="PREFIX-###">PREFIX-### (e.g. SLC-001)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button onClick={handleSavePrefixes} disabled={isProcessing} className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 font-black uppercase tracking-widest shadow-xl">
+                  {isProcessing ? <Loader2 className="animate-spin mr-2" /> : <Save className="mr-2 h-5 w-5" />}
+                  Save Global Prefixes
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-xl rounded-2xl overflow-hidden bg-primary text-white">
+              <CardHeader className="p-8">
+                <CardTitle className="text-xs font-black uppercase tracking-widest opacity-70">Live Numbering Preview</CardTitle>
+              </CardHeader>
+              <CardContent className="p-8 space-y-10">
+                <div className="space-y-6">
+                  <PreviewItem label="Roll ID" prefix={localPrefixes.rollPrefix} format={localPrefixes.format} />
+                  <PreviewItem label="Estimate ID" prefix={localPrefixes.estimatePrefix} format={localPrefixes.format} />
+                  <PreviewItem label="Invoice ID" prefix={localPrefixes.invoicePrefix} format={localPrefixes.format} />
+                  <PreviewItem label="Quotation ID" prefix={localPrefixes.quotationPrefix} format={localPrefixes.format} />
+                </div>
+                <div className="p-6 bg-white/10 rounded-2xl border border-white/10">
+                  <p className="text-[10px] font-bold leading-relaxed opacity-80 uppercase">
+                    * Changing prefixes only affects new documents. 
+                    Historical records preserve their original identifiers for traceability.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
         {/* CATEGORY: MACHINES */}
         <TabsContent value="machines">
           <Card className="border-none shadow-xl rounded-2xl overflow-hidden">
@@ -284,7 +408,7 @@ export default function MasterDataPage() {
           </Card>
         </TabsContent>
 
-        {/* OTHER TABS (Simplified for brevity but functional) */}
+        {/* OTHER TABS */}
         {['raw_materials', 'boms', 'suppliers', 'cylinders', 'customers'].map(tab => (
           <TabsContent key={tab} value={tab}>
             <Card className="border-none shadow-xl rounded-2xl overflow-hidden">
@@ -351,6 +475,19 @@ export default function MasterDataPage() {
           </form>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function PreviewItem({ label, prefix, format }: { label: string, prefix: string, format: string }) {
+  const now = new Date();
+  const YYYY = now.getFullYear().toString();
+  const YY = YYYY.slice(-2);
+  let id = format.replace("PREFIX", prefix).replace("YYYY", YYYY).replace("YY", YY).replace("###", "001");
+  return (
+    <div className="flex items-center justify-between p-4 rounded-2xl bg-white/10 border border-white/5">
+      <span className="text-[10px] font-black uppercase opacity-60">{label}</span>
+      <code className="text-sm font-black tracking-widest">{id}</code>
     </div>
   );
 }

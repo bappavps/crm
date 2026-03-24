@@ -47,6 +47,9 @@ export default function SalesOrderPage() {
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
   const isAdmin = !!adminData;
 
+  const prefixConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'system_settings', 'prefix_config') : null, [firestore]);
+  const { data: prefixConfig } = useDoc(prefixConfigRef);
+
   const ordersQuery = useMemoFirebase(() => {
     if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'salesOrders');
@@ -83,8 +86,14 @@ export default function SalesOrderPage() {
 
     if (!selectedCustomer) return
 
+    const prefix = prefixConfig?.jobPrefix || "SO";
+    const year = new Date().getFullYear().toString();
+    const format = prefixConfig?.format || "PREFIX-YYYY-###";
+    const randomNum = Math.floor(1000 + Math.random() * 9000).toString();
+    const orderNumber = format.replace("PREFIX", prefix).replace("YYYY", year).replace("YY", year.slice(-2)).replace("###", randomNum);
+
     const orderData = {
-      orderNumber: `SO-${Date.now().toString().slice(-6)}`,
+      orderNumber,
       customerId: selectedCustomerId,
       customerName: selectedCustomer.companyName,
       estimateId: estimateId || "Direct Entry",

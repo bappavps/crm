@@ -64,6 +64,9 @@ export default function EstimatePage() {
   }, [firestore, user]);
   const { data: adminData, isLoading: authLoading } = useDoc(adminDocRef);
 
+  const prefixConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'system_settings', 'prefix_config') : null, [firestore]);
+  const { data: prefixConfig } = useDoc(prefixConfigRef);
+
   const customersQuery = useMemoFirebase(() => {
     if (!firestore || !user || authLoading) return null;
     const base = collection(firestore, 'customers');
@@ -172,7 +175,10 @@ export default function EstimatePage() {
         }
 
         const formattedNum = currentNumber.toString().padStart(4, "0");
-        const estimateNumber = `EST-${year}-${formattedNum}`;
+        const prefix = prefixConfig?.estimatePrefix || "EST";
+        const format = prefixConfig?.format || "PREFIX-YYYY-###";
+        let estimateNumber = format.replace("PREFIX", prefix).replace("YYYY", year).replace("YY", year.slice(-2)).replace("###", formattedNum);
+        
         const newEstimateRef = doc(collection(firestore, 'estimates'));
 
         transaction.set(counterRef, { year, current_number: currentNumber }, { merge: true });
