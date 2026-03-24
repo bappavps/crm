@@ -23,12 +23,23 @@ import {
   Save,
   ArrowRight,
   Package,
-  ArrowUpDown
+  ArrowUpDown,
+  Filter,
+  ExternalLink
 } from "lucide-react"
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select"
 import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
-import { collection, doc, query, where, updateDoc, serverTimestamp, writeBatch, getDocs } from "firebase/firestore"
+import { collection, doc, query, where, updateDoc, serverTimestamp, writeBatch, getDocs, orderBy, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
+import { subMonths, isAfter, startOfMonth, parseISO } from "date-fns"
+import Link from "next/link"
 
 export default function JumboOperatorPage() {
   const { toast } = useToast()
@@ -37,6 +48,7 @@ export default function JumboOperatorPage() {
   
   const [activeJob, setActiveJob] = useState<any>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [historyPeriod, setHistoryPeriod] = useState("current")
   
   const [formData, setFormData] = useState({
     startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -50,13 +62,47 @@ export default function JumboOperatorPage() {
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
   }, [firestore]);
 
+  const historyQuery = useMemoFirebase(() => {
+    if (!firestore) return null;
+    return query(
+      collection(firestore, 'jumbo_job_cards'), 
+      where('status', '==', 'COMPLETED'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+  }, [firestore]);
+
   const rollsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return collection(firestore, 'paper_stock');
   }, [firestore]);
 
   const { data: jobs, isLoading } = useCollection(jobsQuery);
+  const { data: historyJobs, isLoading: historyLoading } = useCollection(historyQuery);
   const { data: allRolls } = useCollection(rollsQuery);
+
+  const filteredHistory = useMemo(() => {
+    if (!historyJobs) return [];
+    const now = new Date();
+    let threshold: Date;
+
+    if (historyPeriod === "last_month") {
+      threshold = startOfMonth(subMonths(now, 1));
+    } else if (historyPeriod === "last_3_months") {
+      threshold = subMonths(now, 3);
+    } else {
+      threshold = startOfMonth(now);
+    }
+
+    return historyJobs.filter(j => {
+      try {
+        const date = j.createdAt ? new Date(j.createdAt) : new Date(0);
+        return isAfter(date, threshold);
+      } catch (e) {
+        return false;
+      }
+    });
+  }, [historyJobs, historyPeriod]);
 
   const handleStartJob = async (job: any) => {
     if (!firestore) return;
@@ -128,72 +174,151 @@ export default function JumboOperatorPage() {
       </div>
 
       {!activeJob ? (
-        <Card className="border-none shadow-xl rounded-3xl overflow-hidden mx-4">
-          <CardHeader className="bg-slate-900 text-white p-6">
-            <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
-              <Scissors className="h-5 w-5 text-primary" /> Assigned Work Queue
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
-            ) : !jobs || jobs.length === 0 ? (
-              <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
-                <History className="h-12 w-12" />
-                <p className="font-black uppercase text-[10px] tracking-widest">Queue is clear. No active slitting jobs.</p>
+        <div className="space-y-8">
+          {/* QUEUE SECTION */}
+          <Card className="border-none shadow-xl rounded-3xl overflow-hidden mx-4">
+            <CardHeader className="bg-slate-900 text-white p-6">
+              <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
+                <Scissors className="h-5 w-5 text-primary" /> Assigned Work Queue
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
+              ) : !jobs || jobs.length === 0 ? (
+                <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
+                  <Package className="h-12 w-12" />
+                  <p className="font-black uppercase text-[10px] tracking-widest">Queue is clear. No active slitting jobs.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow>
+                      <TableHead className="font-black text-[10px] uppercase pl-6">Ref ID</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Roll ID</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Supplier</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Type</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Width</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Length</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">SQM</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Job Context</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase text-center">Units</TableHead>
+                      <TableHead className="text-right font-black text-[10px] uppercase pr-6">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {jobs?.map((j) => {
+                      const parentRoll = allRolls?.find(r => r.rollNo === j.parent_roll);
+                      const firstChild = allRolls?.find(r => r.rollNo === j.child_rolls?.[0]);
+                      return (
+                        <TableRow key={j.id} className="hover:bg-slate-50/50">
+                          <TableCell className="font-black text-primary font-mono text-xs pl-6">{j.job_card_no}</TableCell>
+                          <TableCell className="font-bold text-sm">{j.parent_roll || 'MULTI'}</TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperCompany || '—'}</TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperType || '—'}</TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.widthMm || '0'}mm</TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.lengthMeters || '0'}m</TableCell>
+                          <TableCell className="text-[11px] font-black text-primary">{parentRoll?.sqm || '0'}</TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-500 truncate max-w-[120px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right pr-6">
+                            {j.status === 'RUNNING' ? (
+                              <Button size="sm" onClick={() => setActiveJob(j)} className="bg-blue-600 hover:bg-blue-700 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
+                                Resume Run <ArrowRight className="ml-1 h-3 w-3" />
+                              </Button>
+                            ) : (
+                              <Button size="sm" onClick={() => handleStartJob(j)} disabled={isProcessing} className="bg-primary hover:bg-primary/90 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
+                                Start Slitting
+                              </Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* HISTORY SECTION */}
+          <Card className="border-none shadow-xl rounded-3xl overflow-hidden mx-4">
+            <CardHeader className="bg-slate-50 border-b p-6 flex flex-row items-center justify-between">
+              <div className="space-y-1">
+                <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
+                  <History className="h-5 w-5 text-slate-400" /> Job History Archive
+                </CardTitle>
+                <CardDescription className="text-[9px] font-bold uppercase">Traceability log for completed slitting runs</CardDescription>
               </div>
-            ) : (
-              <Table>
-                <TableHeader className="bg-slate-50">
-                  <TableRow>
-                    <TableHead className="font-black text-[10px] uppercase pl-6">Ref ID</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Roll ID</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Supplier</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Type</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Width</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Length</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">SQM</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase">Job Context</TableHead>
-                    <TableHead className="font-black text-[10px] uppercase text-center">Units</TableHead>
-                    <TableHead className="text-right font-black text-[10px] uppercase pr-6">Action</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {jobs?.map((j) => {
-                    const parentRoll = allRolls?.find(r => r.rollNo === j.parent_roll);
-                    const firstChild = allRolls?.find(r => r.rollNo === j.child_rolls?.[0]);
-                    return (
-                      <TableRow key={j.id} className="hover:bg-slate-50/50">
-                        <TableCell className="font-black text-primary font-mono text-xs pl-6">{j.job_card_no}</TableCell>
-                        <TableCell className="font-bold text-sm">{j.parent_roll}</TableCell>
-                        <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperCompany || '—'}</TableCell>
-                        <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperType || '—'}</TableCell>
-                        <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.widthMm || '0'}mm</TableCell>
-                        <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.lengthMeters || '0'}m</TableCell>
-                        <TableCell className="text-[11px] font-black text-primary">{parentRoll?.sqm || '0'}</TableCell>
-                        <TableCell className="text-[11px] font-bold text-slate-500 truncate max-w-[120px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right pr-6">
-                          {j.status === 'RUNNING' ? (
-                            <Button size="sm" onClick={() => setActiveJob(j)} className="bg-blue-600 hover:bg-blue-700 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
-                              Resume Run <ArrowRight className="ml-1 h-3 w-3" />
-                            </Button>
-                          ) : (
-                            <Button size="sm" onClick={() => handleStartJob(j)} disabled={isProcessing} className="bg-primary hover:bg-primary/90 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
-                              Start Slitting
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border-2 shadow-sm">
+                  <Filter className="h-3 w-3 text-slate-400" />
+                  <Select value={historyPeriod} onValueChange={setHistoryPeriod}>
+                    <SelectTrigger className="h-7 border-none bg-transparent shadow-none font-black uppercase text-[10px] w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-[100]">
+                      <SelectItem value="current">Current Month</SelectItem>
+                      <SelectItem value="last_month">Last Month</SelectItem>
+                      <SelectItem value="last_3_months">Last 3 Months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {historyLoading ? (
+                <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
+                  <FileText className="h-12 w-12" />
+                  <p className="font-black uppercase text-[10px] tracking-widest">No job history for selected period.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader className="bg-slate-50">
+                    <TableRow>
+                      <TableHead className="font-black text-[10px] uppercase pl-6 py-4">Date</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Ref ID</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Job Name</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase">Paper Item</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase text-center">Total Units</TableHead>
+                      <TableHead className="font-black text-[10px] uppercase text-center">Completed</TableHead>
+                      <TableHead className="text-right font-black text-[10px] uppercase pr-6">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredHistory.map((h) => {
+                      const parentRoll = allRolls?.find(r => r.rollNo === h.parent_roll);
+                      const firstChild = allRolls?.find(r => r.rollNo === h.child_rolls?.[0]);
+                      const dateStr = h.createdAt ? new Date(h.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
+                      
+                      return (
+                        <TableRow key={h.id} className="hover:bg-slate-50/50 group">
+                          <TableCell className="text-[11px] font-bold text-slate-400 pl-6">{dateStr}</TableCell>
+                          <TableCell className="font-black text-primary font-mono text-xs">
+                            <Link href={`/production/jobcards/jumbo-job?id=${h.id}`} className="hover:underline flex items-center gap-1.5">
+                              {h.job_card_no} <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-600 truncate max-w-[150px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
+                          <TableCell className="text-[11px] font-bold text-slate-500 uppercase">{parentRoll?.paperType || '—'}</TableCell>
+                          <TableCell className="text-center font-bold text-xs">{h.child_rolls?.length || 0}</TableCell>
+                          <TableCell className="text-center font-bold text-xs text-emerald-600">{h.child_rolls?.length || 0}</TableCell>
+                          <TableCell className="text-right pr-6">
+                            <Badge className="bg-emerald-500 text-white font-black text-[9px] h-5 px-2">COMPLETED</Badge>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       ) : (
         <div className="px-4">
           <Card className="border-none shadow-2xl rounded-3xl overflow-hidden animate-in zoom-in-95 duration-300">
@@ -309,6 +434,11 @@ export default function JumboOperatorPage() {
           </Card>
         </div>
       )}
+
+      <style jsx global>{`
+        .industrial-scroll::-webkit-scrollbar { width: 6px; }
+        .industrial-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      `}</style>
     </div>
   )
 }
