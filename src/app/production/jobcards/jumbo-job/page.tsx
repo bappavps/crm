@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -73,8 +72,6 @@ const MONTHS = [
   { value: "12", label: "December" },
 ];
 
-const YEARS = ["2024", "2025", "2026"];
-
 function JumboJobCardContent() {
   const { toast } = useToast()
   const { user } = useUser()
@@ -94,11 +91,9 @@ function JumboJobCardContent() {
   const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString())
   const [siteOrigin, setSiteOrigin] = useState("")
 
-  // Template State
   const [selectedJobTemplateId, setSelectedJobTemplateId] = useState("default")
   const [selectedLabelTemplateId, setSelectedLabelTemplateId] = useState("default")
   
-  // Create Form State
   const [formData, setFormData] = useState({
     job_card_no: "",
     parent_roll: "",
@@ -113,14 +108,12 @@ function JumboJobCardContent() {
     }
   }, []);
 
-  // Corporate Settings
   const companySettingsRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'company_settings', 'global');
   }, [firestore]);
   const { data: companySettings } = useDoc(companySettingsRef);
 
-  // Data Subscriptions
   const jobsQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'jumbo_job_cards'), orderBy('createdAt', 'desc'));
@@ -214,7 +207,7 @@ function JumboJobCardContent() {
 
     await document.fonts.ready;
 
-    const template = templateType === 'label' ? (activeLabelTemplate || { paperWidth: 150, paperHeight: 100 }) : (activeJobTemplate || { paperWidth: 210, paperHeight: 297 });
+    const template = templateType === 'label' ? (labelTemplates?.find(t => t.id === selectedLabelTemplateId) || { paperWidth: 150, paperHeight: 100 }) : (jobTemplates?.find(t => t.id === selectedJobTemplateId) || { paperWidth: 210, paperHeight: 297 });
     const paperW = template.paperWidth;
     const paperH = template.paperHeight;
 
@@ -305,9 +298,6 @@ function JumboJobCardContent() {
     });
   }, [jobs, searchQuery, monthFilter, yearFilter]);
 
-  const activeJobTemplate = jobTemplates?.find(t => t.id === selectedJobTemplateId);
-  const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
-
   const prepareJobData = (job: any) => {
     const defaultData = {
       job: {
@@ -350,7 +340,7 @@ function JumboJobCardContent() {
         dimension: `${r.widthMm}mm x ${r.lengthMeters}m`,
         gsm: r.gsm || 0,
         weight: r.weightKg || 0,
-        sqm: r.sqm || 0,
+        sqMtr: r.sqm || 0,
         jobName: r.jobName || "—"
       })),
       slittingOutputs: children.map(r => ({
@@ -367,7 +357,27 @@ function JumboJobCardContent() {
     };
   };
 
+  const prepareLabelData = (roll: any) => {
+    if (!roll) return {};
+    return {
+      ...roll,
+      roll_no: roll.rollNo || "",
+      paper_type: roll.paperType || "",
+      width: roll.widthMm || 0,
+      length: roll.lengthMeters || 0,
+      gsm: roll.gsm || 0,
+      weight: roll.weightKg || 0,
+      sqm: roll.sqm || 0,
+      sqMtr: roll.sqm || 0,
+      roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll?.id || ""),
+      current_date: new Date().toLocaleDateString()
+    };
+  };
+
   const jobData = useMemo(() => prepareJobData(selectedJob), [selectedJob, companySettings, allRolls]);
+
+  const activeJobTemplate = jobTemplates?.find(t => t.id === selectedJobTemplateId);
+  const activeLabelTemplate = labelTemplates?.find(t => t.id === selectedLabelTemplateId);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -625,7 +635,7 @@ function JumboJobCardContent() {
                               <TableCell className="text-[10px] border-r border-slate-200">{r.dimension}</TableCell>
                               <TableCell className="text-[10px] border-r border-slate-200 font-mono">{r.gsm}</TableCell>
                               <TableCell className="text-[10px] border-r border-slate-200 font-mono">{r.weight}kg</TableCell>
-                              <TableCell className="text-[10px] border-r border-slate-200 font-black text-primary font-mono">{r.sqm}</TableCell>
+                              <TableCell className="text-[10px] border-r border-slate-200 font-black text-primary font-mono">{r.sqMtr}</TableCell>
                               <TableCell className="text-[9px] font-bold uppercase truncate max-w-[100px]">{r.jobName}</TableCell>
                             </TableRow>
                           ))}
@@ -658,8 +668,7 @@ function JumboJobCardContent() {
                               <TableCell className="text-[10px] border-r border-slate-200 font-mono">{r.wastage}%</TableCell>
                               <TableCell className="px-2">
                                 <span className={cn(
-                                  "text-[9px] uppercase tracking-tighter",
-                                  r.status === 'AVAILABLE STOCK' ? "font-black text-emerald-600" : "font-bold text-blue-600"
+                                  "text-[9px] uppercase tracking-tighter font-black text-blue-600"
                                 )}>{r.destination}</span>
                               </TableCell>
                             </TableRow>
@@ -699,7 +708,7 @@ function JumboJobCardContent() {
       </Dialog>
 
       <Dialog open={isLabelOpen} onOpenChange={setIsLabelOpen}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl">
+        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] p-0 flex flex-col overflow-hidden rounded-3xl">
           <div className="bg-slate-900 text-white p-6 flex items-center justify-between no-print">
             <div className="flex items-center gap-4">
               <DialogTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-2"><Printer className="h-4 w-4 text-primary" /> Thermal Label Spooler</DialogTitle>
@@ -744,7 +753,7 @@ function JumboJobCardContent() {
                       </div>
                     </div>
                   ) : (
-                    <TemplateRenderer template={activeLabelTemplate} data={{...roll, roll_no: roll?.rollNo, id: roll?.id, current_date: new Date().toLocaleDateString(), roll_url: siteOrigin ? `${siteOrigin}/roll/${roll?.id}` : (roll?.id || "")}} />
+                    <TemplateRenderer template={activeLabelTemplate} data={prepareLabelData(roll)} />
                   )}
                 </div>
               );

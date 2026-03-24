@@ -1,4 +1,3 @@
-
 "use client"
 
 import React from 'react'
@@ -48,13 +47,28 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
   const paperHeight = template.paperHeight || 297;
 
   /**
+   * RESOLUTION ENGINE: Supports nested paths like job.batchId
+   */
+  const getValue = (obj: any, path: string) => {
+    if (!path) return undefined;
+    const parts = path.split('.');
+    let current = obj;
+    for (const part of parts) {
+      if (current === null || current === undefined) return undefined;
+      current = current[part];
+    }
+    return current;
+  };
+
+  /**
    * REPLACEMENT ENGINE: Detects {{placeholder}} and replaces with live data.
    */
   const processText = (text: string) => {
     if (!text) return "";
     return text.replace(/\{\{(.+?)\}\}/g, (match, key) => {
       const cleanKey = key.trim();
-      return data[cleanKey] !== undefined ? String(data[cleanKey]) : "";
+      const val = getValue(data, cleanKey);
+      return val !== undefined && val !== null ? String(val) : "";
     });
   };
 
@@ -109,51 +123,75 @@ export function TemplateRenderer({ template, data, scale = 1 }: TemplateRenderer
         const tableKey = (el.placeholder || "").replace(/[{}]/g, '');
         const tableData = data[tableKey] || [];
         
-        if (tableKey === 'sourceRolls') {
+        // SOURCE MATERIAL TABLE (JUMBO JOB CARD)
+        if (tableKey === 'sourceMaterials' || tableKey === 'sourceRolls') {
           return (
             <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', height: 'auto' }}>
-              <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
-                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
-                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>PAPER TYPE</span>
-                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>DIMENSION</span>
-                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>JOB NAME</span>
-                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>COMPANY</span>
+              <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '2px', backgroundColor: '#f0f0f0' }}>
+                {["ROLL ID", "COMPANY", "TYPE", "DIMENSION", "GSM", "WEIGHT", "SQ. MTR", "CONTEXT"].map(h => (
+                  <span key={h} style={{ flex: 1, fontSize: '8px', fontWeight: '900', textAlign: 'center' }}>{h}</span>
+                ))}
               </div>
               {tableData.map((row: any, idx: number) => (
-                <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
-                  <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{row.rollId}</span>
-                  <span style={{ flex: 2, fontSize: '10px' }}>{row.paperType}</span>
-                  <span style={{ flex: 2, fontSize: '10px' }}>{row.dimension || `${row.width}mm x ${row.length}m`}</span>
-                  <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold', color: '#E4892B' }}>{row.jobName}</span>
-                  <span style={{ flex: 2, fontSize: '10px' }}>{row.company}</span>
+                <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '2px' }}>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center', fontWeight: 'bold' }}>{row.rollId}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.company}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.type}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.dimension}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.gsm}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.weight}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center', fontWeight: '900' }}>{row.sqMtr || row.sqm}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.jobName}</span>
                 </div>
               ))}
             </div>
           );
         }
 
+        // SLITTING OUTPUT TABLE (JUMBO JOB CARD)
+        if (tableKey === 'slittingOutputs') {
+          return (
+            <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', height: 'auto' }}>
+              <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '2px', backgroundColor: '#f0f0f0' }}>
+                {["CHILD ID", "PARENT", "WIDTH", "LENGTH", "GSM", "QTY", "WASTE", "DESTINATION"].map(h => (
+                  <span key={h} style={{ flex: 1, fontSize: '8px', fontWeight: '900', textAlign: 'center' }}>{h}</span>
+                ))}
+              </div>
+              {tableData.map((row: any, idx: number) => (
+                <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '2px' }}>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center', fontWeight: 'bold' }}>{row.childRollId}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.parentRef}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.width}mm</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.length}m</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.gsm}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.qty}</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center' }}>{row.wastage}%</span>
+                  <span style={{ flex: 1, fontSize: '8px', textAlign: 'center', fontWeight: 'bold' }}>{row.destination}</span>
+                </div>
+              ))}
+            </div>
+          );
+        }
+
+        // GENERIC TABLE FALLBACK
         return (
           <div style={{ ...style, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start', height: 'auto' }}>
             <div style={{ display: 'flex', borderBottom: '2px solid black', padding: '4px', backgroundColor: '#f0f0f0' }}>
-              <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ROLL ID</span>
-              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>W (MM)</span>
-              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>L (MTR)</span>
-              <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>JOB NAME</span>
-              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>STATUS</span>
+              <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>ITEM</span>
+              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>VALUE</span>
+              <span style={{ flex: 1, fontSize: '10px', fontWeight: 'bold' }}>UNIT</span>
             </div>
             {tableData.map((row: any, idx: number) => (
               <div key={idx} style={{ display: 'flex', borderBottom: '1px solid #ccc', padding: '4px' }}>
-                <span style={{ flex: 2, fontSize: '10px', fontFamily: 'monospace' }}>{row.rollId || row.rollNo || row.roll_code}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.width || row.widthMm}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.length || row.lengthMeters}</span>
-                <span style={{ flex: 2, fontSize: '10px', fontWeight: 'bold' }}>{row.jobName || (row.jobNo ? 'Job' : 'Stock')}</span>
-                <span style={{ flex: 1, fontSize: '10px' }}>{row.status || (row.jobNo ? 'Assigned' : 'Stock')}</span>
+                <span style={{ flex: 2, fontSize: '10px' }}>{row.name || row.item || row.rollId}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.value || row.width || row.gsm}</span>
+                <span style={{ flex: 1, fontSize: '10px' }}>{row.unit || row.qty || '—'}</span>
               </div>
             ))}
           </div>
         );
       case 'barcode':
-        const barcodeVal = processText(el.placeholder || "") || data.rollNo || data.id || "123456789012";
+        const barcodeVal = processText(el.placeholder || "") || data.roll_no || data.rollNo || data.id || "123456789012";
         return (
           <div style={style}>
             <div style={{ transform: `scale(${Math.min(1, el.width / 150)})`, transformOrigin: 'center' }}>
