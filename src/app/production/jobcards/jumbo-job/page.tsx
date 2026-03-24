@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -112,7 +113,7 @@ function JumboJobCardContent() {
     }
   }, []);
 
-  // Corporate Settings - SINGLE FETCH Strategy
+  // Corporate Settings
   const companySettingsRef = useMemoFirebase(() => {
     if (!firestore) return null;
     return doc(firestore, 'company_settings', 'global');
@@ -144,7 +145,6 @@ function JumboJobCardContent() {
     return collection(firestore, 'users');
   }, [firestore]);
 
-  // Template Queries
   const jobTemplatesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'print_templates'), where('documentType', '==', 'Technical Job Card'));
@@ -170,7 +170,6 @@ function JumboJobCardContent() {
     return allRolls?.filter(r => r.rollNo.startsWith(formData.parent_roll + '-') && r.rollNo !== formData.parent_roll) || [];
   }, [allRolls, formData.parent_roll]);
 
-  // Auto-select all children when parent changes
   useEffect(() => {
     if (formData.parent_roll && allRolls) {
       const children = allRolls.filter(r => r.rollNo.startsWith(formData.parent_roll + '-')).map(r => r.rollNo);
@@ -179,7 +178,7 @@ function JumboJobCardContent() {
   }, [formData.parent_roll, allRolls]);
 
   const handleCreateJob = async (e: React.FormEvent) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!firestore || !user || isProcessing) return;
     
     setIsProcessing(true);
@@ -219,22 +218,26 @@ function JumboJobCardContent() {
     const paperW = template.paperWidth;
     const paperH = template.paperHeight;
 
-    const captureWidth = paperW * 3.78;
-    const captureHeight = printContent.scrollHeight;
+    const items = templateType === 'label' 
+      ? Array.from(printContent.querySelectorAll('.label-print-item, .template-renderer-root'))
+      : [printContent];
+
+    const images: string[] = [];
 
     try {
-      const canvas = await html2canvas(printContent, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        width: captureWidth,
-        height: captureHeight,
-        windowWidth: captureWidth
-      });
+      for (const item of items) {
+        const canvas = await html2canvas(item as HTMLElement, {
+          scale: 4, 
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          width: paperW * 3.78,
+          height: paperH * 3.78
+        });
+        images.push(canvas.toDataURL('image/png', 1.0));
+      }
 
-      const imgData = canvas.toDataURL('image/png', 1.0);
       const iframe = document.createElement('iframe');
       iframe.style.position = 'fixed';
       iframe.style.right = '0'; iframe.style.bottom = '0';
@@ -242,19 +245,26 @@ function JumboJobCardContent() {
       iframe.style.border = '0';
       document.body.appendChild(iframe);
 
+      const renderedItems = images.map(img => `
+        <div class="print-page">
+          <img src="${img}" />
+        </div>
+      `).join('');
+
       const iframeDoc = iframe.contentWindow?.document || iframe.contentDocument;
       if (iframeDoc) {
         iframeDoc.write(`
           <html>
             <head>
-              <title>Print Stream</title>
+              <title>Print Output</title>
               <style>
                 @page { size: ${paperW}mm ${paperH}mm; margin: 0; }
-                body { margin: 0; padding: 0; display: flex; justify-content: center; }
-                img { width: ${paperW}mm; image-rendering: -webkit-optimize-contrast; }
+                body { margin: 0; padding: 0; background: white; }
+                .print-page { width: ${paperW}mm; height: ${paperH}mm; page-break-after: always; break-inside: avoid; display: flex; justify-content: center; align-items: center; overflow: hidden; }
+                img { width: 100%; height: 100%; object-fit: contain; image-rendering: -webkit-optimize-contrast; }
               </style>
             </head>
-            <body><img src="${imgData}" /></body>
+            <body>${renderedItems}</body>
           </html>
         `);
         iframeDoc.close();

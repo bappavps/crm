@@ -57,10 +57,11 @@ import { cn } from "@/lib/utils"
 import * as XLSX from 'xlsx'
 import { format } from "date-fns"
 import { Html5QrcodeScanner } from "html5-qrcode"
+import { useRouter } from "next/navigation"
 
 /**
- * PHYSICAL PAPER STOCK CHECK (V2.1)
- * Enhanced Reconciliation: Selectable adjustments & robust session deduplication.
+ * PHYSICAL PAPER STOCK CHECK (V2.2)
+ * Optimized for industrial mobile terminals and high-fidelity reconciliation.
  */
 
 interface ScannedRoll {
@@ -76,6 +77,7 @@ export default function PhysicalStockAuditPage() {
   const { toast } = useToast()
   const { user } = useUser()
   const firestore = useFirestore()
+  const router = useRouter()
   const [isMounted, setIsMounted] = useState(false)
   
   const [scanInput, setScanInput] = useState("")
@@ -117,10 +119,6 @@ export default function PhysicalStockAuditPage() {
   
   const { data: sessions, isLoading: sessionsLoading } = useCollection(sessionsQuery);
 
-  /**
-   * ROBUST SESSION DEDUPLICATION
-   * Filters by unique ID to ensure the select dropdown is clean.
-   */
   const uniqueSessions = useMemo(() => {
     if (!sessions) return [];
     const map = new Map();
@@ -146,9 +144,6 @@ export default function PhysicalStockAuditPage() {
 
   const scannedRolls: ScannedRoll[] = useMemo(() => sessionData?.scannedRolls || [], [sessionData]);
 
-  /**
-   * AUDIO FEEDBACK SYNTHESIZER
-   */
   const triggerScanFeedback = (type: 'success' | 'error' | 'warning') => {
     const now = Date.now();
     if (now - lastSoundTime.current < 500) return; 
@@ -189,7 +184,6 @@ export default function PhysicalStockAuditPage() {
     feedbackTimeout.current = setTimeout(() => setScanFeedback(null), 800);
   };
 
-  // 2. Reconciliation Logic
   const reconciliation = useMemo(() => {
     if (!erpRolls || !scannedRolls) return { matched: [], missing: [], extra: [], stats: { totalERP: 0, totalScanned: 0, matchedCount: 0, missingCount: 0, extraCount: 0, matchPercent: 0 } };
 
@@ -221,9 +215,6 @@ export default function PhysicalStockAuditPage() {
     return { matched, missing, extra, stats };
   }, [erpRolls, scannedRolls]);
 
-  /**
-   * CENTRAL SUBMIT LOGIC (Manual Flow)
-   */
   const processSubmission = async () => {
     const rawValue = scanInput.trim();
     if (!rawValue || !activeSessionId || !firestore || !user) return;
@@ -234,7 +225,6 @@ export default function PhysicalStockAuditPage() {
     }
     rollNo = rollNo.toUpperCase();
 
-    // Duplicate Check
     if (scannedRolls.some(r => r.rollNo === rollNo)) {
       triggerScanFeedback('error');
       toast({ variant: "destructive", title: "Duplicate Roll", description: `Roll ${rollNo} already captured.` });
@@ -314,9 +304,6 @@ export default function PhysicalStockAuditPage() {
     setIsCameraActive(false);
   };
 
-  /**
-   * RECONCILIATION ACTIONS (ADMIN ONLY)
-   */
   const handleBulkRemoveMissing = async () => {
     if (!firestore || !isAdmin || selectedMissing.size === 0) return;
     if (!confirm(`Mark ${selectedMissing.size} selected rolls as 'Consumed' in ERP?`)) return;
@@ -480,13 +467,21 @@ export default function PhysicalStockAuditPage() {
               </CardHeader>
               <CardContent className="p-8 space-y-6">
                 <div className="space-y-4">
+                  {/* MOBILE SPECIFIC BUTTON */}
+                  <div className="flex flex-col gap-3 mb-4">
+                    <Button onClick={() => router.push('/scan-terminal')} className="w-full h-14 bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase text-xs tracking-widest rounded-2xl shadow-xl transition-all active:scale-95">
+                      <ScanLine className="mr-3 h-6 w-6" /> Launch Full-Screen Terminal
+                    </Button>
+                    <p className="text-[9px] text-center font-bold text-slate-400 uppercase tracking-widest">Recommended for mobile scanning</p>
+                  </div>
+
                   {isCameraActive ? (
                     <div className="space-y-4 animate-in zoom-in-95">
                       <div id="camera-reader" className="w-full overflow-hidden rounded-2xl bg-black aspect-square border-2 border-white/10" />
                       <Button onClick={stopCamera} variant="destructive" className="w-full h-12 font-black uppercase text-[10px]"><StopCircle className="mr-2 h-4 w-4" /> Deactivate Camera</Button>
                     </div>
                   ) : (
-                    <Button onClick={startCamera} className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl" disabled={sessionData?.status === 'Finalized'}><Camera className="mr-3 h-6 w-6 text-primary" /> Mobile QR Scanner</Button>
+                    <Button onClick={startCamera} className="w-full h-16 bg-white/5 border-2 border-dashed border-white/20 hover:bg-white/10 text-white font-black uppercase text-xs tracking-widest rounded-2xl" disabled={sessionData?.status === 'Finalized'}><Camera className="mr-3 h-6 w-6 text-primary" /> Inline Scanner (Beta)</Button>
                   )}
 
                   <form onSubmit={handleManualSubmit} className="space-y-4">
@@ -651,7 +646,6 @@ export default function PhysicalStockAuditPage() {
         </div>
       )}
 
-      {/* MODALS */}
       <Dialog open={isNewSessionOpen} onOpenChange={setIsNewSessionOpen}>
         <DialogContent className="sm:max-w-[425px] rounded-[2rem] border-none shadow-3xl">
           <form onSubmit={handleCreateSession}>
