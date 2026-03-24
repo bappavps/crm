@@ -40,7 +40,7 @@ import { useFirestore, useUser, useCollection, useMemoFirebase, DEV_MODE } from 
 import { collection, doc, query, where, updateDoc, serverTimestamp, writeBatch, getDocs, orderBy, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import { subMonths, isAfter, startOfMonth } from "date-fns"
+import { subMonths, isAfter, startOfMonth, format } from "date-fns"
 import Link from "next/link"
 
 export default function JumboOperatorPage() {
