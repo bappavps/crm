@@ -137,7 +137,7 @@ export default function JumboOperatorPage() {
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
-            ) : jobs?.length === 0 ? (
+            ) : !jobs || jobs.length === 0 ? (
               <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
                 <History className="h-12 w-12" />
                 <p className="font-black uppercase text-[10px] tracking-widest">Queue is clear. No active slitting jobs.</p>
@@ -159,7 +159,7 @@ export default function JumboOperatorPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {jobs.map((j) => {
+                  {jobs?.map((j) => {
                     const parentRoll = allRolls?.find(r => r.rollNo === j.parent_roll);
                     const firstChild = allRolls?.find(r => r.rollNo === j.child_rolls?.[0]);
                     return (

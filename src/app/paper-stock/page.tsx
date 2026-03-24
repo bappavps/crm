@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
@@ -229,6 +230,9 @@ export default function PaperStockPage() {
     return query(collection(firestore, 'paper_stock'), limit(10000));
   }, [firestore]);
 
+  const prefixConfigRef = useMemoFirebase(() => firestore ? doc(firestore, 'system_settings', 'prefix_config') : null, [firestore]);
+  const { data: prefixConfig } = useDoc(prefixConfigRef);
+
   const machinesQuery = useMemoFirebase(() => {
     if (!firestore) return null;
     return query(collection(firestore, 'machines'), where('status', '==', 'Active'));
@@ -427,14 +431,26 @@ export default function PaperStockPage() {
     } else {
       setEditingRoll(null);
       setIsCustomStatus(false);
-      let suggestedRollNo = "T-1001";
+      
+      // AUTO ID GENERATION WITH PREFIX
+      const rollPrefix = prefixConfig?.rollPrefix || "T";
+      const year = new Date().getFullYear();
+      let nextNum = 1001;
+      
       if (rolls && rolls.length > 0) {
-        const numericParts = rolls.map(r => r.rollNo).filter(id => /^T-\d+$/.test(id)).map(id => parseInt(id.split('-')[1])).filter(num => !isNaN(num));
+        const numericParts = rolls.map(r => {
+          const parts = r.rollNo.split('-');
+          const lastPart = parts[parts.length - 1];
+          return parseInt(lastPart);
+        }).filter(num => !isNaN(num));
+        
         if (numericParts.length > 0) {
-          const maxVal = Math.max(...numericParts);
-          suggestedRollNo = `T-${maxVal + 1}`;
+          nextNum = Math.max(...numericParts) + 1;
         }
       }
+      
+      const suggestedRollNo = prefixConfig ? `${rollPrefix}-${year}-${nextNum}` : `T-${nextNum}`;
+      
       setFormData({
         rollNo: suggestedRollNo, paperCompany: "", paperType: "", status: "Main", widthMm: 0, lengthMeters: 0, sqm: 0,
         gsm: 0, weightKg: 0, purchaseRate: 0, receivedDate: new Date().toISOString().split('T')[0],
@@ -921,7 +937,7 @@ export default function PaperStockPage() {
             <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-8 flex-1 overflow-y-auto bg-slate-50 industrial-scroll text-left">
               <div className="space-y-4">
                 <h4 className="text-sm font-semibold text-primary border-b border-primary/10 pb-2 text-left">Identity & Source</h4>
-                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll} /></div>
+                <div className="space-y-2"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Roll ID / Serial *</Label><Input value={formData.rollNo} onChange={e => setFormData({...formData, rollNo: e.target.value})} placeholder="e.g. T-1044" required className="h-11 rounded-xl font-semibold border-2 bg-white" disabled={!!editingRoll || !!prefixConfig} /></div>
                 <div className="space-y-2 text-left"><Label className="text-[10px] uppercase font-semibold opacity-50 block text-left">Current Status</Label><Select value={isCustomStatus ? "Other" : formData.status} onValueChange={(val) => { if (val === "Other") { setIsCustomStatus(true); } else { setIsCustomStatus(false); setFormData({...formData, status: val}); } }}><SelectTrigger className="h-11 rounded-xl border-2 bg-white font-semibold"><SelectValue placeholder="Select Status" /></SelectTrigger><SelectContent className="z-[100]">{STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value} className="font-semibold py-3"><div className="flex items-center gap-2"><div className={cn("w-2 h-2 rounded-full", opt.color)} />{opt.label}</div></SelectItem>)}<SelectSeparator /><SelectItem value="Other" className="font-semibold text-primary">Add Custom Stage...</SelectItem></SelectContent></Select>{isCustomStatus && <Input placeholder="Type custom stage name..." className="mt-2 h-11 rounded-xl font-semibold border-2 border-primary/20 bg-primary/5" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} />}</div>
                 
                 <div className="space-y-2">
@@ -1025,7 +1041,7 @@ export default function PaperStockPage() {
             </div>
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('report-container', 'report')}>
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
                 Execute Print Stream
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsReportOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
@@ -1068,7 +1084,7 @@ export default function PaperStockPage() {
             </div>
             <div className="flex gap-2">
               <Button disabled={isProcessing} variant="outline" className="bg-white/10 border-white/20 text-white h-9 px-4 font-black uppercase text-[10px] tracking-widest" onClick={() => handleExecutePrint('label-batch', 'label')}>
-                {isProcessing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
+                {isProcessing ? <Loader2 className="animate-spin h-4 w-4 animate-spin mr-2" /> : <Printer className="h-4 w-4 mr-2" />}
                 Execute Spooler
               </Button>
               <Button variant="ghost" size="icon" onClick={() => setIsPrintOpen(false)} className="text-white hover:bg-white/10"><X className="h-4 w-4" /></Button>
