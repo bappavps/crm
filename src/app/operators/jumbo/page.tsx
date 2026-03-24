@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { 
   Loader2, 
   Play, 
@@ -25,7 +26,8 @@ import {
   Package,
   ArrowUpDown,
   Filter,
-  ExternalLink
+  ExternalLink,
+  ShieldAlert
 } from "lucide-react"
 import { 
   Select, 
@@ -74,32 +76,29 @@ export default function JumboOperatorPage() {
     return () => clearInterval(timer)
   }, [])
 
-  // Data Subscriptions - In DEV_MODE we don't strictly wait for user authentication
+  // Data Subscriptions
   const jobsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    if (!DEV_MODE && (!user || isUserLoading)) return null;
+    if (!firestore || !user) return null;
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
-  }, [firestore, user, isUserLoading]);
+  }, [firestore, user]);
 
   const historyQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    if (!DEV_MODE && (!user || isUserLoading)) return null;
+    if (!firestore || !user) return null;
+    // Removing orderBy temporarily to rule out index-related permission issues
     return query(
       collection(firestore, 'jumbo_job_cards'), 
       where('status', '==', 'COMPLETED'),
-      orderBy('createdAt', 'desc'),
       limit(100)
     );
-  }, [firestore, user, isUserLoading]);
+  }, [firestore, user]);
 
   const rollsQuery = useMemoFirebase(() => {
-    if (!firestore) return null;
-    if (!DEV_MODE && (!user || isUserLoading)) return null;
+    if (!firestore || !user) return null;
     return collection(firestore, 'paper_stock');
-  }, [firestore, user, isUserLoading]);
+  }, [firestore, user]);
 
-  const { data: jobs, isLoading: jobsLoading } = useCollection(jobsQuery);
-  const { data: historyJobs, isLoading: historyLoading } = useCollection(historyQuery);
+  const { data: jobs, isLoading: jobsLoading, error: jobsError } = useCollection(jobsQuery);
+  const { data: historyJobs, isLoading: historyLoading, error: historyError } = useCollection(historyQuery);
   const { data: allRolls } = useCollection(rollsQuery);
 
   const filteredHistory = useMemo(() => {
@@ -122,6 +121,10 @@ export default function JumboOperatorPage() {
       } catch (e) {
         return false;
       }
+    }).sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
     });
   }, [historyJobs, historyPeriod]);
 
@@ -180,7 +183,7 @@ export default function JumboOperatorPage() {
     }
   };
 
-  if (!isMounted || (isUserLoading && !DEV_MODE)) {
+  if (!isMounted || isUserLoading) {
     return (
       <div className="flex h-[70vh] flex-col items-center justify-center gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -189,6 +192,8 @@ export default function JumboOperatorPage() {
     );
   }
 
+  const hasAccessError = !!(jobsError || historyError);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20 max-w-full mx-auto font-sans">
       <div className="flex items-center justify-between px-4">
@@ -196,10 +201,23 @@ export default function JumboOperatorPage() {
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Jumbo Slitting Console</h2>
           <p className="text-muted-foreground font-medium text-xs tracking-widest uppercase">Machine Telemetry & Run Log</p>
         </div>
-        <Badge variant="outline" className="h-10 px-6 font-black uppercase text-[10px] tracking-[0.2em] border-2 rounded-xl">
+        <Badge variant="outline" className="h-10 px-6 font-black uppercase text-[10px] tracking-[0.2em] border-2 rounded-xl bg-white shadow-sm">
           <Clock className="h-4 w-4 mr-2 text-primary" /> Shift Time: {currentTime || '--:--:--'}
         </Badge>
       </div>
+
+      {hasAccessError && (
+        <div className="px-4">
+          <Alert variant="destructive" className="bg-rose-50 border-rose-200">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertTitle>Security Policy Conflict</AlertTitle>
+            <AlertDescription>
+              The system encountered a permission restriction while fetching production data. 
+              Please ensure your account is authorized for slitting operations.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
       {!activeJob ? (
         <div className="space-y-8">
@@ -218,54 +236,56 @@ export default function JumboOperatorPage() {
                   <p className="font-black uppercase text-[10px] tracking-widest">Queue is clear. No active slitting jobs.</p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead className="font-black text-[10px] uppercase pl-6">Ref ID</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Roll ID</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Supplier</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Type</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Width</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Length</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">SQM</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Job Context</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase text-center">Units</TableHead>
-                      <TableHead className="text-right font-black text-[10px] uppercase pr-6">Action</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {jobs?.map((j) => {
-                      const parentRoll = allRolls?.find(r => r.rollNo === j.parent_roll);
-                      const firstChild = allRolls?.find(r => r.rollNo === j.child_rolls?.[0]);
-                      return (
-                        <TableRow key={j.id} className="hover:bg-slate-50/50 group border-b last:border-0">
-                          <TableCell className="font-black text-primary font-mono text-xs pl-6">{j.job_card_no}</TableCell>
-                          <TableCell className="font-bold text-sm">{j.parent_roll || 'MULTI'}</TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperCompany || '—'}</TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperType || '—'}</TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.widthMm || '0'}mm</TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.lengthMeters || '0'}m</TableCell>
-                          <TableCell className="text-[11px] font-black text-primary">{parentRoll?.sqm || '0'}</TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-500 truncate max-w-[120px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
-                          <TableCell className="text-center">
-                            <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right pr-6">
-                            {j.status === 'RUNNING' ? (
-                              <Button size="sm" onClick={() => setActiveJob(j)} className="bg-blue-600 hover:bg-blue-700 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
-                                Resume Run <ArrowRight className="ml-1 h-3 w-3" />
-                              </Button>
-                            ) : (
-                              <Button size="sm" onClick={() => handleStartJob(j)} disabled={isProcessing} className="bg-primary hover:bg-primary/90 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
-                                Start Slitting
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50">
+                      <TableRow>
+                        <TableHead className="font-black text-[10px] uppercase pl-6">Ref ID</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Roll ID</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Supplier</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Type</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Width</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Length</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">SQM</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Job Context</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase text-center">Units</TableHead>
+                        <TableHead className="text-right font-black text-[10px] uppercase pr-6">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {jobs?.map((j) => {
+                        const parentRoll = allRolls?.find(r => r.rollNo === j.parent_roll);
+                        const firstChild = allRolls?.find(r => r.rollNo === j.child_rolls?.[0]);
+                        return (
+                          <TableRow key={j.id} className="hover:bg-slate-50/50 group border-b last:border-0">
+                            <TableCell className="font-black text-primary font-mono text-xs pl-6">{j.job_card_no}</TableCell>
+                            <TableCell className="font-bold text-sm">{j.parent_roll || 'MULTI'}</TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperCompany || '—'}</TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperType || '—'}</TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.widthMm || '0'}mm</TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.lengthMeters || '0'}m</TableCell>
+                            <TableCell className="text-[11px] font-black text-primary">{parentRoll?.sqm || '0'}</TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-500 truncate max-w-[120px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="secondary" className="font-black text-[9px] h-5">{j.child_rolls?.length || 0}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right pr-6">
+                              {j.status === 'RUNNING' ? (
+                                <Button size="sm" onClick={() => setActiveJob(j)} className="bg-blue-600 hover:bg-blue-700 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
+                                  Resume Run <ArrowRight className="ml-1 h-3 w-3" />
+                                </Button>
+                              ) : (
+                                <Button size="sm" onClick={() => handleStartJob(j)} disabled={isProcessing} className="bg-primary hover:bg-primary/90 h-8 px-4 rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md">
+                                  Start Slitting
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -303,44 +323,46 @@ export default function JumboOperatorPage() {
                   <p className="font-black uppercase text-[10px] tracking-widest">No job history for selected period.</p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader className="bg-slate-50">
-                    <TableRow>
-                      <TableHead className="font-black text-[10px] uppercase pl-6 py-4">Date</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Ref ID</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Job Name</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase">Paper Item</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase text-center">Total Units</TableHead>
-                      <TableHead className="font-black text-[10px] uppercase text-center">Completed</TableHead>
-                      <TableHead className="text-right font-black text-[10px] uppercase pr-6">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredHistory.map((h) => {
-                      const parentRoll = allRolls?.find(r => r.rollNo === h.parent_roll);
-                      const firstChild = allRolls?.find(r => r.rollNo === h.child_rolls?.[0]);
-                      const dateStr = h.createdAt ? new Date(h.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
-                      
-                      return (
-                        <TableRow key={h.id} className="hover:bg-slate-50/50 group border-b last:border-0">
-                          <TableCell className="text-[11px] font-bold text-slate-400 pl-6">{dateStr}</TableCell>
-                          <TableCell className="font-black text-primary font-mono text-xs">
-                            <Link href={`/production/jobcards/jumbo-job?id=${h.id}`} className="hover:underline flex items-center gap-1.5">
-                              {h.job_card_no} <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-600 truncate max-w-[150px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
-                          <TableCell className="text-[11px] font-bold text-slate-500 uppercase">{parentRoll?.paperType || '—'}</TableCell>
-                          <TableCell className="text-center font-bold text-xs">{h.child_rolls?.length || 0}</TableCell>
-                          <TableCell className="text-center font-bold text-xs text-emerald-600">{h.child_rolls?.length || 0}</TableCell>
-                          <TableCell className="text-right pr-6">
-                            <Badge className="bg-emerald-500 text-white font-black text-[9px] h-5 px-2">COMPLETED</Badge>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="bg-slate-50">
+                      <TableRow>
+                        <TableHead className="font-black text-[10px] uppercase pl-6 py-4">Date</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Ref ID</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Job Name</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase">Paper Item</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase text-center">Total Units</TableHead>
+                        <TableHead className="font-black text-[10px] uppercase text-center">Completed</TableHead>
+                        <TableHead className="text-right font-black text-[10px] uppercase pr-6">Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredHistory.map((h) => {
+                        const parentRoll = allRolls?.find(r => r.rollNo === h.parent_roll);
+                        const firstChild = allRolls?.find(r => r.rollNo === h.child_rolls?.[0]);
+                        const dateStr = h.createdAt ? format(new Date(h.createdAt), 'dd MMM yyyy') : '—';
+                        
+                        return (
+                          <TableRow key={h.id} className="hover:bg-slate-50/50 group border-b last:border-0">
+                            <TableCell className="text-[11px] font-bold text-slate-400 pl-6">{dateStr}</TableCell>
+                            <TableCell className="font-black text-primary font-mono text-xs">
+                              <Link href={`/production/jobcards/jumbo-job?id=${h.id}`} className="hover:underline flex items-center gap-1.5">
+                                {h.job_card_no} <ExternalLink className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </Link>
+                            </TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-600 truncate max-w-[150px]">{firstChild?.jobName || 'Stock Slit'}</TableCell>
+                            <TableCell className="text-[11px] font-bold text-slate-500 uppercase">{parentRoll?.paperType || '—'}</TableCell>
+                            <TableCell className="text-center font-bold text-xs">{h.child_rolls?.length || 0}</TableCell>
+                            <TableCell className="text-center font-bold text-xs text-emerald-600">{h.child_rolls?.length || 0}</TableCell>
+                            <TableCell className="text-right pr-6">
+                              <Badge className="bg-emerald-500 text-white font-black text-[9px] h-5 px-2">COMPLETED</Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
             </CardContent>
           </Card>
