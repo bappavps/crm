@@ -34,11 +34,11 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select"
-import { useFirestore, useUser, useCollection, useMemoFirebase } from "@/firebase"
+import { useFirestore, useUser, useCollection, useMemoFirebase, DEV_MODE } from "@/firebase"
 import { collection, doc, query, where, updateDoc, serverTimestamp, writeBatch, getDocs, orderBy, limit } from "firebase/firestore"
 import { useToast } from "@/hooks/use-toast"
 import { cn } from "@/lib/utils"
-import { subMonths, isAfter, startOfMonth, parseISO } from "date-fns"
+import { subMonths, isAfter, startOfMonth } from "date-fns"
 import Link from "next/link"
 
 export default function JumboOperatorPage() {
@@ -58,7 +58,6 @@ export default function JumboOperatorPage() {
     notes: ""
   })
 
-  // 1. Handle Hydration and Dynamic Values
   useEffect(() => {
     setIsMounted(true)
     const updateTime = () => {
@@ -67,7 +66,6 @@ export default function JumboOperatorPage() {
     updateTime()
     const timer = setInterval(updateTime, 1000)
     
-    // Initialize form time only on client
     setFormData(prev => ({
       ...prev,
       startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -76,14 +74,16 @@ export default function JumboOperatorPage() {
     return () => clearInterval(timer)
   }, [])
 
-  // 2. Data Subscriptions - Explicitly guarded by user presence and loading state
+  // Data Subscriptions - In DEV_MODE we don't strictly wait for user authentication
   const jobsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || isUserLoading) return null;
+    if (!firestore) return null;
+    if (!DEV_MODE && (!user || isUserLoading)) return null;
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
   }, [firestore, user, isUserLoading]);
 
   const historyQuery = useMemoFirebase(() => {
-    if (!firestore || !user || isUserLoading) return null;
+    if (!firestore) return null;
+    if (!DEV_MODE && (!user || isUserLoading)) return null;
     return query(
       collection(firestore, 'jumbo_job_cards'), 
       where('status', '==', 'COMPLETED'),
@@ -93,7 +93,8 @@ export default function JumboOperatorPage() {
   }, [firestore, user, isUserLoading]);
 
   const rollsQuery = useMemoFirebase(() => {
-    if (!firestore || !user || isUserLoading) return null;
+    if (!firestore) return null;
+    if (!DEV_MODE && (!user || isUserLoading)) return null;
     return collection(firestore, 'paper_stock');
   }, [firestore, user, isUserLoading]);
 
@@ -147,7 +148,6 @@ export default function JumboOperatorPage() {
     try {
       const batch = writeBatch(firestore);
       
-      // 1. Update Job Card
       batch.update(doc(firestore, 'jumbo_job_cards', activeJob.id), {
         status: 'COMPLETED',
         endTime: new Date().toISOString(),
@@ -155,7 +155,6 @@ export default function JumboOperatorPage() {
         actualEndTime: formData.endTime
       });
 
-      // 2. Update status of JOB rolls only
       const jobRollCodes = activeJob.child_rolls || [];
       const jobRollDocs = allRolls?.filter(r => jobRollCodes.includes(r.rollNo)) || [];
       
@@ -173,7 +172,7 @@ export default function JumboOperatorPage() {
       
       setActiveJob(null);
       setFormData({ startTime: "", endTime: "", notes: "" });
-      toast({ title: "Run Completed", description: "JOB rolls moved to printing queue. STOCK rolls preserved." });
+      toast({ title: "Run Completed", description: "JOB rolls moved to printing queue." });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Completion Error", description: e.message });
     } finally {
@@ -181,21 +180,11 @@ export default function JumboOperatorPage() {
     }
   };
 
-  // Pre-hydration or pre-auth skeleton state
-  if (!isMounted || isUserLoading) {
+  if (!isMounted || (isUserLoading && !DEV_MODE)) {
     return (
       <div className="flex h-[70vh] flex-col items-center justify-center gap-4">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
         <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Synchronizing Operator Terminal...</p>
-      </div>
-    );
-  }
-
-  // Auth guard: If no user after loading, show locked state
-  if (!user) {
-    return (
-      <div className="p-20 text-center text-muted-foreground font-bold uppercase tracking-widest">
-        Authentication Required. Please log in to access floor controls.
       </div>
     );
   }
@@ -214,7 +203,6 @@ export default function JumboOperatorPage() {
 
       {!activeJob ? (
         <div className="space-y-8">
-          {/* QUEUE SECTION */}
           <Card className="border-none shadow-xl rounded-3xl overflow-hidden mx-4">
             <CardHeader className="bg-slate-900 text-white p-6">
               <CardTitle className="text-xs font-black uppercase tracking-widest flex items-center gap-3">
@@ -282,7 +270,6 @@ export default function JumboOperatorPage() {
             </CardContent>
           </Card>
 
-          {/* HISTORY SECTION */}
           <Card className="border-none shadow-xl rounded-3xl overflow-hidden mx-4">
             <CardHeader className="bg-slate-50 border-b p-6 flex flex-row items-center justify-between">
               <div className="space-y-1">
