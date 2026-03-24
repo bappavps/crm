@@ -7,23 +7,26 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isMasterAdmin() {
+      return isSignedIn() && request.auth.token.email == 'gm.shreelabel@gmail.com';
+    }
+
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'gm.shreelabel@gmail.com' ||
-        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
-      );
+      return isMasterAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)));
     }
 
     function isUserActive() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
-      return request.auth.token.email == 'gm.shreelabel@gmail.com' || (exists(userPath) && get(userPath).data.isActive == true);
+      return isMasterAdmin() || (exists(userPath) && get(userPath).data.isActive == true);
     }
 
-    // Global Admin Override
+    // 1. Global Admin Override - Put this FIRST
     match /{path=**} {
+      allow read, write: if isMasterAdmin();
       allow read, write: if isAdmin();
     }
 
+    // 2. Specific Collection Rules
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
@@ -77,6 +80,16 @@ service cloud.firestore {
     match /planning_tables/{tableId}/{document=**} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /print_templates/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    
+    match /image_library/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }

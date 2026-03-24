@@ -58,6 +58,7 @@ export default function JumboOperatorPage() {
     notes: ""
   })
 
+  // 1. Handle Hydration and Dynamic Values
   useEffect(() => {
     setIsMounted(true)
     const updateTime = () => {
@@ -66,6 +67,7 @@ export default function JumboOperatorPage() {
     updateTime()
     const timer = setInterval(updateTime, 1000)
     
+    // Initialize form time only on client
     setFormData(prev => ({
       ...prev,
       startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -74,28 +76,28 @@ export default function JumboOperatorPage() {
     return () => clearInterval(timer)
   }, [])
 
-  // Data Subscriptions - Guarded by user auth state
+  // 2. Data Subscriptions - Guarded by user auth state to prevent permission errors
   const jobsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || isUserLoading) return null;
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
-  }, [firestore, user]);
+  }, [firestore, user, isUserLoading]);
 
   const historyQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || isUserLoading) return null;
     return query(
       collection(firestore, 'jumbo_job_cards'), 
       where('status', '==', 'COMPLETED'),
       orderBy('createdAt', 'desc'),
       limit(100)
     );
-  }, [firestore, user]);
+  }, [firestore, user, isUserLoading]);
 
   const rollsQuery = useMemoFirebase(() => {
-    if (!firestore || !user) return null;
+    if (!firestore || !user || isUserLoading) return null;
     return collection(firestore, 'paper_stock');
-  }, [firestore, user]);
+  }, [firestore, user, isUserLoading]);
 
-  const { data: jobs, isLoading } = useCollection(jobsQuery);
+  const { data: jobs, isLoading: jobsLoading } = useCollection(jobsQuery);
   const { data: historyJobs, isLoading: historyLoading } = useCollection(historyQuery);
   const { data: allRolls } = useCollection(rollsQuery);
 
@@ -179,6 +181,7 @@ export default function JumboOperatorPage() {
     }
   };
 
+  // Wait for hydration and authentication
   if (!isMounted || isUserLoading) {
     return (
       <div className="flex h-[70vh] flex-col items-center justify-center gap-4">
@@ -190,14 +193,14 @@ export default function JumboOperatorPage() {
 
   if (!user) {
     return (
-      <div className="p-20 text-center text-muted-foreground">
-        Authentication Required. Please log in to access the operator terminal.
+      <div className="p-20 text-center text-muted-foreground font-bold uppercase tracking-widest">
+        Authentication Required. Please log in.
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-20 max-w-full mx-auto">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20 max-w-full mx-auto font-sans">
       <div className="flex items-center justify-between px-4">
         <div className="space-y-1">
           <h2 className="text-3xl font-black text-primary uppercase tracking-tighter">Jumbo Slitting Console</h2>
@@ -218,7 +221,7 @@ export default function JumboOperatorPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              {isLoading ? (
+              {jobsLoading ? (
                 <div className="p-20 text-center"><Loader2 className="animate-spin h-8 w-8 mx-auto text-primary" /></div>
               ) : !jobs || jobs.length === 0 ? (
                 <div className="p-20 text-center opacity-30 flex flex-col items-center gap-4">
@@ -246,7 +249,7 @@ export default function JumboOperatorPage() {
                       const parentRoll = allRolls?.find(r => r.rollNo === j.parent_roll);
                       const firstChild = allRolls?.find(r => r.rollNo === j.child_rolls?.[0]);
                       return (
-                        <TableRow key={j.id} className="hover:bg-slate-50/50">
+                        <TableRow key={j.id} className="hover:bg-slate-50/50 group border-b last:border-0">
                           <TableCell className="font-black text-primary font-mono text-xs pl-6">{j.job_card_no}</TableCell>
                           <TableCell className="font-bold text-sm">{j.parent_roll || 'MULTI'}</TableCell>
                           <TableCell className="text-[11px] font-bold text-slate-500">{parentRoll?.paperCompany || '—'}</TableCell>
@@ -331,7 +334,7 @@ export default function JumboOperatorPage() {
                       const dateStr = h.createdAt ? new Date(h.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
                       
                       return (
-                        <TableRow key={h.id} className="hover:bg-slate-50/50 group">
+                        <TableRow key={h.id} className="hover:bg-slate-50/50 group border-b last:border-0">
                           <TableCell className="text-[11px] font-bold text-slate-400 pl-6">{dateStr}</TableCell>
                           <TableCell className="font-black text-primary font-mono text-xs">
                             <Link href={`/production/jobcards/jumbo-job?id=${h.id}`} className="hover:underline flex items-center gap-1.5">
@@ -360,7 +363,7 @@ export default function JumboOperatorPage() {
             <CardHeader className="bg-blue-600 text-white p-8">
               <div className="flex justify-between items-start">
                 <div className="space-y-1">
-                  <Badge className="bg-white/20 text-white border-none font-black text-[10px] px-3 mb-2">RUNNING IN PRODUCTION</Badge>
+                  <Badge className="bg-white/20 text-white border-none font-black text-[10px] px-3 mb-2 uppercase">Running in Production</Badge>
                   <CardTitle className="text-4xl font-black tracking-tighter uppercase">{activeJob.job_card_no}</CardTitle>
                   <p className="text-blue-100 font-bold uppercase text-[10px] tracking-widest">Technician: {activeJob.operator}</p>
                 </div>
