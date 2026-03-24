@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -92,8 +93,8 @@ import { ActionModal, ModalType } from "@/components/action-modal"
 import { ScrollArea } from "@/components/ui/scroll-area"
 
 /**
- * PRINT TEMPLATE STUDIO (V15.3)
- * Added GSM, Weight, SqMtr, and Slitting Lineage Variables.
+ * PRINT TEMPLATE STUDIO (V15.4)
+ * Added Paper Company to directory.
  */
 
 type ElementType = 'text' | 'title' | 'image' | 'barcode' | 'qr' | 'line' | 'rectangle' | 'circle' | 'field' | 'table';
@@ -175,6 +176,7 @@ const PLACEHOLDERS = {
   INVENTORY: [
     { key: '{{roll_no}}', label: 'Roll Number', icon: Box, preview: 'T-1038-A' },
     { key: '{{paper_type}}', label: 'Paper Type', icon: FileText, preview: 'Chromo' },
+    { key: '{{paper_company}}', label: 'Paper Company', icon: Building2, preview: 'Avery Dennison' },
     { key: '{{width}}', label: 'Width (MM)', icon: Maximize2, preview: '1020' },
     { key: '{{length}}', label: 'Length (MTR)', icon: ArrowRightLeft, preview: '3000' },
     { key: '{{gsm}}', label: 'GSM', icon: Layers, preview: '80' },

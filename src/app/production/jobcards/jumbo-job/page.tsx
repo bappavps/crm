@@ -1,3 +1,4 @@
+
 "use client"
 
 import { useState, useMemo, useEffect, Suspense } from "react"
@@ -298,12 +299,18 @@ function JumboJobCardContent() {
     });
   }, [jobs, searchQuery, monthFilter, yearFilter]);
 
+  /**
+   * Technical data mapping for Print Studio custom templates.
+   * Ensures all aliases and corporate branding fields are populated.
+   */
   const prepareJobData = (job: any) => {
     const defaultData = {
       job: {
         batchId: "",
         date: "",
         paperType: "SUBSTRATE",
+        paperCompany: "",
+        paper_company: "",
         machineId: "MANUAL",
         operator: "UNASSIGNED",
         companyName: companySettings?.name || "Shree Label Creation",
@@ -311,6 +318,10 @@ function JumboJobCardContent() {
         companyLogo: companySettings?.logo || "",
         remarks: ""
       },
+      paper_type: "SUBSTRATE",
+      paper_company: "",
+      date: "",
+      current_date: new Date().toLocaleDateString(),
       sourceMaterials: [],
       slittingOutputs: []
     };
@@ -321,11 +332,18 @@ function JumboJobCardContent() {
     const rawSourceRolls = allRolls?.filter(r => parentRollsList.includes(r.rollNo)) || [];
     const children = allRolls?.filter(r => job.child_rolls?.includes(r.rollNo)) || [];
     
+    const formattedDate = job.createdAt ? format(new Date(job.createdAt), 'dd/MM/yyyy') : "";
+    const pType = job.paperType || rawSourceRolls[0]?.paperType || "SUBSTRATE";
+    const pCompany = rawSourceRolls[0]?.paperCompany || "";
+    const curDate = new Date().toLocaleDateString();
+
     return {
       job: {
         batchId: job.job_card_no || "",
-        date: job.createdAt ? format(new Date(job.createdAt), 'dd/MM/yyyy') : "",
-        paperType: job.paperType || rawSourceRolls[0]?.paperType || "SUBSTRATE",
+        date: formattedDate,
+        paperType: pType,
+        paperCompany: pCompany,
+        paper_company: pCompany,
         machineId: job.machine || "MANUAL",
         operator: job.operator || "UNASSIGNED",
         companyName: companySettings?.name || "Shree Label Creation",
@@ -333,6 +351,13 @@ function JumboJobCardContent() {
         companyLogo: companySettings?.logo || "",
         remarks: job.notes || ""
       },
+      // Root level aliases for compatibility with Directory keys
+      paper_type: pType,
+      paper_company: pCompany,
+      paperCompany: pCompany,
+      date: formattedDate,
+      current_date: curDate,
+      currentDate: curDate,
       sourceMaterials: rawSourceRolls.map(r => ({
         rollId: r.rollNo || "",
         company: r.paperCompany || "",
@@ -341,6 +366,7 @@ function JumboJobCardContent() {
         gsm: r.gsm || 0,
         weight: r.weightKg || 0,
         sqMtr: r.sqm || 0,
+        sqm: r.sqm || 0,
         jobName: r.jobName || "—"
       })),
       slittingOutputs: children.map(r => ({
@@ -357,12 +383,19 @@ function JumboJobCardContent() {
     };
   };
 
+  /**
+   * Label-specific data mapping for TSC thermal spooler.
+   * Includes job sub-object for corporate branding in custom labels.
+   */
   const prepareLabelData = (roll: any) => {
     if (!roll) return {};
+    const cDate = new Date().toLocaleDateString();
     return {
       ...roll,
       roll_no: roll.rollNo || "",
       paper_type: roll.paperType || "",
+      paper_company: roll.paperCompany || "",
+      paperCompany: roll.paperCompany || "",
       width: roll.widthMm || 0,
       length: roll.lengthMeters || 0,
       gsm: roll.gsm || 0,
@@ -370,7 +403,18 @@ function JumboJobCardContent() {
       sqm: roll.sqm || 0,
       sqMtr: roll.sqm || 0,
       roll_url: siteOrigin ? `${siteOrigin}/roll/${roll.id}` : (roll?.id || ""),
-      current_date: new Date().toLocaleDateString()
+      current_date: cDate,
+      date: cDate,
+      // Nested job object for standard placeholders like {{job.companyName}}
+      job: {
+        companyName: companySettings?.name || "",
+        companyAddress: companySettings?.address || "",
+        date: cDate,
+        currentDate: cDate,
+        current_date: cDate,
+        paper_company: roll.paperCompany || "",
+        paperCompany: roll.paperCompany || ""
+      }
     };
   };
 
@@ -430,8 +474,8 @@ function JumboJobCardContent() {
           <Card className="border-none shadow-xl overflow-hidden rounded-3xl">
             <CardContent className="p-0">
               <Table>
-                <TableHeader className="bg-muted/30">
-                  <TableRow>
+                <TableHeader>
+                  <TableRow className="bg-muted/30">
                     <TableHead className="font-black text-[10px] uppercase pl-8">Job ID</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Primary Roll</TableHead>
                     <TableHead className="font-black text-[10px] uppercase">Operator</TableHead>
