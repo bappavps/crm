@@ -76,7 +76,7 @@ export default function JumboOperatorPage() {
     return () => clearInterval(timer)
   }, [])
 
-  // 2. Data Subscriptions - Guarded by user auth state to prevent permission errors
+  // 2. Data Subscriptions - Explicitly guarded by user presence and loading state
   const jobsQuery = useMemoFirebase(() => {
     if (!firestore || !user || isUserLoading) return null;
     return query(collection(firestore, 'jumbo_job_cards'), where('status', 'in', ['PENDING', 'RUNNING']));
@@ -181,7 +181,7 @@ export default function JumboOperatorPage() {
     }
   };
 
-  // Wait for hydration and authentication
+  // Pre-hydration or pre-auth skeleton state
   if (!isMounted || isUserLoading) {
     return (
       <div className="flex h-[70vh] flex-col items-center justify-center gap-4">
@@ -191,10 +191,11 @@ export default function JumboOperatorPage() {
     );
   }
 
+  // Auth guard: If no user after loading, show locked state
   if (!user) {
     return (
       <div className="p-20 text-center text-muted-foreground font-bold uppercase tracking-widest">
-        Authentication Required. Please log in.
+        Authentication Required. Please log in to access floor controls.
       </div>
     );
   }

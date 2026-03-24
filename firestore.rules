@@ -8,7 +8,11 @@ service cloud.firestore {
     }
 
     function isMasterAdmin() {
-      return isSignedIn() && request.auth.token.email == 'gm.shreelabel@gmail.com';
+      // Use both email and UID for maximum reliability in identity verification
+      return isSignedIn() && (
+        request.auth.token.email == 'gm.shreelabel@gmail.com' ||
+        request.auth.uid == 'L7aWGhMRimQMzxJpiopcxgXLEnb2'
+      );
     }
 
     function isAdmin() {
@@ -17,16 +21,19 @@ service cloud.firestore {
 
     function isUserActive() {
       let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      // Master Admin is always considered active.
+      // exists() and get() are used for standard users.
       return isMasterAdmin() || (exists(userPath) && get(userPath).data.isActive == true);
     }
 
-    // 1. Global Admin Override - Put this FIRST
+    // 1. Global Admin Override
+    // This allows the Master Admin and Admin group to bypass specific rules.
     match /{path=**} {
-      allow read, write: if isMasterAdmin();
-      allow read, write: if isAdmin();
+      allow read, write: if isMasterAdmin() || isAdmin();
     }
 
     // 2. Specific Collection Rules
+    
     match /users/{userId} {
       allow get: if isSignedIn();
       allow list: if isAdmin();
@@ -54,6 +61,7 @@ service cloud.firestore {
     }
 
     match /jumbo_job_cards/{id} {
+      // Explicitly allow read for all authenticated users to support the operator dashboard.
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isUserActive();
     }
@@ -90,6 +98,71 @@ service cloud.firestore {
     match /image_library/{id} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
+    }
+    
+    match /artworks/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /estimates/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /salesOrders/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /quotations/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /jobCards/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /inventoryItems/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /boms/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /workOrders/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /invoices/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /purchaseOrders/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /qualityChecks/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /dispatchChallans/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
+    }
+    
+    match /notifications/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isUserActive();
     }
   }
 }
